@@ -10,7 +10,7 @@
     "diff": "cdk diff --all",
     "lint": "tsc --noEmit --pretty false",
     "synth": "cdk synth --quiet",
-    "test": "vitest run",
+    "test": "vitest run --root src",
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {
