@@ -6,7 +6,11 @@ import {
   type RealtimeMessageType,
 } from '@common-arcade/protocol'
 import { WebSocket } from 'ws'
-import { startArcadeServer, type RunningArcadeServer } from './index.js'
+import {
+  arcadeServerOptionsFromEnvironment,
+  startArcadeServer,
+  type RunningArcadeServer,
+} from './index.js'
 
 class Probe {
   private readonly messages: RealtimeEnvelope[] = []
@@ -133,6 +137,22 @@ async function runningMatch(baseUrl: string) {
 }
 
 describe('local REST and realtime stack', () => {
+  it('uses deployment-facing URLs from the environment', () => {
+    expect(
+      arcadeServerOptionsFromEnvironment({
+        HOST: '0.0.0.0',
+        PORT: '4100',
+        ARCADE_PUBLIC_BASE_URL: 'https://arcade.example',
+        ARCADE_REALTIME_URL: 'wss://arcade.example/realtime',
+      }),
+    ).toMatchObject({
+      hostname: '0.0.0.0',
+      port: 4100,
+      publicBaseUrl: 'https://arcade.example',
+      realtimeUrl: 'wss://arcade.example/realtime',
+    })
+  })
+
   it('plays an action, fans it out, and resumes without duplicating control', async () => {
     server = await startArcadeServer({ port: 0 })
     const { match, seats } = await runningMatch(server.baseUrl)

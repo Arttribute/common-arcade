@@ -8,6 +8,8 @@ import {
 import * as ec2 from 'aws-cdk-lib/aws-ec2'
 import * as ecs from 'aws-cdk-lib/aws-ecs'
 import * as patterns from 'aws-cdk-lib/aws-ecs-patterns'
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
+import * as origins from 'aws-cdk-lib/aws-cloudfront-origins'
 import * as logs from 'aws-cdk-lib/aws-logs'
 import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets'
 import type { Construct } from 'constructs'
@@ -16,6 +18,7 @@ import type { DeploymentStage } from '../config.js'
 
 export interface RealtimePilotStackProps extends StackProps {
   readonly stage: DeploymentStage
+  readonly corsOrigins: string
 }
 
 /**
@@ -80,7 +83,7 @@ export class RealtimePilotStack extends Stack {
             ARCADE_ENV: props.stage,
             HOST: '0.0.0.0',
             PORT: '4100',
-            ARCADE_CORS_ORIGINS: 'https://arcade.agentcommons.io',
+            ARCADE_CORS_ORIGINS: props.corsOrigins,
           },
           logDriver: ecs.LogDrivers.awsLogs({
             streamPrefix: 'common-arcade-realtime',
@@ -95,6 +98,40 @@ export class RealtimePilotStack extends Stack {
       path: '/healthz',
       timeout: Duration.seconds(5),
     })
+    service.loadBalancer.setAttribute('idle_timeout.timeout_seconds', '300')
+
+    const distribution = new cloudfront.Distribution(
+      this,
+      'RealtimeDistribution',
+      {
+        comment: `Common Arcade ${props.stage} HTTPS/WSS pilot`,
+        defaultBehavior: {
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          compress: false,
+          origin: new origins.LoadBalancerV2Origin(service.loadBalancer, {
+            protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+          }),
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER,
+          viewerProtocolPolicy:
+            cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        },
+        enabled: true,
+        httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
+        priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+      },
+    )
+
+    const publicBaseUrl = `https://${distribution.distributionDomainName}`
+    const realtimeUrl = `wss://${distribution.distributionDomainName}/realtime`
+    service.taskDefinition.defaultContainer?.addEnvironment(
+      'ARCADE_PUBLIC_BASE_URL',
+      publicBaseUrl,
+    )
+    service.taskDefinition.defaultContainer?.addEnvironment(
+      'ARCADE_REALTIME_URL',
+      realtimeUrl,
+    )
 
     new CfnOutput(this, 'PilotHttpUrl', {
       value: `http://${service.loadBalancer.loadBalancerDnsName}`,
@@ -104,6 +141,14 @@ export class RealtimePilotStack extends Stack {
     new CfnOutput(this, 'PilotRealtimeUrl', {
       value: `ws://${service.loadBalancer.loadBalancerDnsName}/realtime`,
       description: 'Development-only WebSocket endpoint.',
+    })
+    new CfnOutput(this, 'PublicApiUrl', {
+      value: publicBaseUrl,
+      description: 'CloudFront HTTPS endpoint for the development pilot.',
+    })
+    new CfnOutput(this, 'PublicRealtimeUrl', {
+      value: realtimeUrl,
+      description: 'CloudFront WSS endpoint for the development pilot.',
     })
   }
 }

@@ -7,6 +7,9 @@ import { RealtimePilotStack } from './stacks/realtime-pilot-stack.js'
 
 const app = new App()
 const config = deploymentConfig(app.node.tryGetContext('stage'))
+const corsOrigins =
+  app.node.tryGetContext('corsOrigins') ??
+  'https://arcade.agentcommons.io,https://common-arcade.vercel.app'
 const environment = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
   region: process.env.CDK_DEFAULT_REGION ?? 'us-east-1',
@@ -25,6 +28,7 @@ new ControlPlaneStack(app, `CommonArcade-${config.stage}-ControlPlane`, {
 })
 
 new RealtimePilotStack(app, `CommonArcade-${config.stage}-RealtimePilot`, {
+  corsOrigins,
   env: environment,
   stage: config.stage,
   terminationProtection: config.terminationProtection,

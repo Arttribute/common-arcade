@@ -7,7 +7,7 @@
     "build": "tsc --noEmit --pretty false",
     "clean": "rm -rf cdk.out dist",
     "deploy": "cdk deploy --all --require-approval never",
-    "diff": "cdk diff --all",
+    "diff": "cdk diff",
     "lint": "tsc --noEmit --pretty false",
     "synth": "cdk synth --quiet",
     "test": "vitest run --root src",

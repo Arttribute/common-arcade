@@ -56,6 +56,22 @@ export interface RunningArcadeServer {
   close(): Promise<void>
 }
 
+export function arcadeServerOptionsFromEnvironment(
+  environment: NodeJS.ProcessEnv,
+): ArcadeServerOptions {
+  return {
+    hostname: environment.HOST ?? '127.0.0.1',
+    port: Number(environment.PORT ?? 4100),
+    ...(environment.ARCADE_PUBLIC_BASE_URL === undefined
+      ? {}
+      : { publicBaseUrl: environment.ARCADE_PUBLIC_BASE_URL }),
+    ...(environment.ARCADE_REALTIME_URL === undefined
+      ? {}
+      : { realtimeUrl: environment.ARCADE_REALTIME_URL }),
+    logRequests: true,
+  }
+}
+
 function asJson(value: unknown): JsonValue {
   return value as JsonValue
 }
@@ -493,11 +509,9 @@ const isMain =
   import.meta.url === new URL(`file://${process.argv[1]}`).href
 
 if (isMain) {
-  const server = await startArcadeServer({
-    hostname: process.env.HOST ?? '127.0.0.1',
-    port: Number(process.env.PORT ?? 4100),
-    logRequests: true,
-  })
+  const server = await startArcadeServer(
+    arcadeServerOptionsFromEnvironment(process.env),
+  )
   console.log(`Common Arcade local stack: ${server.baseUrl}`)
   console.log(`Realtime: ${server.realtimeUrl}`)
 }

@@ -5,6 +5,7 @@ coverage/
 .next/
 .source/
 cdk.out/
+cdk.context.json
 *.tsbuildinfo
 .env
 .env.*
