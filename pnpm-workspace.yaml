@@ -3,6 +3,7 @@ packages:
   - 'services/*'
   - 'packages/*'
   - 'packages/adapters/*'
+  - 'examples/*'
   - 'infra/aws'
 
 catalog:

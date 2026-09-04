@@ -39,7 +39,7 @@
       "file": "realtime-envelope.schema.json"
     },
     "replay": {
-      "digest": "sha256:702617db2b3d3f23b059f406563f7976be89a5e85e657ae8c9bc22d94b539eac",
+      "digest": "sha256:77a88ed26a57e6f08e87af3b5cc930efcaa76e10f01a4ca559795e7da80b1dd7",
       "file": "replay.schema.json"
     }
   }

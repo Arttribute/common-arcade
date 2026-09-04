@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arcade.agentcommons.io/games/tic-tac-toe/0.1.0/schemas/observation.schema.json",
+  "type": "object",
+  "required": ["visibleState", "legalActions", "feedback"],
+  "properties": {
+    "visibleState": {
+      "$ref": "./public-state.schema.json"
+    },
+    "legalActions": {
+      "type": "array",
+      "items": { "$ref": "./action.schema.json" }
+    },
+    "feedback": {
+      "type": "object",
+      "required": ["objective", "yourMark", "outcome"],
+      "properties": {
+        "objective": { "const": "complete-three-in-a-row" },
+        "yourMark": { "enum": ["X", "O"] },
+        "outcome": { "enum": ["in-progress", "win", "loss", "draw"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

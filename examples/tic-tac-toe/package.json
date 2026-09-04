@@ -1,13 +1,8 @@
 {
-  "name": "@common-arcade/match-runtime",
+  "name": "@common-arcade/example-tic-tac-toe",
   "version": "0.0.0",
-  "description": "Authoritative Common Arcade match runtime contracts.",
-  "license": "Apache-2.0",
+  "private": true,
   "type": "module",
-  "files": [
-    "dist",
-    "README.md"
-  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -18,14 +13,11 @@
     "build": "tsup src/index.ts --format esm --dts --clean",
     "clean": "rm -rf dist coverage",
     "lint": "tsc --noEmit --pretty false",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit --pretty false"
   },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
-  },
   "dependencies": {
+    "@common-arcade/match-runtime": "workspace:^",
     "@common-arcade/manifest": "workspace:^",
     "@common-arcade/protocol": "workspace:^"
   },

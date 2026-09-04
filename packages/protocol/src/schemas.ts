@@ -347,6 +347,14 @@ export const replaySchema = z
     runtimeVersion: z.string().min(1),
     seed: z.string().min(1),
     profile: z.literal('replay-v1'),
+    configuration: jsonValueSchema,
+    roster: z.array(
+      z.object({
+        seatId: seatIdSchema,
+        role: z.string().min(1),
+        team: z.string().min(1).optional(),
+      }),
+    ),
     commands: z.array(
       z.object({
         sequence: z.number().int().positive(),

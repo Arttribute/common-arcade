@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arcade.agentcommons.io/games/tic-tac-toe/0.1.0/schemas/public-state.schema.json",
+  "type": "object",
+  "required": [
+    "board",
+    "seats",
+    "currentSeatId",
+    "turn",
+    "winnerSeatId",
+    "draw"
+  ],
+  "properties": {
+    "board": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": { "type": ["string", "null"], "enum": ["X", "O", null] }
+    },
+    "seats": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "string" }
+    },
+    "currentSeatId": { "type": "string" },
+    "turn": { "type": "integer", "minimum": 1 },
+    "winnerSeatId": { "type": ["string", "null"] },
+    "draw": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

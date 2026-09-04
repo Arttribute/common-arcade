@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arcade.agentcommons.io/games/tic-tac-toe/0.1.0/schemas/event.schema.json",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["type", "seatId", "mark", "cell"],
+      "properties": {
+        "type": { "const": "game.move" },
+        "seatId": { "type": "string" },
+        "mark": { "enum": ["X", "O"] },
+        "cell": { "type": "integer", "minimum": 0, "maximum": 8 }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["type", "winnerSeatId"],
+      "properties": {
+        "type": { "const": "game.won" },
+        "winnerSeatId": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["type"],
+      "properties": { "type": { "const": "game.draw" } },
+      "additionalProperties": false
+    }
+  ]
+}
