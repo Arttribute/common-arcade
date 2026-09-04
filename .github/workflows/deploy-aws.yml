@@ -1,0 +1,85 @@
+name: Plan or deploy AWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: Deployment stage
+        required: true
+        type: choice
+        options: [development, staging, production]
+        default: development
+      operation:
+        description: Review a diff or deploy it
+        required: true
+        type: choice
+        options: [diff, deploy]
+        default: diff
+      confirm:
+        description: Type deploy to authorize a deployment; ignored for diff
+        required: false
+        type: string
+
+concurrency:
+  group: common-arcade-aws-${{ inputs.stage }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  infrastructure:
+    name: ${{ inputs.operation }} ${{ inputs.stage }}
+    if: vars.AWS_DEPLOY_ENABLED == 'true' && (inputs.operation == 'diff' || inputs.confirm == 'deploy')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.stage }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify source
+        run: pnpm verify
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Synthesize
+        run: pnpm --filter @common-arcade/aws-infra synth -- --context stage="${{ inputs.stage }}"
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+
+      - name: Review infrastructure diff
+        if: inputs.operation == 'diff'
+        run: pnpm --filter @common-arcade/aws-infra diff -- --context stage="${{ inputs.stage }}"
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+
+      - name: Deploy reviewed infrastructure
+        if: inputs.operation == 'deploy' && inputs.confirm == 'deploy'
+        run: pnpm --filter @common-arcade/aws-infra deploy -- --context stage="${{ inputs.stage }}"
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}

@@ -1,0 +1,33 @@
+{
+  "name": "@common-arcade/control-client",
+  "version": "0.0.0",
+  "description": "Typed client for the Common Arcade control plane.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "clean": "rm -rf dist coverage",
+    "lint": "tsc --noEmit --pretty false",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit --pretty false"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "devDependencies": {
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

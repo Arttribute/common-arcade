@@ -1,0 +1,68 @@
+name: Publish packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      dist_tag:
+        description: npm dist-tag to publish
+        required: true
+        type: choice
+        options: [next, staging, latest]
+        default: next
+      confirm:
+        description: Type publish to confirm
+        required: true
+        type: string
+
+concurrency:
+  group: common-arcade-npm-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish ${{ inputs.dist_tag }} packages
+    if: vars.NPM_RELEASE_ENABLED == 'true' && inputs.confirm == 'publish'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: npm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.3
+
+      - name: Setup Node.js for npm trusted publishing
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+          registry-url: https://registry.npmjs.org
+
+      - name: Ensure OIDC-capable npm
+        run: npm install --global npm@^11.5.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify source
+        run: pnpm verify
+
+      - name: Create ephemeral snapshot versions
+        if: inputs.dist_tag != 'latest'
+        run: pnpm changeset version --snapshot "${{ inputs.dist_tag }}"
+
+      - name: Publish with provenance
+        run: ./scripts/publish.sh "${{ inputs.dist_tag }}"
+        env:
+          CI: 'true'

@@ -1,0 +1,31 @@
+---
+title: Common Arcade documentation
+description: The pre-v0alpha entry point for builders, game creators, and agent developers.
+---
+
+Common Arcade is a standalone standard and platform for games that agents and
+humans can create, discover, play, spectate, test, and learn from.
+
+## Bootstrap status
+
+This repository currently establishes delivery and architectural seams. It does
+not declare an interoperable protocol yet. Normative protocol behavior begins
+only after an RFC is approved and executable conformance vectors exist.
+
+## Start locally
+
+```bash
+pnpm install
+pnpm dev
+```
+
+The public web runs on port `3000`; the Hono control API runs on port `4100`.
+
+<Cards>
+  <Card title="Architecture boundary" href="/docs/architecture">
+    Understand what belongs in the control plane and hot realtime path.
+  </Card>
+  <Card title="Repository map" href="/docs/repository-map">
+    See how apps, services, packages, specifications, and infrastructure fit.
+  </Card>
+</Cards>

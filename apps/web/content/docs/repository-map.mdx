@@ -1,0 +1,14 @@
+---
+title: Repository map
+description: Ownership boundaries in the Common Arcade monorepo.
+---
+
+- `apps/` contains user-facing or network-facing deployables.
+- `services/` contains isolated workers for matches, policy, and builds.
+- `packages/` contains publishable standards, SDKs, runtimes, UI, and adapters.
+- `schemas/`, `specs/`, and `rfcs/` will hold normative design artifacts.
+- `infra/` contains AWS, Vercel, and local deployment definitions.
+- `tests/` reserves protocol, interoperability, load, chaos, and security suites.
+
+Every package currently marked `pre-v0alpha` is a boundary, not a promise that
+the final API has been designed.

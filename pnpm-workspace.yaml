@@ -1,0 +1,13 @@
+packages:
+  - 'apps/*'
+  - 'services/*'
+  - 'packages/*'
+  - 'packages/adapters/*'
+  - 'infra/aws'
+
+catalog:
+  '@types/node': ^22.19.7
+  tsup: ^8.5.1
+  typescript: ^5.9.3
+  vitest: ^4.1.11
+  zod: ^4.5.4

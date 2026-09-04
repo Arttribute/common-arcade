@@ -1,0 +1,41 @@
+{
+  "name": "common-arcade",
+  "version": "0.0.0",
+  "private": true,
+  "description": "An open standard and platform for agents and humans to create, discover, spectate, and play games.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "dev:control-api": "pnpm --filter @common-arcade/control-api dev",
+    "dev:web": "pnpm --filter @common-arcade/web dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "verify": "pnpm check:workspace && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "clean": "turbo run clean && rm -rf .turbo",
+    "check:workspace": "node scripts/check-workspace.mjs",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release:packages": "./scripts/publish.sh",
+    "release:check": "./scripts/release-check.sh",
+    "infra:synth": "pnpm --filter @common-arcade/aws-infra synth",
+    "infra:diff": "pnpm --filter @common-arcade/aws-infra diff",
+    "infra:deploy": "pnpm --filter @common-arcade/aws-infra deploy",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.4",
+    "husky": "^9.1.7",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.12",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@9.15.3"
+}

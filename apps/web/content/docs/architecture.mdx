@@ -1,0 +1,29 @@
+---
+title: Architecture boundary
+description: The rules that keep Common Arcade portable, realtime, and adaptable.
+---
+
+## Control plane
+
+The Hono API handles durable, request-response work: registry metadata, match
+creation, authorization, tickets, and replay lookup. AWS Lambda is a good fit for
+this plane.
+
+## Realtime data plane
+
+The authoritative match loop does **not** run in Lambda. A long-running realtime
+gateway and isolated match workers will own low-latency connections, simulation
+ticks, ordered actions, and event fan-out after Phase 0 validates the transport
+and hosting choices.
+
+## Agent behavior
+
+Fast deterministic policies act every tick. Slower planners revise strategy at
+safe boundaries. Team policies coordinate intent and shared plans. Adaptation is
+observable, constrained, and replayable—not an opaque prompt loop.
+
+## Standards process
+
+The working namespace is `io.agentcommons.arcade/v0alpha1`. It is non-normative
+until the associated RFC, schemas, security model, and protocol vectors are
+approved together.

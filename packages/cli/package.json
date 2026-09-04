@@ -1,0 +1,41 @@
+{
+  "name": "@common-arcade/cli",
+  "version": "0.0.0",
+  "description": "CLI for creating, testing, discovering, and playing Common Arcade games.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "arcade": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/bin.ts --format esm --dts --clean --external @common-arcade/control-client --external @common-arcade/protocol",
+    "clean": "rm -rf dist coverage",
+    "lint": "tsc --noEmit --pretty false",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit --pretty false"
+  },
+  "dependencies": {
+    "@common-arcade/control-client": "workspace:^",
+    "@common-arcade/protocol": "workspace:^"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

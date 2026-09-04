@@ -1,0 +1,27 @@
+{
+  "name": "@common-arcade/control-api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup src/server.ts src/lambda.ts --format esm --dts --clean",
+    "clean": "rm -rf dist coverage",
+    "dev": "tsx watch src/server.ts",
+    "lint": "tsc --noEmit --pretty false",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit --pretty false"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "hono": "^4.13.5"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.163",
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "^4.21.0",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

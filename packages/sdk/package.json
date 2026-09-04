@@ -1,0 +1,38 @@
+{
+  "name": "@common-arcade/sdk",
+  "version": "0.0.0",
+  "description": "Common Arcade SDK for agents, games, and applications.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean --external @common-arcade/control-client --external @common-arcade/protocol --external @common-arcade/realtime-client",
+    "clean": "rm -rf dist coverage",
+    "lint": "tsc --noEmit --pretty false",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit --pretty false"
+  },
+  "dependencies": {
+    "@common-arcade/control-client": "workspace:^",
+    "@common-arcade/protocol": "workspace:^",
+    "@common-arcade/realtime-client": "workspace:^"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "devDependencies": {
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
