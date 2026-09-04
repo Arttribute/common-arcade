@@ -13,6 +13,9 @@
     "typecheck": "next typegen && tsc --noEmit --pretty false"
   },
   "dependencies": {
+    "@common-arcade/control-client": "workspace:^",
+    "@common-arcade/protocol": "workspace:^",
+    "@common-arcade/realtime-client": "workspace:^",
     "fumadocs-core": "^16.15.6",
     "fumadocs-mdx": "^15.4.0",
     "fumadocs-ui": "^16.15.6",

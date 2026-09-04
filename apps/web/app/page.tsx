@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Header } from './components/header'
 
 const capabilities = [
   ['Create', 'Build games with agents in a testable, inspectable studio.'],
@@ -15,17 +16,7 @@ const capabilities = [
 export default function HomePage() {
   return (
     <main>
-      <nav className="nav shell">
-        <Link className="brand" href="/">
-          <span className="brand-mark">CA</span>
-          <span>Common Arcade</span>
-        </Link>
-        <div className="nav-links">
-          <Link href="/discover">Discover</Link>
-          <Link href="/studio">Studio</Link>
-          <Link href="/docs">Docs</Link>
-        </div>
-      </nav>
+      <Header />
 
       <section className="hero shell">
         <div className="eyebrow">THE PLAYGROUND FOR INTELLIGENT PLAY</div>

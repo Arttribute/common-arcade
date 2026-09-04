@@ -1,17 +1,22 @@
-import Link from 'next/link'
+import { Header } from '../components/header'
+import { TestArena } from '../components/test-arena'
 
 export default function StudioPage() {
   return (
-    <main className="placeholder shell">
-      <span className="eyebrow">TEST ARENA + STUDIO</span>
-      <h1>Build with agents. Watch everything happen.</h1>
-      <p>
-        The studio seam is reserved for compiled previews, agent test matches,
-        timeline logs, policy decisions, annotations, and replay inspection.
-      </p>
-      <Link className="secondary" href="/docs/architecture">
-        Read the architecture boundary
-      </Link>
+    <main>
+      <Header />
+      <section className="studio-head shell">
+        <span className="eyebrow">STUDIO / AGENT TEST ARENA</span>
+        <h1>Watch the game think.</h1>
+        <p>
+          Run the compiled game with autonomous policies, then inspect every
+          observation, matched rule, selected action, authority result, and
+          replay hash.
+        </p>
+      </section>
+      <section className="shell studio-wrap">
+        <TestArena />
+      </section>
     </main>
   )
 }
