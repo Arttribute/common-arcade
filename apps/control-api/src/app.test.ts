@@ -131,4 +131,48 @@ describe('control API foundation', () => {
     })
     expect(response.headers.get('access-control-allow-origin')).toBeNull()
   })
+
+  it('runs autonomous agents and exposes owner-scoped diagnostics', async () => {
+    const app = await localApp()
+    const created = await app.request('/v1/test-runs', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer local:creator_one',
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'control-api-test-run-one',
+      },
+      body: JSON.stringify({ execution: 'complete', seed: 'visible-seed' }),
+    })
+    expect(created.status).toBe(201)
+    const run = (await created.json()) as {
+      runId: string
+      status: string
+      steps: number
+      diagnostics: unknown[]
+    }
+    expect(run).toMatchObject({ status: 'completed' })
+    expect(run.steps).toBeGreaterThanOrEqual(5)
+    expect(run.diagnostics.length).toBe(run.steps * 3)
+
+    const diagnostics = await app.request(
+      `/v1/test-runs/${run.runId}/diagnostics?category=policy`,
+      { headers: { Authorization: 'Bearer local:creator_one' } },
+    )
+    expect(diagnostics.status).toBe(200)
+    const diagnosticBody = (await diagnostics.json()) as {
+      records: Array<{ category: string; type: string }>
+    }
+    expect(
+      diagnosticBody.records.some(
+        (record) =>
+          record.category === 'policy' &&
+          record.type === 'agent.observation.delivered',
+      ),
+    ).toBe(true)
+
+    const forbidden = await app.request(`/v1/test-runs/${run.runId}`, {
+      headers: { Authorization: 'Bearer local:different_creator' },
+    })
+    expect(forbidden.status).toBe(403)
+  })
 })

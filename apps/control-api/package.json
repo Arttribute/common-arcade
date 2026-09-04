@@ -19,8 +19,10 @@
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {
+    "@common-arcade/diagnostics": "workspace:^",
     "@common-arcade/match-worker-service": "workspace:^",
     "@common-arcade/protocol": "workspace:^",
+    "@common-arcade/test-arena": "workspace:^",
     "@hono/node-server": "^2.1.1",
     "hono": "^4.13.5",
     "zod": "catalog:"

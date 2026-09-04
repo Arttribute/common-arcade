@@ -18,8 +18,12 @@
     "build": "tsup src/index.ts --format esm --dts --clean",
     "clean": "rm -rf dist coverage",
     "lint": "tsc --noEmit --pretty false",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit --pretty false"
+  },
+  "dependencies": {
+    "@common-arcade/policy-ir": "workspace:^",
+    "@common-arcade/protocol": "workspace:^"
   },
   "publishConfig": {
     "access": "public",

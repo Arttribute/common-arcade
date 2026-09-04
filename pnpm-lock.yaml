@@ -47,12 +47,18 @@ importers:
 
   apps/control-api:
     dependencies:
+      '@common-arcade/diagnostics':
+        specifier: workspace:^
+        version: link:../../packages/diagnostics
       '@common-arcade/match-worker-service':
         specifier: workspace:^
         version: link:../../services/match-worker
       '@common-arcade/protocol':
         specifier: workspace:^
         version: link:../../packages/protocol
+      '@common-arcade/test-arena':
+        specifier: workspace:^
+        version: link:../../packages/test-arena
       '@hono/node-server':
         specifier: ^2.1.1
         version: 2.1.1(hono@4.13.5)
@@ -80,7 +86,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.27.7)(tsx@4.23.13)(yaml@2.9.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
 
   apps/match-supervisor:
     devDependencies:
@@ -95,7 +101,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.27.7)(tsx@4.23.13)(yaml@2.9.0))
 
   apps/mcp-server:
     devDependencies:
@@ -276,6 +282,10 @@ importers:
         version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
 
   packages/adaptation:
+    dependencies:
+      zod:
+        specifier: 'catalog:'
+        version: 4.5.4
     devDependencies:
       tsup:
         specifier: 'catalog:'
@@ -417,6 +427,13 @@ importers:
         version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
 
   packages/diagnostics:
+    dependencies:
+      '@common-arcade/protocol':
+        specifier: workspace:^
+        version: link:../protocol
+      zod:
+        specifier: 'catalog:'
+        version: 4.5.4
     devDependencies:
       tsup:
         specifier: 'catalog:'
@@ -476,6 +493,13 @@ importers:
         version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
 
   packages/policy-ir:
+    dependencies:
+      '@common-arcade/protocol':
+        specifier: workspace:^
+        version: link:../protocol
+      zod:
+        specifier: 'catalog:'
+        version: 4.5.4
     devDependencies:
       tsup:
         specifier: 'catalog:'
@@ -488,6 +512,13 @@ importers:
         version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
 
   packages/policy-runtime:
+    dependencies:
+      '@common-arcade/policy-ir':
+        specifier: workspace:^
+        version: link:../policy-ir
+      '@common-arcade/protocol':
+        specifier: workspace:^
+        version: link:../protocol
     devDependencies:
       tsup:
         specifier: 'catalog:'
@@ -578,6 +609,13 @@ importers:
         version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
 
   packages/team-policy:
+    dependencies:
+      '@common-arcade/protocol':
+        specifier: workspace:^
+        version: link:../protocol
+      zod:
+        specifier: 'catalog:'
+        version: 4.5.4
     devDependencies:
       tsup:
         specifier: 'catalog:'
@@ -590,6 +628,25 @@ importers:
         version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
 
   packages/test-arena:
+    dependencies:
+      '@common-arcade/diagnostics':
+        specifier: workspace:^
+        version: link:../diagnostics
+      '@common-arcade/example-tic-tac-toe':
+        specifier: workspace:^
+        version: link:../../examples/tic-tac-toe
+      '@common-arcade/match-runtime':
+        specifier: workspace:^
+        version: link:../match-runtime
+      '@common-arcade/policy-ir':
+        specifier: workspace:^
+        version: link:../policy-ir
+      '@common-arcade/policy-runtime':
+        specifier: workspace:^
+        version: link:../policy-runtime
+      '@common-arcade/protocol':
+        specifier: workspace:^
+        version: link:../protocol
     devDependencies:
       tsup:
         specifier: 'catalog:'

@@ -12,6 +12,11 @@ import {
   ARCADE_API_VERSION,
   type ProblemDetails,
 } from '@common-arcade/protocol'
+import {
+  createPreferencePolicy,
+  TicTacToeTestRun,
+} from '@common-arcade/test-arena'
+import type { DiagnosticDomain } from '@common-arcade/diagnostics'
 
 const startedAt = new Date().toISOString()
 
@@ -64,6 +69,42 @@ const createSessionBody = z
       })
     }
   })
+
+const createTestRunBody = z
+  .object({
+    seed: z.string().min(1).max(200).default('test-arena-seed'),
+    firstPreference: z
+      .array(z.number().int().min(0).max(8))
+      .min(1)
+      .default([4, 0, 2, 6, 8, 1, 3, 5, 7]),
+    secondPreference: z
+      .array(z.number().int().min(0).max(8))
+      .min(1)
+      .default([0, 2, 6, 8, 4, 1, 3, 5, 7]),
+    execution: z.enum(['step', 'complete']).default('complete'),
+  })
+  .strict()
+
+const diagnosticQuery = z
+  .object({
+    category: z
+      .enum([
+        'build',
+        'runtime',
+        'transport',
+        'policy',
+        'adaptation',
+        'coordination',
+        'security',
+        'test',
+      ])
+      .optional(),
+    seatId: z.string().optional(),
+    level: z.enum(['debug', 'info', 'warn', 'error']).optional(),
+    type: z.string().optional(),
+    afterSequence: z.coerce.number().int().nonnegative().optional(),
+  })
+  .strict()
 
 function corsOrigins() {
   return new Set(
@@ -152,6 +193,11 @@ export function createApp(options: ControlApiOptions = {}) {
   const app = new Hono()
   const publicBaseUrl = options.publicBaseUrl ?? 'http://localhost:4100'
   const realtimeUrl = options.realtimeUrl ?? 'ws://localhost:4100/realtime'
+  const testRuns = new Map<
+    string,
+    { readonly ownerId: string; readonly run: TicTacToeTestRun }
+  >()
+  const testRunIdempotency = new Map<string, string>()
   const requirePlatform = () => {
     if (options.platform === undefined) {
       throw new ApiError(
@@ -207,6 +253,8 @@ export function createApp(options: ControlApiOptions = {}) {
               'seats:claim',
               'sessions:create',
               'replays:read',
+              'test-runs:create',
+              'diagnostics:read',
             ],
     }),
   )
@@ -318,6 +366,92 @@ export function createApp(options: ControlApiOptions = {}) {
     context.json(requirePlatform().getReplay(context.req.param('matchId'))),
   )
 
+  app.post('/v1/test-runs', async (context) => {
+    requirePlatform()
+    const ownerId = localActorId(context.req.header('Authorization'))
+    const idempotencyKey = context.req.header('Idempotency-Key')
+    if (idempotencyKey === undefined) {
+      throw new ApiError(
+        'IDEMPOTENCY_KEY_REQUIRED',
+        428,
+        false,
+        'Idempotency-Key is required for test-run creation.',
+      )
+    }
+    const existingId = testRunIdempotency.get(idempotencyKey)
+    if (existingId !== undefined) {
+      const existing = testRuns.get(existingId)
+      if (existing !== undefined)
+        return context.json(await existing.run.result())
+    }
+    const body = createTestRunBody.parse(await context.req.json())
+    const suffix = crypto.randomUUID().replaceAll('-', '')
+    const [firstPolicy, secondPolicy] = await Promise.all([
+      createPreferencePolicy({
+        id: `pol_${suffix}_1`,
+        name: 'test-player-one',
+        preferredCells: body.firstPreference,
+      }),
+      createPreferencePolicy({
+        id: `pol_${suffix}_2`,
+        name: 'test-player-two',
+        preferredCells: body.secondPreference,
+      }),
+    ])
+    const run = await TicTacToeTestRun.create({
+      seed: body.seed,
+      controllers: [
+        { seatId: `sea_${suffix}_1`, policy: firstPolicy },
+        { seatId: `sea_${suffix}_2`, policy: secondPolicy },
+      ],
+    })
+    testRuns.set(run.runId, { ownerId, run })
+    testRunIdempotency.set(idempotencyKey, run.runId)
+    if (body.execution === 'complete') await run.runToCompletion()
+    return context.json(await run.result(), 201)
+  })
+
+  const ownedTestRun = (runId: string, ownerId: string) => {
+    const record = testRuns.get(runId)
+    if (record === undefined)
+      throw new ApiError('NOT_FOUND', 404, false, `Unknown test run ${runId}`)
+    if (record.ownerId !== ownerId)
+      throw new ApiError(
+        'AUTHORIZATION_DENIED',
+        403,
+        false,
+        'Test-run diagnostics are visible only to the test owner.',
+      )
+    return record.run
+  }
+
+  app.get('/v1/test-runs/:runId', async (context) => {
+    const ownerId = localActorId(context.req.header('Authorization'))
+    return context.json(
+      await ownedTestRun(context.req.param('runId'), ownerId).result(),
+    )
+  })
+
+  app.post('/v1/test-runs/:runId/step', async (context) => {
+    const ownerId = localActorId(context.req.header('Authorization'))
+    const run = ownedTestRun(context.req.param('runId'), ownerId)
+    const step = await run.step()
+    return context.json({ step, run: await run.result() })
+  })
+
+  app.get('/v1/test-runs/:runId/diagnostics', (context) => {
+    const ownerId = localActorId(context.req.header('Authorization'))
+    const run = ownedTestRun(context.req.param('runId'), ownerId)
+    const query = diagnosticQuery.parse(context.req.query())
+    return context.json({
+      records: run.timeline.query({
+        ...query,
+        category: query.category as DiagnosticDomain | undefined,
+      }),
+      nextCursor: null,
+    })
+  })
+
   app.get('/openapi.json', (context) =>
     context.json(openApiDocument(publicBaseUrl)),
   )
@@ -367,6 +501,15 @@ function openApiDocument(serverUrl: string) {
       },
       '/v1/matches/{matchId}/replay': {
         get: { summary: 'Retrieve the authoritative replay' },
+      },
+      '/v1/test-runs': {
+        post: { summary: 'Run autonomous policies in a private Test Arena' },
+      },
+      '/v1/test-runs/{runId}': {
+        get: { summary: 'Inspect a Test Arena run and replay' },
+      },
+      '/v1/test-runs/{runId}/diagnostics': {
+        get: { summary: 'Query structured test diagnostics' },
       },
     },
   }
