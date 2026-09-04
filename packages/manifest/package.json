@@ -25,6 +25,9 @@
     "access": "public",
     "provenance": true
   },
+  "dependencies": {
+    "@common-arcade/protocol": "workspace:^"
+  },
   "devDependencies": {
     "tsup": "catalog:",
     "typescript": "catalog:",
