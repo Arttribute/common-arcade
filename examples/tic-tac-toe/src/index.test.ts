@@ -98,4 +98,26 @@ describe('authoritative tic-tac-toe match', () => {
       await runtime.submitAction(action(1, roster[0].seatId, 0), 1),
     ).toMatchObject({ disposition: 'rejected', code: 'CONTROL_REVOKED' })
   })
+
+  it('serializes concurrent submissions at the authority boundary', async () => {
+    const runtime = await match()
+    const first = action(1, roster[0].seatId, 0)
+    const competing = {
+      ...first,
+      actionId: 'act_competing1',
+      payload: { type: 'place', cell: 1 },
+    }
+
+    const results = await Promise.all([
+      runtime.submitAction(first, 1),
+      runtime.submitAction(competing, 1),
+    ])
+
+    expect(results.map((result) => result.disposition)).toEqual([
+      'accepted',
+      'rejected',
+    ])
+    expect(results[1]).toMatchObject({ code: 'STALE_OBSERVATION' })
+    expect(await runtime.snapshot()).toMatchObject({ stateSequence: 1 })
+  })
 })

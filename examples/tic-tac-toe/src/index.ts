@@ -11,7 +11,9 @@ import rulesDocument from '../arcade.rules.json' with { type: 'json' }
 export type TicTacToeState = GridPlacementState
 export type PlaceAction = GridPlacementAction
 
-const releaseDigest = `sha256:${'b'.repeat(64)}`
+const runtimeDigest = `sha256:${'b'.repeat(64)}`
+const releaseDigest =
+  'sha256:463e74645ac4e1d92bd7a7b9e5c6e8d5016e04bcecd0e476624d3e158c5914d9'
 
 export const ticTacToeRules = rulesDocument as GridPlacementRuleSet
 
@@ -62,7 +64,7 @@ const manifestDraft: GameManifest = {
     runtime: {
       type: 'declarative',
       module: 'grid-placement',
-      digest: releaseDigest,
+      digest: runtimeDigest,
     },
     presentation: { generic: true, bridge: 'semantic-v1' },
     policy: {

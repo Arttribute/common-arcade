@@ -1,7 +1,7 @@
 {
   "kind": "grid-placement",
   "releaseId": "rel_tictactoe1",
-  "releaseDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "releaseDigest": "sha256:463e74645ac4e1d92bd7a7b9e5c6e8d5016e04bcecd0e476624d3e158c5914d9",
   "marks": ["X", "O"],
   "cellCount": 9,
   "winningLines": [

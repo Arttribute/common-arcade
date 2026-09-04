@@ -47,12 +47,21 @@ importers:
 
   apps/control-api:
     dependencies:
+      '@common-arcade/match-worker-service':
+        specifier: workspace:^
+        version: link:../../services/match-worker
+      '@common-arcade/protocol':
+        specifier: workspace:^
+        version: link:../../packages/protocol
       '@hono/node-server':
         specifier: ^2.1.1
         version: 2.1.1(hono@4.13.5)
       hono:
         specifier: ^4.13.5
         version: 4.13.5
+      zod:
+        specifier: 'catalog:'
+        version: 4.5.4
     devDependencies:
       '@types/aws-lambda':
         specifier: ^8.10.163
@@ -590,6 +599,19 @@ importers:
         version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
 
   services/match-worker:
+    dependencies:
+      '@common-arcade/auth':
+        specifier: workspace:^
+        version: link:../../packages/auth
+      '@common-arcade/example-tic-tac-toe':
+        specifier: workspace:^
+        version: link:../../examples/tic-tac-toe
+      '@common-arcade/match-runtime':
+        specifier: workspace:^
+        version: link:../../packages/match-runtime
+      '@common-arcade/protocol':
+        specifier: workspace:^
+        version: link:../../packages/protocol
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

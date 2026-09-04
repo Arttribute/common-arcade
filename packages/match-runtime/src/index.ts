@@ -147,6 +147,7 @@ export class AuthoritativeMatch<State, Action> {
   private readonly checkpoints: ReplayCheckpoint[] = []
   private readonly commands: Replay['commands'][number][] = []
   private readonly actionResults = new Map<string, ActionResult>()
+  private operation = Promise.resolve()
 
   private constructor(options: AuthoritativeMatchOptions<State, Action>) {
     this.matchId = options.matchId
@@ -261,6 +262,20 @@ export class AuthoritativeMatch<State, Action> {
   }
 
   async submitAction(
+    submission: ActionSubmission,
+    ownerEpoch: number,
+  ): Promise<ActionResult> {
+    const result = this.operation.then(() =>
+      this.submitActionSerially(submission, ownerEpoch),
+    )
+    this.operation = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    return result
+  }
+
+  private async submitActionSerially(
     submission: ActionSubmission,
     ownerEpoch: number,
   ): Promise<ActionResult> {
