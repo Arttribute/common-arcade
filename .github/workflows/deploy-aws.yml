@@ -79,7 +79,7 @@ jobs:
 
       - name: Deploy reviewed infrastructure
         if: inputs.operation == 'deploy' && inputs.confirm == 'deploy'
-        run: pnpm --filter @common-arcade/aws-infra deploy --context stage="${{ inputs.stage }}"
+        run: pnpm --filter @common-arcade/aws-infra deploy --all --context stage="${{ inputs.stage }}"
         env:
           CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
           CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}

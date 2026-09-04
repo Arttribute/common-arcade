@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc --noEmit --pretty false",
     "clean": "rm -rf cdk.out dist",
-    "deploy": "cdk deploy --all --require-approval never",
+    "deploy": "cdk deploy --require-approval never",
     "diff": "cdk diff",
     "lint": "tsc --noEmit --pretty false",
     "synth": "cdk synth --quiet",
