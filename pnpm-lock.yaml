@@ -418,7 +418,23 @@ importers:
         version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
 
   packages/conformance:
+    dependencies:
+      '@common-arcade/manifest':
+        specifier: workspace:^
+        version: link:../manifest
+      '@common-arcade/match-runtime':
+        specifier: workspace:^
+        version: link:../match-runtime
+      '@common-arcade/protocol':
+        specifier: workspace:^
+        version: link:../protocol
     devDependencies:
+      '@common-arcade/example-tic-tac-toe':
+        specifier: workspace:^
+        version: link:../../examples/tic-tac-toe
+      '@common-arcade/test-arena':
+        specifier: workspace:^
+        version: link:../test-arena
       tsup:
         specifier: 'catalog:'
         version: 8.5.1(postcss@8.5.28)(tsx@4.23.13)(typescript@5.9.3)(yaml@2.9.0)

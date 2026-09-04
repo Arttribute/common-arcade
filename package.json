@@ -8,6 +8,8 @@
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
     "dev:control-api": "pnpm --filter @common-arcade/control-api dev",
+    "dev:stack": "pnpm --filter @common-arcade/realtime-gateway dev",
+    "dev:local": "pnpm --parallel --filter @common-arcade/realtime-gateway --filter @common-arcade/web dev",
     "dev:web": "pnpm --filter @common-arcade/web dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

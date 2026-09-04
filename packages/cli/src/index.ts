@@ -18,6 +18,8 @@ Commands:
   matches create --release <id>       Create a match
   matches inspect <match-id>          Inspect lifecycle and roster
   replay show <match-id>              Print an authoritative replay
+  test run [--seed value] [--step]    Run two policies in Test Arena
+  test logs <test-run-id>             Query structured agent diagnostics
   version                             Print protocol status
 
 Environment:
@@ -150,6 +152,24 @@ export async function runCli(options: RunCliOptions): Promise<number> {
       subject !== undefined
     ) {
       write(json(await client.getReplay(subject)))
+      return 0
+    }
+
+    if (command === 'test' && subcommand === 'run') {
+      const seed = option(options.args, '--seed')
+      write(
+        json(
+          await client.createTestRun({
+            ...(seed === undefined ? {} : { seed }),
+            execution: options.args.includes('--step') ? 'step' : 'complete',
+          }),
+        ),
+      )
+      return 0
+    }
+
+    if (command === 'test' && subcommand === 'logs' && subject !== undefined) {
+      write(json(await client.getTestDiagnostics(subject)))
       return 0
     }
 
