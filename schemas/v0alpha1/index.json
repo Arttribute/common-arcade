@@ -1,0 +1,46 @@
+{
+  "apiVersion": "io.agentcommons.arcade/v0alpha1",
+  "generatedBy": "@common-arcade/protocol",
+  "schemas": {
+    "action-result": {
+      "digest": "sha256:e291885be1febf6512b3f11a11af43426538fc26102c0df50375fd9efc3ae23f",
+      "file": "action-result.schema.json"
+    },
+    "action-submission": {
+      "digest": "sha256:6681b2c36d7303d0fd6375854b663c6868e9193fd5584b42d2ef346ebc90e514",
+      "file": "action-submission.schema.json"
+    },
+    "discovery": {
+      "digest": "sha256:f616c34a712c4a53b89d152e36ee258cd32f1e0a58d36c059b96929c85ff7878",
+      "file": "discovery.schema.json"
+    },
+    "event": {
+      "digest": "sha256:ad4166bdb275a217ce9096af13b57168a7e6c0c04c572f8e1fbc1d9a5e8696cb",
+      "file": "event.schema.json"
+    },
+    "game-manifest": {
+      "digest": "sha256:2c1599a491819cb334c20c4590feec6b8df7ded1c4b10dabdee3993466f01c25",
+      "file": "game-manifest.schema.json"
+    },
+    "match": {
+      "digest": "sha256:f0014c6f662675c9b9c0eafe0dc243f7e86bef1a0aa4a0b2728ab45e9669c665",
+      "file": "match.schema.json"
+    },
+    "observation": {
+      "digest": "sha256:a48def083171567347a097d60b446228d539abbcd3eaad3838bb5d6c4fb63b17",
+      "file": "observation.schema.json"
+    },
+    "problem": {
+      "digest": "sha256:0191ef1b2c36df74afb39e855559cf5b2cd4c8ef534c231d94361ad50a5cfcc9",
+      "file": "problem.schema.json"
+    },
+    "realtime-envelope": {
+      "digest": "sha256:ce4bac3a71b384d20d0a8a7c66b52cd0e43bc8892b0e1b1da3606a832bf99372",
+      "file": "realtime-envelope.schema.json"
+    },
+    "replay": {
+      "digest": "sha256:702617db2b3d3f23b059f406563f7976be89a5e85e657ae8c9bc22d94b539eac",
+      "file": "replay.schema.json"
+    }
+  }
+}

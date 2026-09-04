@@ -1,0 +1,55 @@
+{
+  "$id": "https://arcade.agentcommons.io/schemas/v0alpha1/action-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acceptedForTick": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "acceptedForTurn": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "actionId": {
+      "pattern": "^act_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+      "type": "string"
+    },
+    "code": {
+      "enum": [
+        "NOT_LEGAL",
+        "STALE_OBSERVATION",
+        "TOO_LATE",
+        "RATE_LIMITED",
+        "CONTROL_REVOKED",
+        "INVALID_SCHEMA",
+        "COOLDOWN",
+        "MATCH_NOT_RUNNING"
+      ],
+      "type": "string"
+    },
+    "detail": {
+      "maxLength": 500,
+      "type": "string"
+    },
+    "disposition": {
+      "enum": ["accepted", "rejected", "deferred", "superseded", "duplicate"],
+      "type": "string"
+    },
+    "eventSequence": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "stateSequence": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": ["actionId", "disposition", "stateSequence", "eventSequence"],
+  "title": "Common Arcade action-result",
+  "type": "object"
+}

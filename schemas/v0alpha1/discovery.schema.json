@@ -1,0 +1,96 @@
+{
+  "$id": "https://arcade.agentcommons.io/schemas/v0alpha1/discovery.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "a2a": {
+      "format": "uri",
+      "type": "string"
+    },
+    "asyncapi": {
+      "format": "uri",
+      "type": "string"
+    },
+    "auth": {
+      "items": {
+        "enum": ["oauth2", "ticket"],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "catalog": {
+      "format": "uri",
+      "type": "string"
+    },
+    "issuer": {
+      "format": "uri",
+      "type": "string"
+    },
+    "keys": {
+      "format": "uri",
+      "type": "string"
+    },
+    "mcp": {
+      "format": "uri",
+      "type": "string"
+    },
+    "openapi": {
+      "format": "uri",
+      "type": "string"
+    },
+    "profiles": {
+      "items": {
+        "enum": [
+          "base-v1",
+          "turn-based-v1",
+          "simultaneous-v1",
+          "realtime-authoritative-v1",
+          "hidden-information-v1",
+          "replay-v1",
+          "generic-controls-v1",
+          "policy-v1",
+          "adaptive-policy-v1",
+          "team-coordination-v1",
+          "diagnostics-v1",
+          "semantic-presentation-v1",
+          "competitive-v1",
+          "external-host-v1"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "protocol": {
+      "const": "io.agentcommons.arcade/v0alpha1",
+      "type": "string"
+    },
+    "regions": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "transports": {
+      "items": {
+        "enum": ["websocket", "webtransport"],
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "protocol",
+    "issuer",
+    "catalog",
+    "openapi",
+    "asyncapi",
+    "keys",
+    "profiles",
+    "transports",
+    "auth",
+    "regions"
+  ],
+  "title": "Common Arcade discovery",
+  "type": "object"
+}

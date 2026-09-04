@@ -1,0 +1,113 @@
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$id": "https://arcade.agentcommons.io/schemas/v0alpha1/observation.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "deadlineAt": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+      "type": "string"
+    },
+    "events": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "type": "array"
+    },
+    "eventSequence": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "feedback": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "legalActions": {
+      "items": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "type": "array"
+    },
+    "matchId": {
+      "pattern": "^mat_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "seatId": {
+      "pattern": "^sea_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+      "type": "string"
+    },
+    "stateHash": {
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "stateSequence": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "tick": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "turn": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "visibleState": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "matchId",
+    "seatId",
+    "stateSequence",
+    "eventSequence",
+    "schemaVersion",
+    "visibleState",
+    "legalActions",
+    "events",
+    "stateHash"
+  ],
+  "title": "Common Arcade observation",
+  "type": "object"
+}

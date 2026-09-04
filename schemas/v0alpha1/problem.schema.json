@@ -1,0 +1,81 @@
+{
+  "$id": "https://arcade.agentcommons.io/schemas/v0alpha1/problem.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "pattern": "^[A-Z][A-Z0-9_]+$",
+      "type": "string"
+    },
+    "detail": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "requestId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "resourceVersion": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "retryAfterSeconds": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "status": {
+      "maximum": 599,
+      "minimum": 400,
+      "type": "integer"
+    },
+    "title": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "traceId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "type": {
+      "format": "uri",
+      "type": "string"
+    },
+    "violations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "field": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "message": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["field", "code", "message"],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "type",
+    "title",
+    "status",
+    "detail",
+    "code",
+    "requestId",
+    "retryable"
+  ],
+  "title": "Common Arcade problem",
+  "type": "object"
+}

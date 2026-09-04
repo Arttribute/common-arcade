@@ -1,0 +1,319 @@
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$id": "https://arcade.agentcommons.io/schemas/v0alpha1/replay.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "checkpoints": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "eventSequence": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "stateHash": {
+            "pattern": "^sha256:[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "stateSequence": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": ["stateSequence", "eventSequence", "state", "stateHash"],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "commands": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "additionalProperties": false,
+            "properties": {
+              "actionId": {
+                "pattern": "^act_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+                "type": "string"
+              },
+              "basedOnStateSequence": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "clientSequence": {
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991,
+                "type": "integer"
+              },
+              "matchId": {
+                "pattern": "^mat_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+                "type": "string"
+              },
+              "payload": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "policyExecutionId": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "seatId": {
+                "pattern": "^sea_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+                "type": "string"
+              },
+              "targetTick": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "targetTurn": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "trace": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "actionId",
+              "matchId",
+              "seatId",
+              "clientSequence",
+              "basedOnStateSequence",
+              "payload"
+            ],
+            "type": "object"
+          },
+          "result": {
+            "additionalProperties": false,
+            "properties": {
+              "acceptedForTick": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "acceptedForTurn": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "actionId": {
+                "pattern": "^act_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+                "type": "string"
+              },
+              "code": {
+                "enum": [
+                  "NOT_LEGAL",
+                  "STALE_OBSERVATION",
+                  "TOO_LATE",
+                  "RATE_LIMITED",
+                  "CONTROL_REVOKED",
+                  "INVALID_SCHEMA",
+                  "COOLDOWN",
+                  "MATCH_NOT_RUNNING"
+                ],
+                "type": "string"
+              },
+              "detail": {
+                "maxLength": 500,
+                "type": "string"
+              },
+              "disposition": {
+                "enum": [
+                  "accepted",
+                  "rejected",
+                  "deferred",
+                  "superseded",
+                  "duplicate"
+                ],
+                "type": "string"
+              },
+              "eventSequence": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "stateSequence": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "actionId",
+              "disposition",
+              "stateSequence",
+              "eventSequence"
+            ],
+            "type": "object"
+          },
+          "sequence": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": ["sequence", "action", "result"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+      "type": "string"
+    },
+    "events": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+            "type": "string"
+          },
+          "audienceId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^evt_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+            "type": "string"
+          },
+          "matchId": {
+            "pattern": "^mat_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "sequence": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "tick": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "turn": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": {
+            "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$",
+            "type": "string"
+          },
+          "visibility": {
+            "enum": ["public", "team", "seat", "referee"],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "matchId",
+          "sequence",
+          "type",
+          "visibility",
+          "at",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "finalStateHash": {
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^rpl_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+      "type": "string"
+    },
+    "matchId": {
+      "pattern": "^mat_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+      "type": "string"
+    },
+    "profile": {
+      "const": "replay-v1",
+      "type": "string"
+    },
+    "releaseDigest": {
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "releaseId": {
+      "pattern": "^rel_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+      "type": "string"
+    },
+    "runtimeVersion": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "seed": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "matchId",
+    "releaseId",
+    "releaseDigest",
+    "runtimeVersion",
+    "seed",
+    "profile",
+    "commands",
+    "events",
+    "checkpoints",
+    "finalStateHash",
+    "createdAt"
+  ],
+  "title": "Common Arcade replay",
+  "type": "object"
+}

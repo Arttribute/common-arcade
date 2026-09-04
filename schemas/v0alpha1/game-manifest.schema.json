@@ -1,0 +1,486 @@
+{
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$id": "https://arcade.agentcommons.io/schemas/v0alpha1/game-manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "io.agentcommons.arcade/v0alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "Game",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^gam_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "namespace": {
+          "pattern": "^[a-z0-9]+(?:\\.[a-z0-9-]+)+$",
+          "type": "string"
+        },
+        "publisher": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "name": {
+              "maxLength": 120,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["id", "name"],
+          "type": "object"
+        },
+        "slug": {
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "tags": {
+          "default": [],
+          "items": {
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "namespace",
+        "slug",
+        "version",
+        "digest",
+        "title",
+        "summary",
+        "publisher",
+        "tags"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "clock": {
+          "additionalProperties": false,
+          "properties": {
+            "maxDurationSeconds": {
+              "exclusiveMinimum": 0,
+              "maximum": 86400,
+              "type": "integer"
+            },
+            "networkHz": {
+              "maximum": 120,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "simulationHz": {
+              "maximum": 240,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "turnTimeoutMs": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": ["maxDurationSeconds"],
+          "type": "object"
+        },
+        "extensions": {
+          "default": [],
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "id": {
+                "format": "uri",
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              }
+            },
+            "required": ["id", "required"],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "mode": {
+          "enum": ["turn-based", "simultaneous", "realtime", "hybrid"],
+          "type": "string"
+        },
+        "policy": {
+          "additionalProperties": false,
+          "properties": {
+            "maxDecisionsPerSecond": {
+              "exclusiveMinimum": 0,
+              "maximum": 120,
+              "type": "integer"
+            },
+            "memoryKiB": {
+              "maximum": 1048576,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "tiers": {
+              "items": {
+                "enum": ["declarative", "wasm"],
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": ["tiers", "maxDecisionsPerSecond", "memoryKiB"],
+          "type": "object"
+        },
+        "presentation": {
+          "additionalProperties": false,
+          "properties": {
+            "bridge": {
+              "const": "semantic-v1",
+              "type": "string"
+            },
+            "generic": {
+              "type": "boolean"
+            },
+            "webArtifact": {
+              "pattern": "^sha256:[a-f0-9]{64}$",
+              "type": "string"
+            }
+          },
+          "required": ["generic", "bridge"],
+          "type": "object"
+        },
+        "profiles": {
+          "items": {
+            "enum": [
+              "base-v1",
+              "turn-based-v1",
+              "simultaneous-v1",
+              "realtime-authoritative-v1",
+              "hidden-information-v1",
+              "replay-v1",
+              "generic-controls-v1",
+              "policy-v1",
+              "adaptive-policy-v1",
+              "team-coordination-v1",
+              "diagnostics-v1",
+              "semantic-presentation-v1",
+              "competitive-v1",
+              "external-host-v1"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "runtime": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "digest": {
+                  "pattern": "^sha256:[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "module": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": {
+                  "const": "declarative",
+                  "type": "string"
+                }
+              },
+              "required": ["type", "module", "digest"],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "artifact": {
+                  "pattern": "^sha256:[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "fuelPerTick": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "memoryMiB": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 1024,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "wasm-component",
+                  "type": "string"
+                }
+              },
+              "required": ["type", "artifact", "memoryMiB", "fuelPerTick"],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "digest": {
+                  "pattern": "^sha256:[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "image": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": {
+                  "const": "trusted-container",
+                  "type": "string"
+                }
+              },
+              "required": ["type", "image", "digest"],
+              "type": "object"
+            }
+          ]
+        },
+        "schemas": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "additionalProperties": false,
+              "properties": {
+                "digest": {
+                  "pattern": "^sha256:[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "uri": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": ["uri"],
+              "type": "object"
+            },
+            "config": {
+              "additionalProperties": false,
+              "properties": {
+                "digest": {
+                  "pattern": "^sha256:[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "uri": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": ["uri"],
+              "type": "object"
+            },
+            "event": {
+              "additionalProperties": false,
+              "properties": {
+                "digest": {
+                  "pattern": "^sha256:[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "uri": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": ["uri"],
+              "type": "object"
+            },
+            "observation": {
+              "additionalProperties": false,
+              "properties": {
+                "digest": {
+                  "pattern": "^sha256:[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "uri": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": ["uri"],
+              "type": "object"
+            },
+            "publicState": {
+              "additionalProperties": false,
+              "properties": {
+                "digest": {
+                  "pattern": "^sha256:[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "uri": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": ["uri"],
+              "type": "object"
+            },
+            "result": {
+              "additionalProperties": false,
+              "properties": {
+                "digest": {
+                  "pattern": "^sha256:[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "uri": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": ["uri"],
+              "type": "object"
+            }
+          },
+          "required": [
+            "config",
+            "publicState",
+            "observation",
+            "action",
+            "event",
+            "result"
+          ],
+          "type": "object"
+        },
+        "seats": {
+          "additionalProperties": false,
+          "properties": {
+            "lateJoin": {
+              "default": false,
+              "type": "boolean"
+            },
+            "max": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            "min": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            "roles": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "count": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  },
+                  "id": {
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                    "type": "string"
+                  },
+                  "team": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "title": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": ["id", "title", "count"],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "spectators": {
+              "default": true,
+              "type": "boolean"
+            }
+          },
+          "required": ["min", "max", "roles", "spectators", "lateJoin"],
+          "type": "object"
+        }
+      },
+      "required": [
+        "mode",
+        "profiles",
+        "extensions",
+        "seats",
+        "clock",
+        "schemas",
+        "runtime",
+        "presentation",
+        "policy"
+      ],
+      "type": "object"
+    }
+  },
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "title": "Common Arcade game-manifest",
+  "type": "object"
+}

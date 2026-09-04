@@ -1,13 +1,64 @@
-export const ARCADE_PROTOCOL = {
-  namespace: 'io.agentcommons.arcade/v0alpha1',
-  stability: 'non-normative',
-} as const
+export {
+  ARCADE_API_VERSION,
+  ARCADE_PROTOCOL,
+  ARCADE_WIRE_VERSION,
+  isArcadeProtocolNamespace,
+} from './constants.js'
+export type {
+  ArcadeProtocolNamespace,
+  ArcadeWireVersion,
+  ProtocolStability,
+} from './constants.js'
 
-export type ArcadeProtocolNamespace = typeof ARCADE_PROTOCOL.namespace
-export type ProtocolStability = typeof ARCADE_PROTOCOL.stability
-
-export function isArcadeProtocolNamespace(
-  value: string,
-): value is ArcadeProtocolNamespace {
-  return value === ARCADE_PROTOCOL.namespace
-}
+export {
+  actionDispositionSchema,
+  actionErrorCodeSchema,
+  actionIdSchema,
+  actionResultSchema,
+  actionSubmissionSchema,
+  compatibilityProfileSchema,
+  digestSchema,
+  discoveryDocumentSchema,
+  eventIdSchema,
+  gameIdSchema,
+  gameManifestSchema,
+  jsonValueSchema,
+  matchDescriptorSchema,
+  matchEventSchema,
+  matchIdSchema,
+  matchModeSchema,
+  matchStatusSchema,
+  observationSchema,
+  policyIdSchema,
+  problemDetailsSchema,
+  realtimeEnvelopeSchema,
+  realtimeMessageTypeSchema,
+  releaseIdSchema,
+  replayCheckpointSchema,
+  replayIdSchema,
+  replaySchema,
+  seatIdSchema,
+  semverSchema,
+  sessionIdSchema,
+  testRunIdSchema,
+} from './schemas.js'
+export type {
+  ActionDisposition,
+  ActionErrorCode,
+  ActionResult,
+  ActionSubmission,
+  DiscoveryDocument,
+  GameManifest,
+  JsonPrimitive,
+  JsonValue,
+  MatchDescriptor,
+  MatchEvent,
+  MatchMode,
+  MatchStatus,
+  Observation,
+  ProblemDetails,
+  RealtimeEnvelope,
+  RealtimeMessageType,
+  Replay,
+  ReplayCheckpoint,
+} from './schemas.js'
