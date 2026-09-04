@@ -3,8 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/app.d.ts",
+      "import": "./dist/app.js"
+    }
+  },
   "scripts": {
-    "build": "tsup src/server.ts src/lambda.ts --format esm --dts --clean",
+    "build": "tsup src/app.ts src/server.ts src/lambda.ts --format esm --dts --clean",
     "clean": "rm -rf dist coverage",
     "dev": "tsx watch src/server.ts",
     "lint": "tsc --noEmit --pretty false",

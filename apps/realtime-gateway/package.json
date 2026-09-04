@@ -7,12 +7,23 @@
     "build": "tsup src/index.ts --format esm --dts --clean",
     "clean": "rm -rf dist coverage",
     "lint": "tsc --noEmit --pretty false",
-    "test": "vitest run --passWithNoTests",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit --pretty false"
+  },
+  "dependencies": {
+    "@common-arcade/control-api": "workspace:^",
+    "@common-arcade/match-worker-service": "workspace:^",
+    "@common-arcade/protocol": "workspace:^",
+    "@hono/node-server": "^2.1.1",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/ws": "^8.18.1",
     "tsup": "catalog:",
+    "tsx": "^4.21.0",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

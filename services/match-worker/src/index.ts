@@ -47,6 +47,7 @@ interface SessionRecord {
   readonly controllerId?: string
   readonly controlLease?: string
   readonly ownershipEpoch: number
+  connected: boolean
 }
 
 export interface CreateMatchRequest {
@@ -332,6 +333,7 @@ export class LocalArcadePlatform {
         : { controllerId: claims.controllerId }),
       ...(controlLease === undefined ? {} : { controlLease }),
       ownershipEpoch: record.runtime.getOwnershipEpoch(),
+      connected: true,
     }
     this.sessions.set(session.sessionId, session)
     if (session.seatId !== undefined) {
@@ -360,9 +362,46 @@ export class LocalArcadePlatform {
     }
   }
 
-  getSession(sessionId: string): ConnectedSession {
+  suspendSession(sessionId: string): void {
     const session = this.sessions.get(sessionId)
-    if (session === undefined) {
+    if (session === undefined || !session.connected) return
+    session.connected = false
+    if (session.seatId !== undefined) {
+      const record = this.record(session.matchId)
+      const seat = record.seats.find(
+        (candidate) => candidate.id === session.seatId,
+      )
+      if (seat !== undefined) seat.status = 'disconnected'
+      record.updatedAt = this.now().toISOString()
+      void this.notify(session.matchId)
+    }
+  }
+
+  resumeSession(sessionId: string, expectedMatchId: string): ConnectedSession {
+    const session = this.sessionRecord(sessionId)
+    if (session.matchId !== expectedMatchId) {
+      throw new LocalPlatformError(
+        'CONTROL_REVOKED',
+        403,
+        'Resume session is bound to a different match',
+      )
+    }
+    session.connected = true
+    if (session.seatId !== undefined) {
+      const record = this.record(session.matchId)
+      const seat = record.seats.find(
+        (candidate) => candidate.id === session.seatId,
+      )
+      if (seat !== undefined) seat.status = 'connected'
+      record.updatedAt = this.now().toISOString()
+      void this.notify(session.matchId)
+    }
+    return session
+  }
+
+  getSession(sessionId: string): ConnectedSession {
+    const session = this.sessionRecord(sessionId)
+    if (!session.connected) {
       throw new LocalPlatformError('NOT_FOUND', 404, 'Session is not connected')
     }
     return session
@@ -449,6 +488,14 @@ export class LocalArcadePlatform {
       throw new LocalPlatformError('NOT_FOUND', 404, `Unknown match ${matchId}`)
     }
     return record
+  }
+
+  private sessionRecord(sessionId: string): SessionRecord {
+    const session = this.sessions.get(sessionId)
+    if (session === undefined) {
+      throw new LocalPlatformError('NOT_FOUND', 404, 'Session does not exist')
+    }
+    return session
   }
 
   private async describe(record: MatchRecord): Promise<MatchDescriptor> {
