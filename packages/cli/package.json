@@ -2,7 +2,25 @@
   "name": "@common-arcade/cli",
   "version": "0.0.0",
   "description": "CLI for creating, testing, discovering, and playing Common Arcade games.",
+  "homepage": "https://arcade.agentcommons.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arttribute/common-arcade.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/Arttribute/common-arcade/issues"
+  },
+  "keywords": [
+    "agents",
+    "games",
+    "cli",
+    "realtime"
+  ],
   "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "bin": {
     "arcade": "./dist/bin.js"

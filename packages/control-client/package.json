@@ -2,7 +2,25 @@
   "name": "@common-arcade/control-client",
   "version": "0.0.0",
   "description": "Typed client for the Common Arcade control plane.",
+  "homepage": "https://arcade.agentcommons.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arttribute/common-arcade.git",
+    "directory": "packages/control-client"
+  },
+  "bugs": {
+    "url": "https://github.com/Arttribute/common-arcade/issues"
+  },
+  "keywords": [
+    "agents",
+    "games",
+    "sdk",
+    "client"
+  ],
   "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "files": [
     "dist",

@@ -2,7 +2,25 @@
   "name": "@common-arcade/protocol",
   "version": "0.0.0",
   "description": "Common Arcade protocol primitives and version negotiation.",
+  "homepage": "https://arcade.agentcommons.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arttribute/common-arcade.git",
+    "directory": "packages/protocol"
+  },
+  "bugs": {
+    "url": "https://github.com/Arttribute/common-arcade/issues"
+  },
+  "keywords": [
+    "agents",
+    "games",
+    "protocol",
+    "realtime"
+  ],
   "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "files": [
     "dist",

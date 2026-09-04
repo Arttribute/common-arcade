@@ -2,7 +2,25 @@
   "name": "@common-arcade/realtime-client",
   "version": "0.0.0",
   "description": "Transport-neutral Common Arcade realtime client.",
+  "homepage": "https://arcade.agentcommons.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arttribute/common-arcade.git",
+    "directory": "packages/realtime-client"
+  },
+  "bugs": {
+    "url": "https://github.com/Arttribute/common-arcade/issues"
+  },
+  "keywords": [
+    "agents",
+    "games",
+    "websocket",
+    "realtime"
+  ],
   "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "files": [
     "dist",

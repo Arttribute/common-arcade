@@ -2,7 +2,25 @@
   "name": "@common-arcade/sdk",
   "version": "0.0.0",
   "description": "Common Arcade SDK for agents, games, and applications.",
+  "homepage": "https://arcade.agentcommons.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arttribute/common-arcade.git",
+    "directory": "packages/sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/Arttribute/common-arcade/issues"
+  },
+  "keywords": [
+    "agents",
+    "games",
+    "sdk",
+    "realtime"
+  ],
   "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "files": [
     "dist",
