@@ -11,7 +11,7 @@ import * as patterns from 'aws-cdk-lib/aws-ecs-patterns'
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins'
 import * as logs from 'aws-cdk-lib/aws-logs'
-import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets'
+import { DockerImageAsset, Platform } from 'aws-cdk-lib/aws-ecr-assets'
 import type { Construct } from 'constructs'
 import { resolve } from 'node:path'
 import type { DeploymentStage } from '../config.js'
@@ -60,6 +60,7 @@ export class RealtimePilotStack extends Stack {
       ],
       file: 'apps/realtime-gateway/Dockerfile',
       ignoreMode: IgnoreMode.GLOB,
+      platform: Platform.LINUX_AMD64,
     })
     const service = new patterns.ApplicationLoadBalancedFargateService(
       this,
