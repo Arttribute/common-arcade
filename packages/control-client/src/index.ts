@@ -64,6 +64,29 @@ export interface SessionTicket {
   readonly realtimeUrl: string
 }
 
+export interface CreateTestRunInput {
+  readonly seed?: string
+  readonly firstPreference?: readonly number[]
+  readonly secondPreference?: readonly number[]
+  readonly execution?: 'step' | 'complete'
+  readonly idempotencyKey?: string
+}
+
+export interface TestRun {
+  readonly runId: string
+  readonly matchId: string
+  readonly status: string
+  readonly result?: JsonValue
+  readonly steps: number
+  readonly replay: Replay
+  readonly diagnostics: readonly JsonValue[]
+}
+
+export interface DiagnosticList {
+  readonly records: readonly JsonValue[]
+  readonly nextCursor: string | null
+}
+
 export class ArcadeApiError extends Error {
   constructor(readonly problem: ProblemDetails) {
     super(problem.detail)
@@ -178,6 +201,55 @@ export class ControlClient {
         signal,
       }),
     )
+  }
+
+  async createTestRun(
+    input: CreateTestRunInput = {},
+    signal?: AbortSignal,
+  ): Promise<TestRun> {
+    const { idempotencyKey = randomIdempotencyKey(), ...body } = input
+    return (await this.request('/v1/test-runs', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body,
+      signal,
+    })) as TestRun
+  }
+
+  async getTestRun(runId: string, signal?: AbortSignal): Promise<TestRun> {
+    return (await this.request(`/v1/test-runs/${encodeURIComponent(runId)}`, {
+      signal,
+    })) as TestRun
+  }
+
+  async stepTestRun(runId: string, signal?: AbortSignal): Promise<unknown> {
+    return this.request(`/v1/test-runs/${encodeURIComponent(runId)}/step`, {
+      method: 'POST',
+      body: {},
+      signal,
+    })
+  }
+
+  async getTestDiagnostics(
+    runId: string,
+    query: {
+      readonly category?: string
+      readonly seatId?: string
+      readonly level?: string
+      readonly type?: string
+      readonly afterSequence?: number
+    } = {},
+    signal?: AbortSignal,
+  ): Promise<DiagnosticList> {
+    const parameters = new URLSearchParams()
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) parameters.set(key, String(value))
+    }
+    const suffix = parameters.size === 0 ? '' : `?${parameters.toString()}`
+    return (await this.request(
+      `/v1/test-runs/${encodeURIComponent(runId)}/diagnostics${suffix}`,
+      { signal },
+    )) as DiagnosticList
   }
 
   private async request(
