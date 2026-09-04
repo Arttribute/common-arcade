@@ -21,7 +21,7 @@
     "build": "tsup src/index.ts src/bin.ts --format esm --dts --clean --external @common-arcade/control-client --external @common-arcade/protocol",
     "clean": "rm -rf dist coverage",
     "lint": "tsc --noEmit --pretty false",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {
