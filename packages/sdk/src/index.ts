@@ -10,6 +10,7 @@ export type {
   DiagnosticList,
   GameList,
   MatchView,
+  ReleaseList,
   SessionTicket,
   TestRun,
 } from '@common-arcade/control-client'

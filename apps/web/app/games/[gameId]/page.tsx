@@ -18,7 +18,16 @@ export default async function GamePage({
   ).catch(() => undefined)
   if (response === undefined || !response.ok) notFound()
   const game = (await response.json()) as GameManifest
-  const releaseId = game.metadata.slug === 'tic-tac-toe' ? 'rel_tictactoe1' : ''
+  const releaseResponse = await fetch(
+    `${api}/v1/games/${encodeURIComponent(gameId)}/releases`,
+    { cache: 'no-store' },
+  )
+  if (!releaseResponse.ok) notFound()
+  const releaseList = (await releaseResponse.json()) as {
+    releases: Array<{ id: string }>
+  }
+  const releaseId = releaseList.releases[0]?.id
+  if (releaseId === undefined) notFound()
   return (
     <main>
       <Header />

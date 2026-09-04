@@ -1,9 +1,11 @@
 import {
   gameManifestSchema,
+  gameReleaseDescriptorSchema,
   matchDescriptorSchema,
   problemDetailsSchema,
   replaySchema,
   type GameManifest,
+  type GameReleaseDescriptor,
   type JsonValue,
   type MatchDescriptor,
   type MatchEvent,
@@ -28,6 +30,11 @@ export interface ArcadeStatus {
 
 export interface GameList {
   readonly games: readonly GameManifest[]
+  readonly nextCursor: string | null
+}
+
+export interface ReleaseList {
+  readonly releases: readonly GameReleaseDescriptor[]
   readonly nextCursor: string | null
 }
 
@@ -132,6 +139,33 @@ export class ControlClient {
   async getGame(gameId: string, signal?: AbortSignal): Promise<GameManifest> {
     return gameManifestSchema.parse(
       await this.request(`/v1/games/${encodeURIComponent(gameId)}`, { signal }),
+    )
+  }
+
+  async listGameReleases(
+    gameId: string,
+    signal?: AbortSignal,
+  ): Promise<ReleaseList> {
+    const body = (await this.request(
+      `/v1/games/${encodeURIComponent(gameId)}/releases`,
+      { signal },
+    )) as { releases: unknown[]; nextCursor: string | null }
+    return {
+      releases: body.releases.map((release) =>
+        gameReleaseDescriptorSchema.parse(release),
+      ),
+      nextCursor: body.nextCursor,
+    }
+  }
+
+  async getRelease(
+    releaseId: string,
+    signal?: AbortSignal,
+  ): Promise<GameReleaseDescriptor> {
+    return gameReleaseDescriptorSchema.parse(
+      await this.request(`/v1/releases/${encodeURIComponent(releaseId)}`, {
+        signal,
+      }),
     )
   }
 

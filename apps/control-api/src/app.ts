@@ -299,6 +299,21 @@ export function createApp(options: ControlApiOptions = {}) {
     context.json(await requirePlatform().getGame(context.req.param('gameId'))),
   )
 
+  app.get('/v1/games/:gameId/releases', async (context) =>
+    context.json({
+      releases: await requirePlatform().listGameReleases(
+        context.req.param('gameId'),
+      ),
+      nextCursor: null,
+    }),
+  )
+
+  app.get('/v1/releases/:releaseId', async (context) =>
+    context.json(
+      await requirePlatform().getRelease(context.req.param('releaseId')),
+    ),
+  )
+
   app.post('/v1/matches', async (context) => {
     localActorId(context.req.header('Authorization'))
     const idempotencyKey = context.req.header('Idempotency-Key')
@@ -491,6 +506,12 @@ function openApiDocument(serverUrl: string) {
     paths: {
       '/v1/games': { get: { summary: 'Discover games' } },
       '/v1/games/{gameId}': { get: { summary: 'Inspect a game manifest' } },
+      '/v1/games/{gameId}/releases': {
+        get: { summary: 'List immutable releases for a game' },
+      },
+      '/v1/releases/{releaseId}': {
+        get: { summary: 'Inspect an immutable game release' },
+      },
       '/v1/matches': { post: { summary: 'Create an idempotent match' } },
       '/v1/matches/{matchId}': { get: { summary: 'Inspect a match' } },
       '/v1/matches/{matchId}/seats/{seatId}/claim': {

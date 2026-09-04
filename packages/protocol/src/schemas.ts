@@ -206,6 +206,17 @@ export const gameManifestSchema = z
   })
   .strict()
 
+export const gameReleaseDescriptorSchema = z
+  .object({
+    id: releaseIdSchema,
+    gameId: gameIdSchema,
+    version: semverSchema,
+    digest: digestSchema,
+    status: z.enum(['draft', 'published', 'quarantined', 'revoked']),
+    profiles: z.array(compatibilityProfileSchema).min(1),
+  })
+  .strict()
+
 export const discoveryDocumentSchema = z
   .object({
     protocol: z.literal(ARCADE_API_VERSION),
@@ -433,6 +444,7 @@ export const realtimeEnvelopeSchema = z
   .strict()
 
 export type GameManifest = z.infer<typeof gameManifestSchema>
+export type GameReleaseDescriptor = z.infer<typeof gameReleaseDescriptorSchema>
 export type DiscoveryDocument = z.infer<typeof discoveryDocumentSchema>
 export type MatchDescriptor = z.infer<typeof matchDescriptorSchema>
 export type MatchMode = z.infer<typeof matchModeSchema>

@@ -93,7 +93,13 @@ export function createArcadeMcpServer(
         'Return the canonical manifest, profiles, rules references, and action/observation schemas for one game.',
       inputSchema: z.object({ gameId: z.string().min(1) }),
     },
-    async ({ gameId }) => response('game', await client.getGame(gameId)),
+    async ({ gameId }) => {
+      const [game, releases] = await Promise.all([
+        client.getGame(gameId),
+        client.listGameReleases(gameId),
+      ])
+      return response('game', { manifest: game, releases: releases.releases })
+    },
   )
 
   server.registerTool(

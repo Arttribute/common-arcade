@@ -45,6 +45,17 @@ describe('control API foundation', () => {
       games: { metadata: { id: string }; spec: unknown }[]
     }
     expect(games.games[0]?.metadata.id).toBe('gam_tictactoe1')
+    expect(
+      await (await app.request('/v1/games/gam_tictactoe1/releases')).json(),
+    ).toMatchObject({
+      releases: [
+        {
+          id: 'rel_tictactoe1',
+          gameId: 'gam_tictactoe1',
+          status: 'published',
+        },
+      ],
+    })
 
     const unauthenticated = await app.request('/v1/matches', {
       method: 'POST',

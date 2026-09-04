@@ -4,6 +4,7 @@ import {
   ARCADE_PROTOCOL,
   actionSubmissionSchema,
   gameManifestSchema,
+  gameReleaseDescriptorSchema,
   isArcadeProtocolNamespace,
   realtimeEnvelopeSchema,
 } from './index.js'
@@ -83,6 +84,21 @@ describe('game manifest', () => {
     expect(
       gameManifestSchema.safeParse({ ...manifest(), admin: true }).success,
     ).toBe(false)
+  })
+})
+
+describe('game release', () => {
+  it('identifies the immutable release separately from its game', () => {
+    expect(
+      gameReleaseDescriptorSchema.parse({
+        id: 'rel_tictactoe1',
+        gameId: 'gam_tictactoe1',
+        version: '0.1.0',
+        digest,
+        status: 'published',
+        profiles: ['base-v1', 'turn-based-v1'],
+      }),
+    ).toMatchObject({ gameId: 'gam_tictactoe1', status: 'published' })
   })
 })
 

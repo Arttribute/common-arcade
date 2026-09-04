@@ -22,6 +22,10 @@
       "digest": "sha256:2c1599a491819cb334c20c4590feec6b8df7ded1c4b10dabdee3993466f01c25",
       "file": "game-manifest.schema.json"
     },
+    "game-release": {
+      "digest": "sha256:a9331fa06420605a0fba98df8d2373ea0af722baccb231fdeaa4fc470b6f6afb",
+      "file": "game-release.schema.json"
+    },
     "match": {
       "digest": "sha256:f0014c6f662675c9b9c0eafe0dc243f7e86bef1a0aa4a0b2728ab45e9669c665",
       "file": "match.schema.json"

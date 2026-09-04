@@ -13,6 +13,7 @@ import type {
   ActionResult,
   ActionSubmission,
   GameManifest,
+  GameReleaseDescriptor,
   JsonValue,
   MatchDescriptor,
   MatchEvent,
@@ -158,6 +159,37 @@ export class LocalArcadePlatform {
       throw new LocalPlatformError('NOT_FOUND', 404, `Unknown game ${gameId}`)
     }
     return manifest
+  }
+
+  async listGameReleases(
+    gameId: string,
+  ): Promise<readonly GameReleaseDescriptor[]> {
+    return [await this.getRelease(ticTacToeGame.releaseId, gameId)]
+  }
+
+  async getRelease(
+    releaseId: string,
+    expectedGameId?: string,
+  ): Promise<GameReleaseDescriptor> {
+    const manifest = await getTicTacToeManifest()
+    if (
+      releaseId !== ticTacToeGame.releaseId ||
+      (expectedGameId !== undefined && expectedGameId !== manifest.metadata.id)
+    ) {
+      throw new LocalPlatformError(
+        'NOT_FOUND',
+        404,
+        `Unknown release ${releaseId}`,
+      )
+    }
+    return {
+      id: ticTacToeGame.releaseId,
+      gameId: manifest.metadata.id,
+      version: manifest.metadata.version,
+      digest: manifest.metadata.digest,
+      status: 'published',
+      profiles: manifest.spec.profiles,
+    }
   }
 
   async createMatch(request: CreateMatchRequest): Promise<MatchDescriptor> {

@@ -1,0 +1,53 @@
+{
+  "$id": "https://arcade.agentcommons.io/schemas/v0alpha1/game-release.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "digest": {
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "gameId": {
+      "pattern": "^gam_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^rel_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+      "type": "string"
+    },
+    "profiles": {
+      "items": {
+        "enum": [
+          "base-v1",
+          "turn-based-v1",
+          "simultaneous-v1",
+          "realtime-authoritative-v1",
+          "hidden-information-v1",
+          "replay-v1",
+          "generic-controls-v1",
+          "policy-v1",
+          "adaptive-policy-v1",
+          "team-coordination-v1",
+          "diagnostics-v1",
+          "semantic-presentation-v1",
+          "competitive-v1",
+          "external-host-v1"
+        ],
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "status": {
+      "enum": ["draft", "published", "quarantined", "revoked"],
+      "type": "string"
+    },
+    "version": {
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+      "type": "string"
+    }
+  },
+  "required": ["id", "gameId", "version", "digest", "status", "profiles"],
+  "title": "Common Arcade game-release",
+  "type": "object"
+}
