@@ -25,7 +25,7 @@
     "release:check": "./scripts/release-check.sh",
     "infra:synth": "pnpm --filter @common-arcade/aws-infra synth",
     "infra:diff": "pnpm --filter @common-arcade/aws-infra diff",
-    "infra:deploy": "pnpm --filter @common-arcade/aws-infra deploy",
+    "infra:deploy": "pnpm --filter @common-arcade/aws-infra run deploy",
     "prepare": "husky"
   },
   "devDependencies": {
