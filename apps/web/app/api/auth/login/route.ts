@@ -14,6 +14,11 @@ export async function GET(request: NextRequest) {
     await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)),
   ).toString('base64url')
   const origin = new URL(process.env.ARCADE_WEB_URL ?? request.url).origin
+  // Begin the flow on its callback hostname so the PKCE cookie survives aliases.
+  if (request.nextUrl.origin !== origin)
+    return NextResponse.redirect(
+      new URL(request.nextUrl.pathname + request.nextUrl.search, origin),
+    )
   const requested = request.nextUrl.searchParams.get('next') ?? '/studio'
   const next =
     requested.startsWith('/') &&
