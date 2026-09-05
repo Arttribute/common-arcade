@@ -106,7 +106,8 @@ export function GameStudio() {
   ])
   const file = useRef<HTMLInputElement>(null)
   const dirty = project
-    ? JSON.stringify(project.document) !== JSON.stringify(document)
+    ? JSON.stringify(project.document) !== JSON.stringify(document) ||
+      (view === 'code' && source !== JSON.stringify(document, null, 2))
     : false
   const load = useCallback((p: StudioProject) => {
     setProject(p)
@@ -254,7 +255,11 @@ export function GameStudio() {
   }, [previewDocument, view, board])
   const logs = (run?.diagnostics ?? []) as unknown as Log[]
   const visibleNotes =
-    project?.annotations.filter((a) => a.revision === project.revision) ?? []
+    project?.annotations.filter(
+      (a) =>
+        a.revision ===
+        (view === 'test' && run ? run.revision : project.revision),
+    ) ?? []
   const title = project?.document.title ?? 'New game'
   const icon = (
     node: React.ReactNode,
@@ -974,6 +979,15 @@ export function GameStudio() {
           className={`studio-banner ${error ? 'error' : ''}`}
         >
           <span>{error || notice}</span>
+          {error.includes('credits') && (
+            <a
+              href="https://app.agentcommons.io/settings/billing"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Manage Commons credits ↗
+            </a>
+          )}
           {notice.startsWith('Published.') && project?.releaseId && (
             <Link href={`/games/${project.id.replace('prj_', 'gam_')}`}>
               Open game ↗
