@@ -163,10 +163,10 @@ export function createStudioApi(
       record = await owned(p.id, c.req.param('id')),
       body = annotationBody.parse(await c.req.json())
     if (body.revision !== record.project.revision) throw new StoreConflict()
-    if (record.project.annotations.length >= 200)
+    if (record.project.annotations.length >= 50)
       throw new IdentityError(
         403,
-        'This project has reached its 200-note limit.',
+        'This project has reached its 50-note limit.',
       )
     return c.json(
       await save(record, {
@@ -343,7 +343,7 @@ export function createStudioApi(
     const r: RunRecord = {
       version: 1,
       id: id('tst'),
-      project,
+      project: { ...project, annotations: [] },
       seed: body.seed,
       steps: 0,
       agents: body.agents ?? [

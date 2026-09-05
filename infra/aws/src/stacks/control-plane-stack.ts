@@ -1,6 +1,7 @@
 import { CfnOutput, Duration, Stack, type StackProps } from 'aws-cdk-lib'
 import * as apigateway from 'aws-cdk-lib/aws-apigatewayv2'
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations'
+import type { ITable } from 'aws-cdk-lib/aws-dynamodb'
 import * as lambda from 'aws-cdk-lib/aws-lambda'
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs'
 import type { Construct } from 'constructs'
@@ -8,6 +9,8 @@ import { resolve } from 'node:path'
 import type { DeploymentStage } from '../config.js'
 
 export interface ControlPlaneStackProps extends StackProps {
+  table: ITable
+  realtimeControlUrl: string
   stage: DeploymentStage
 }
 
@@ -22,12 +25,17 @@ export class ControlPlaneStack extends Stack {
       ),
       environment: {
         ARCADE_ENV: props.stage,
-        ARCADE_CORS_ORIGINS: 'https://arcade.agentcommons.io',
+        ARCADE_CORS_ORIGINS:
+          'https://arcade.agentcommons.io,https://common-arcade.vercel.app',
+        ARCADE_STUDIO_TABLE: props.table.tableName,
+        COMMONS_IDENTITY_ISSUER: 'https://auth.agentcommons.io/api/auth',
+        ARCADE_REALTIME_CONTROL_URL: props.realtimeControlUrl,
+        ARCADE_PUBLIC_BASE_URL: 'https://arcade.agentcommons.io/api/arcade',
       },
       handler: 'handler',
       memorySize: 512,
       runtime: lambda.Runtime.NODEJS_22_X,
-      timeout: Duration.seconds(15),
+      timeout: Duration.seconds(120),
       tracing: lambda.Tracing.ACTIVE,
       bundling: {
         minify: true,
@@ -35,6 +43,12 @@ export class ControlPlaneStack extends Stack {
       },
     })
 
+    props.table.grantReadWriteData(handler)
+    const functionUrl = handler.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.NONE,
+      invokeMode: lambda.InvokeMode.BUFFERED,
+    })
+    new CfnOutput(this, 'StudioApiUrl', { value: functionUrl.url })
     const api = new apigateway.HttpApi(this, 'ControlHttpApi', {
       apiName: `common-arcade-control-${props.stage}`,
       createDefaultStage: true,

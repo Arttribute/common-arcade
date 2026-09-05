@@ -10,6 +10,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs'
 import * as patterns from 'aws-cdk-lib/aws-ecs-patterns'
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront'
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins'
+import type { ITable } from 'aws-cdk-lib/aws-dynamodb'
 import * as logs from 'aws-cdk-lib/aws-logs'
 import { DockerImageAsset, Platform } from 'aws-cdk-lib/aws-ecr-assets'
 import type { Construct } from 'constructs'
@@ -17,6 +18,7 @@ import { resolve } from 'node:path'
 import type { DeploymentStage } from '../config.js'
 
 export interface RealtimePilotStackProps extends StackProps {
+  readonly table: ITable
   readonly stage: DeploymentStage
   readonly corsOrigins: string
 }
@@ -29,6 +31,7 @@ export interface RealtimePilotStackProps extends StackProps {
  * regional routing are production gates rather than hidden assumptions here.
  */
 export class RealtimePilotStack extends Stack {
+  readonly publicBaseUrl: string
   constructor(scope: Construct, id: string, props: RealtimePilotStackProps) {
     super(scope, id, props)
 
@@ -73,8 +76,8 @@ export class RealtimePilotStack extends Stack {
         desiredCount: 1,
         healthCheckGracePeriod: Duration.seconds(30),
         memoryLimitMiB: 1024,
-        minHealthyPercent: 100,
-        maxHealthyPercent: 200,
+        minHealthyPercent: 0,
+        maxHealthyPercent: 100,
         publicLoadBalancer: true,
         taskImageOptions: {
           image: ecs.ContainerImage.fromDockerImageAsset(image),
@@ -82,6 +85,8 @@ export class RealtimePilotStack extends Stack {
           containerPort: 4100,
           environment: {
             ARCADE_ENV: props.stage,
+            ARCADE_STUDIO_TABLE: props.table.tableName,
+            COMMONS_IDENTITY_ISSUER: 'https://auth.agentcommons.io/api/auth',
             HOST: '0.0.0.0',
             PORT: '4100',
             ARCADE_CORS_ORIGINS: props.corsOrigins,
@@ -93,6 +98,7 @@ export class RealtimePilotStack extends Stack {
         },
       },
     )
+    props.table.grantReadWriteData(service.taskDefinition.taskRole)
     service.targetGroup.configureHealthCheck({
       healthyHttpCodes: '200',
       interval: Duration.seconds(30),
@@ -124,6 +130,7 @@ export class RealtimePilotStack extends Stack {
     )
 
     const publicBaseUrl = `https://${distribution.distributionDomainName}`
+    this.publicBaseUrl = publicBaseUrl
     const realtimeUrl = `wss://${distribution.distributionDomainName}/realtime`
     service.taskDefinition.defaultContainer?.addEnvironment(
       'ARCADE_PUBLIC_BASE_URL',

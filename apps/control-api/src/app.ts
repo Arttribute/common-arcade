@@ -1,3 +1,4 @@
+import { bodyLimit } from 'hono/body-limit'
 import { createStudioApi } from './studio.js'
 import { createAuthenticator, IdentityError } from './identity.js'
 import {
@@ -238,6 +239,7 @@ export function createApp(options: ControlApiOptions = {}) {
   }
 
   app.use('*', requestId())
+  app.use('*', bodyLimit({ maxSize: 96 * 1024 }))
   if (options.logRequests !== false) app.use('*', logger())
   app.use(
     '/v1/*',
