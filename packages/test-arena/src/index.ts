@@ -10,6 +10,7 @@ import {
 import {
   AuthoritativeMatch,
   type RuntimeSnapshot,
+  type GameDefinition,
 } from '@common-arcade/match-runtime'
 import {
   ARCADE_API_VERSION,
@@ -36,6 +37,7 @@ export interface CreateTestRunInput {
   readonly runId?: string
   readonly matchId?: string
   readonly seed: string
+  readonly game?: GameDefinition<TicTacToeState, PlaceAction>
   readonly controllers: readonly TestSeatController[]
   readonly now?: () => Date
 }
@@ -92,7 +94,7 @@ export class TicTacToeTestRun {
     const matchId = input.matchId ?? opaque('mat')
     const runtime = await AuthoritativeMatch.create({
       matchId,
-      game: ticTacToeGame,
+      game: input.game ?? ticTacToeGame,
       seed: input.seed,
       configuration: {},
       roster: input.controllers.map((controller) => ({
@@ -197,7 +199,7 @@ export class TicTacToeTestRun {
     return { seatId: observation.seatId, decision, result }
   }
 
-  async runToCompletion(maxSteps = 9): Promise<TestRunResult> {
+  async runToCompletion(maxSteps = 64): Promise<TestRunResult> {
     while ((await this.runtime.snapshot()).status === 'running') {
       if (this.steps >= maxSteps)
         throw new Error('Test run step limit exceeded')
@@ -224,6 +226,7 @@ export async function createPreferencePolicy(input: {
   readonly id: string
   readonly name: string
   readonly preferredCells: readonly number[]
+  readonly releaseId?: string
 }): Promise<CompiledPolicy> {
   const source: PolicyIr = {
     apiVersion: ARCADE_API_VERSION,
@@ -231,7 +234,7 @@ export async function createPreferencePolicy(input: {
     metadata: { id: input.id, name: input.name, version: '0.1.0' },
     spec: {
       compatible: {
-        releaseIds: ['rel_tictactoe1'],
+        releaseIds: [input.releaseId ?? 'rel_tictactoe1'],
         profiles: ['policy-v1'],
       },
       initialState: 'playing',
