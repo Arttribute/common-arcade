@@ -8,7 +8,7 @@ import {
   type DocumentStore,
 } from './store.js'
 import { getTicTacToeManifest } from '@common-arcade/example-tic-tac-toe'
-import type { StudioRelease } from '@common-arcade/studio'
+import { gameDocumentSchema, type StudioRelease } from '@common-arcade/studio'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
@@ -21,6 +21,7 @@ import {
 } from '@common-arcade/match-worker-service'
 import {
   ARCADE_API_VERSION,
+  realtimeEnvelopeSchema,
   type ProblemDetails,
 } from '@common-arcade/protocol'
 import {
@@ -344,7 +345,14 @@ export function createApp(options: ControlApiOptions = {}) {
       catalog: `${publicBaseUrl}/v1/games`,
       openapi: `${publicBaseUrl}/openapi.json`,
       asyncapi: `${publicBaseUrl}/asyncapi.json`,
-      keys: `${publicBaseUrl}/.well-known/jwks.json`,
+      ...(process.env.COMMONS_IDENTITY_ISSUER
+        ? {
+            identity: {
+              issuer: process.env.COMMONS_IDENTITY_ISSUER,
+              jwks: `${process.env.COMMONS_IDENTITY_ISSUER}/.well-known/jwks.json`,
+            },
+          }
+        : {}),
       profiles: [
         'base-v1',
         'turn-based-v1',
@@ -352,9 +360,13 @@ export function createApp(options: ControlApiOptions = {}) {
         'generic-controls-v1',
       ],
       transports: ['websocket'],
-      auth: ['ticket'],
-      regions: ['local'],
-      mcp: `${publicBaseUrl}/mcp`,
+      auth: process.env.COMMONS_IDENTITY_ISSUER
+        ? ['oauth2', 'bearer', 'ticket']
+        : ['local-bearer', 'ticket'],
+      regions: [process.env.AWS_REGION ?? 'local'],
+      documentation: 'https://arcade.agentcommons.io/docs/creator-quickstart',
+      stability: 'creator-alpha',
+      normative: false,
     }),
   )
 
@@ -659,14 +671,56 @@ export function createApp(options: ControlApiOptions = {}) {
 }
 
 function openApiDocument(serverUrl: string) {
-  return {
+  const document = {
     openapi: '3.1.0',
     info: {
       title: 'Common Arcade Control API',
       version: '0.1.0-v0alpha1',
     },
     servers: [{ url: serverUrl }],
+    components: {
+      securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } },
+      schemas: { GameDocument: z.toJSONSchema(gameDocumentSchema) },
+    },
     paths: {
+      '/v1/me': { get: { summary: 'Read the verified caller and scopes' } },
+      '/v1/projects': {
+        get: { summary: 'List owned projects' },
+        post: { summary: 'Create a project' },
+      },
+      '/v1/projects/{id}': {
+        get: { summary: 'Read an owned project' },
+        put: { summary: 'Save a game document with If-Match revision' },
+      },
+      '/v1/projects/{id}/revisions': {
+        get: { summary: 'Read immutable project revisions' },
+      },
+      '/v1/projects/{id}/annotations': {
+        post: { summary: 'Attach a point or region note to a revision' },
+      },
+      '/v1/projects/{id}/publish': {
+        post: { summary: 'Publish the If-Match revision' },
+      },
+      '/v1/projects/{id}/runs': {
+        post: { summary: 'Create a pinned two-player test run' },
+      },
+      '/v1/projects/{id}/copilot': {
+        post: { summary: 'Request a validated proposal from a Commons agent' },
+      },
+      '/v1/studio/runs/{id}': {
+        get: {
+          summary:
+            'Inspect test state, diagnostics and replay without advancing',
+        },
+      },
+      '/v1/studio/runs/{id}/step': {
+        post: { summary: 'Advance one test decision with expected steps' },
+      },
+      '/v1/keys': {
+        get: { summary: 'List access key metadata' },
+        post: { summary: 'Create an expiring scoped access key' },
+      },
+      '/v1/keys/{id}': { delete: { summary: 'Revoke an owned access key' } },
       '/v1/games': { get: { summary: 'Discover games' } },
       '/v1/games/{gameId}': { get: { summary: 'Inspect a game manifest' } },
       '/v1/games/{gameId}/releases': {
@@ -697,6 +751,44 @@ function openApiDocument(serverUrl: string) {
       },
     },
   }
+  // Keep this alpha document valid and useful for standard OpenAPI clients.
+  for (const [path, methods] of Object.entries(document.paths)) {
+    for (const [method, value] of Object.entries(methods)) {
+      const operation = value as Record<string, unknown>
+      operation.responses = {
+        '200': { description: 'Successful response' },
+        '201': { description: 'Resource created' },
+        '401': { description: 'Valid bearer credential required' },
+        '403': { description: 'Scope or ownership denied' },
+        '409': { description: 'Revision or step conflict' },
+        '422': { description: 'Invalid request' },
+      }
+      operation.parameters = [...path.matchAll(/\{(\w+)\}/g)].map((match) => ({
+        name: match[1],
+        in: 'path',
+        required: true,
+        schema: { type: 'string' },
+      }))
+      if (
+        method !== 'get' ||
+        path.startsWith('/v1/projects') ||
+        path === '/v1/me' ||
+        path.startsWith('/v1/keys') ||
+        path.startsWith('/v1/studio/runs')
+      )
+        operation.security = [{ bearerAuth: [] }]
+      if (path === '/v1/projects/{id}' && method === 'put')
+        operation.requestBody = {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/GameDocument' },
+            },
+          },
+        }
+    }
+  }
+  return document
 }
 
 function asyncApiDocument(realtimeUrl: string) {
@@ -707,14 +799,17 @@ function asyncApiDocument(realtimeUrl: string) {
       version: '0.1.0-v0alpha1',
     },
     servers: {
-      local: { host: realtimeUrl, protocol: 'ws' },
+      gateway: {
+        host: new URL(realtimeUrl).host,
+        protocol: new URL(realtimeUrl).protocol === 'wss:' ? 'wss' : 'ws',
+      },
     },
     channels: {
       matchSession: {
         address: '/realtime?match={matchId}',
         messages: {
           envelope: {
-            $ref: './schemas/v0alpha1/realtime-envelope.schema.json',
+            payload: z.toJSONSchema(realtimeEnvelopeSchema),
           },
         },
       },

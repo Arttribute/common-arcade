@@ -16,7 +16,12 @@ async function proxy(
     )
   const session = await readSession()
   const path = (await context.params).path.map(encodeURIComponent).join('/')
-  if (!path.startsWith('v1/'))
+  const publicDocument = [
+    'openapi.json',
+    'asyncapi.json',
+    '.well-known/arcade.json',
+  ].includes(path)
+  if (!path.startsWith('v1/') && !(publicDocument && request.method === 'GET'))
     return NextResponse.json({ detail: 'Unknown API route.' }, { status: 404 })
   const headers = new Headers({
     Accept: 'application/json',
