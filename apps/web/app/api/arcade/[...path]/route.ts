@@ -20,6 +20,7 @@ async function proxy(
     'openapi.json',
     'asyncapi.json',
     '.well-known/arcade.json',
+    '.well-known/jwks.json',
   ].includes(path)
   if (!path.startsWith('v1/') && !(publicDocument && request.method === 'GET'))
     return NextResponse.json({ detail: 'Unknown API route.' }, { status: 404 })

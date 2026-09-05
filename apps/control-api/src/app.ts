@@ -345,14 +345,7 @@ export function createApp(options: ControlApiOptions = {}) {
       catalog: `${publicBaseUrl}/v1/games`,
       openapi: `${publicBaseUrl}/openapi.json`,
       asyncapi: `${publicBaseUrl}/asyncapi.json`,
-      ...(process.env.COMMONS_IDENTITY_ISSUER
-        ? {
-            identity: {
-              issuer: process.env.COMMONS_IDENTITY_ISSUER,
-              jwks: `${process.env.COMMONS_IDENTITY_ISSUER}/.well-known/jwks.json`,
-            },
-          }
-        : {}),
+      keys: `${publicBaseUrl}/.well-known/jwks.json`,
       profiles: [
         'base-v1',
         'turn-based-v1',
@@ -361,20 +354,18 @@ export function createApp(options: ControlApiOptions = {}) {
       ],
       transports: ['websocket'],
       auth: process.env.COMMONS_IDENTITY_ISSUER
-        ? ['oauth2', 'bearer', 'ticket']
-        : ['local-bearer', 'ticket'],
+        ? ['oauth2', 'ticket']
+        : ['ticket'],
       regions: [process.env.AWS_REGION ?? 'local'],
-      documentation: 'https://arcade.agentcommons.io/docs/creator-quickstart',
-      stability: 'creator-alpha',
-      normative: false,
     }),
   )
 
   app.get('/.well-known/jwks.json', (context) =>
     context.json({
       keys: [],
-      localOnly: true,
-      message: 'Local HMAC ticket keys are never published.',
+      localOnly: !process.env.ARCADE_ENV,
+      message:
+        'Session HMAC ticket keys are private; release signing keys are not configured in this alpha.',
     }),
   )
 
