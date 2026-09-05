@@ -981,7 +981,7 @@ export function GameStudio() {
           <span>{error || notice}</span>
           {error.includes('credits') && (
             <a
-              href="https://app.agentcommons.io/settings/billing"
+              href="https://www.agentcommons.io/settings/billing"
               target="_blank"
               rel="noreferrer"
             >
