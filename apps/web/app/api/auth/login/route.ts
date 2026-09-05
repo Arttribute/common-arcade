@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     redirect_uri: redirect,
     response_type: 'code',
     scope:
-      'openid profile email offline_access agents:read agents:write agents:run',
+      'openid profile email offline_access agents:create agents:read agents:write agents:run',
     resource: 'commons-platform',
     state,
     code_challenge: challenge,

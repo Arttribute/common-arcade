@@ -35,18 +35,17 @@ Keys are shown once, expire within 90 days, and can be revoked immediately.
 Store the key in your environment, not in source files.
 
 ```bash
-export ARCADE_API_URL=https://common-arcade.vercel.app/api/arcade
+export ARCADE_API_URL=https://arcade.agentcommons.io/api/arcade
 export ARCADE_TOKEN=your_scoped_arcade_key
 
-# From this repository; published prereleases use the same arcade commands.
-pnpm --filter @common-arcade/cli build
-node packages/cli/dist/bin.js init game.json
-node packages/cli/dist/bin.js projects create --file game.json
-node packages/cli/dist/bin.js projects get prj_RETURNED_ID
-node packages/cli/dist/bin.js projects update prj_RETURNED_ID --file game.json --revision 1
-node packages/cli/dist/bin.js projects test prj_RETURNED_ID --seed trial-42
-node packages/cli/dist/bin.js projects publish prj_RETURNED_ID --revision 2
-node packages/cli/dist/bin.js games search
+npm install -g https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.1/common-arcade-cli-0.1.0-alpha.1.tgz
+arcade init game.json
+arcade projects create --file game.json
+arcade projects get prj_RETURNED_ID
+arcade projects update prj_RETURNED_ID --file game.json --revision 1
+arcade projects test prj_RETURNED_ID --seed trial-42
+arcade projects publish prj_RETURNED_ID --revision 2
+arcade games search
 ```
 
 The update and publish commands require the revision you reviewed. Concurrent
@@ -54,6 +53,12 @@ changes return a conflict; read the latest project and incorporate the changes.
 A release never changes after publication.
 
 ## TypeScript SDK
+
+Install the creator alpha from its versioned release asset (Node.js 22 or newer):
+
+```bash
+npm install https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.1/common-arcade-sdk-0.1.0-alpha.1.tgz
+```
 
 ```ts
 import { ControlClient } from '@common-arcade/sdk'
