@@ -78,6 +78,7 @@ export class RealtimePilotStack extends Stack {
         memoryLimitMiB: 1024,
         minHealthyPercent: 0,
         maxHealthyPercent: 100,
+        availabilityZoneRebalancing: ecs.AvailabilityZoneRebalancing.DISABLED,
         publicLoadBalancer: true,
         taskImageOptions: {
           image: ecs.ContainerImage.fromDockerImageAsset(image),
