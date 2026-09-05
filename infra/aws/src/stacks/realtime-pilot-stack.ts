@@ -78,7 +78,6 @@ export class RealtimePilotStack extends Stack {
         memoryLimitMiB: 1024,
         minHealthyPercent: 0,
         maxHealthyPercent: 100,
-        availabilityZoneRebalancing: ecs.AvailabilityZoneRebalancing.DISABLED,
         publicLoadBalancer: true,
         taskImageOptions: {
           image: ecs.ContainerImage.fromDockerImageAsset(image),
@@ -99,6 +98,9 @@ export class RealtimePilotStack extends Stack {
         },
       },
     )
+    // The L3 pattern does not expose this ECS setting. Keep a single match owner.
+    const cfnService = service.service.node.defaultChild as ecs.CfnService
+    cfnService.availabilityZoneRebalancing = 'DISABLED'
     props.table.grantReadWriteData(service.taskDefinition.taskRole)
     service.targetGroup.configureHealthCheck({
       healthyHttpCodes: '200',
