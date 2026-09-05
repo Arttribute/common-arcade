@@ -137,6 +137,44 @@ async function runningMatch(baseUrl: string) {
 }
 
 describe('local REST and realtime stack', () => {
+  it('shares local creator releases with the authoritative match worker', async () => {
+    server = await startArcadeServer({ port: 0 })
+    const project = await post(
+      server.baseUrl,
+      '/v1/projects',
+      'creator_local',
+      {
+        document: {
+          title: 'Four square',
+          description: 'Local authoring test',
+          boardSize: 4,
+          winLength: 3,
+          marks: ['X', 'O'],
+          accent: '#123456',
+          background: '#ffffff',
+        },
+      },
+    )
+    const release = await post(
+      server.baseUrl,
+      `/v1/projects/${project.id}/publish`,
+      'creator_local',
+      {},
+      { 'If-Match': '1' },
+    )
+    const match = await post(
+      server.baseUrl,
+      '/v1/matches',
+      'creator_local',
+      {
+        releaseId: release.id,
+      },
+      { 'Idempotency-Key': 'published-local-game' },
+    )
+    expect(match.releaseId).toBe(release.id)
+    expect(match.releaseDigest).toMatch(/^sha256:[a-f0-9]{64}$/)
+    expect(match.status).toBe('lobby')
+  })
   it('uses deployment-facing URLs from the environment', () => {
     expect(
       arcadeServerOptionsFromEnvironment({

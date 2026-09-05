@@ -67,6 +67,33 @@ class FakeSocket implements WebSocketLike {
 }
 
 describe('RealtimeClient', () => {
+  it('can close from a completion callback without acknowledging on a closed socket', async () => {
+    const socket = new FakeSocket(1)
+    const client = new RealtimeClient({
+      url: 'wss://example.test',
+      matchId: 'mat_clientmatch01',
+      webSocketFactory: () => socket,
+    })
+    await client.connect('ticket')
+    client.onMessage((message) => {
+      if (message.type === 'match.transition') client.close()
+    })
+    const complete: RealtimeEnvelope = {
+      v: ARCADE_WIRE_VERSION,
+      type: 'match.transition',
+      match: 'mat_clientmatch01',
+      seq: 2,
+      sentAt: new Date().toISOString(),
+      payload: { status: 'completed' },
+    }
+    expect(() => socket.serverMessage(complete)).not.toThrow()
+    expect(client.state).toBe('closed')
+    expect(socket.sent.slice(-2).map((message) => message.type)).toEqual([
+      'ack',
+      'session.close',
+    ])
+    expect(() => socket.serverMessage({ ...complete, seq: 3 })).not.toThrow()
+  })
   it('negotiates, acknowledges, and resumes from the last sequence', async () => {
     const sockets: FakeSocket[] = []
     const client = new RealtimeClient({

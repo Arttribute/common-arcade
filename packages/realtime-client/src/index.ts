@@ -168,7 +168,10 @@ export class RealtimeClient {
   private async openSocket(): Promise<WebSocketLike> {
     const socket = this.#factory(this.#url)
     this.#socket = socket
-    socket.addEventListener('message', (event) => this.receive(event))
+    socket.addEventListener('message', (event) => {
+      if (this.#socket === socket && this.#state !== 'closed')
+        this.receive(event)
+    })
     socket.addEventListener('close', () => {
       if (this.#state !== 'closed') this.setState('disconnected')
     })
@@ -200,10 +203,15 @@ export class RealtimeClient {
         this.#resumeToken = payload.resumeToken
       this.setState('connected')
     }
-    for (const listener of this.#messageListeners) listener(message)
-    if (message.type !== 'goodbye' && message.type !== 'error') {
+    if (
+      message.type !== 'goodbye' &&
+      message.type !== 'error' &&
+      this.#socket?.readyState === 1
+    ) {
       this.sendEnvelope('ack', { sequence: this.#lastServerSequence })
     }
+    // A completion listener may close the socket. Acknowledge before notifying it.
+    for (const listener of this.#messageListeners) listener(message)
   }
 
   private waitFor(type: RealtimeMessageType): Promise<RealtimeEnvelope> {
