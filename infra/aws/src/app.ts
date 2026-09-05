@@ -15,21 +15,32 @@ const environment = {
   region: process.env.CDK_DEFAULT_REGION ?? 'us-east-1',
 }
 
-new FoundationStack(app, `CommonArcade-${config.stage}-Foundation`, {
-  env: environment,
-  stage: config.stage,
-  terminationProtection: config.terminationProtection,
-})
+const foundation = new FoundationStack(
+  app,
+  `CommonArcade-${config.stage}-Foundation`,
+  {
+    env: environment,
+    stage: config.stage,
+    terminationProtection: config.terminationProtection,
+  },
+)
+
+const realtime = new RealtimePilotStack(
+  app,
+  `CommonArcade-${config.stage}-RealtimePilot`,
+  {
+    corsOrigins,
+    table: foundation.coordinationTable,
+    env: environment,
+    stage: config.stage,
+    terminationProtection: config.terminationProtection,
+  },
+)
 
 new ControlPlaneStack(app, `CommonArcade-${config.stage}-ControlPlane`, {
   env: environment,
   stage: config.stage,
-  terminationProtection: config.terminationProtection,
-})
-
-new RealtimePilotStack(app, `CommonArcade-${config.stage}-RealtimePilot`, {
-  corsOrigins,
-  env: environment,
-  stage: config.stage,
+  table: foundation.coordinationTable,
+  realtimeControlUrl: realtime.publicBaseUrl,
   terminationProtection: config.terminationProtection,
 })

@@ -1,3 +1,9 @@
+import { CompiledArtifactFrame } from '@agent-commons/ui'
+import {
+  compilePresentation,
+  starterDocument,
+  type StudioRelease,
+} from '@common-arcade/studio'
 import type { GameManifest } from '@common-arcade/protocol'
 import { notFound } from 'next/navigation'
 import { Header } from '../../components/header'
@@ -26,8 +32,15 @@ export default async function GamePage({
   const releaseList = (await releaseResponse.json()) as {
     releases: Array<{ id: string }>
   }
-  const releaseId = releaseList.releases[0]?.id
+  const releaseId = releaseList.releases.at(-1)?.id
   if (releaseId === undefined) notFound()
+  const customResponse = await fetch(
+    `${api}/v1/studio/releases/${encodeURIComponent(releaseId)}`,
+    { cache: 'no-store' },
+  )
+  const document = customResponse.ok
+    ? ((await customResponse.json()) as StudioRelease).document
+    : { ...starterDocument, title: game.metadata.title }
   return (
     <main>
       <Header />
@@ -45,6 +58,22 @@ export default async function GamePage({
           </div>
         </div>
         <MatchLauncher releaseId={releaseId} />
+      </section>
+      <section
+        className="shell"
+        style={{
+          height: 540,
+          border: '1px solid #e7e5e4',
+          borderRadius: 12,
+          overflow: 'hidden',
+          marginBottom: 40,
+        }}
+        aria-label="Try this game locally"
+      >
+        <CompiledArtifactFrame
+          preview={{ type: 'html', html: compilePresentation(document) }}
+          title={`${game.metadata.title} — local practice`}
+        />
       </section>
       <section className="contract-grid shell">
         <article>
@@ -70,8 +99,10 @@ export default async function GamePage({
         </article>
       </section>
       <section className="manifest-block shell">
-        <span className="panel-label">CANONICAL MANIFEST</span>
-        <pre>{JSON.stringify(game, null, 2)}</pre>
+        <details>
+          <summary className="panel-label">View the agent contract</summary>
+          <pre>{JSON.stringify(game, null, 2)}</pre>
+        </details>
       </section>
     </main>
   )

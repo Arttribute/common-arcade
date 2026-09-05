@@ -1,73 +1,82 @@
 import Link from 'next/link'
+import { Gamepad2, Sparkles, ArrowUpRight } from 'lucide-react'
 import { Header } from './components/header'
-
-const capabilities = [
-  ['Create', 'Build games with agents in a testable, inspectable studio.'],
-  [
-    'Play',
-    'Connect an agent or play yourself through the same capability model.',
-  ],
-  [
-    'Watch',
-    'Spectate live matches with explanations, decisions, and replayable events.',
-  ],
-]
-
 export default function HomePage() {
   return (
     <main>
       <Header />
-
       <section className="hero shell">
-        <div className="eyebrow">THE PLAYGROUND FOR INTELLIGENT PLAY</div>
+        <div className="eyebrow">A COMMON GROUND FOR PLAY</div>
         <h1>
-          Games that agents can
-          <span> understand, play, and master.</span>
+          Small games.<span>New possibilities.</span>
         </h1>
         <p className="hero-copy">
-          A common language for any agent, any game, and every human watching.
-          Designed for realtime competition, collaboration, learning, and play.
+          Create with an agent. Play with a friend. See what happens when
+          everyone has the same rules.
         </p>
         <div className="actions">
-          <Link className="primary" href="/discover">
-            Enter the arcade
+          <Link className="primary" href="/studio">
+            Create a game <ArrowUpRight size={14} />
           </Link>
-          <Link className="secondary" href="/docs">
-            Read the blueprint
+          <Link className="secondary" href="/discover">
+            Explore the arcade
           </Link>
         </div>
-        <div className="arena-window" aria-label="Common Arcade preview">
-          <div className="window-bar">
-            <span>LIVE / EXHIBITION 001</span>
-            <span className="live">● 12 agents connected</span>
+        <Link
+          href="/studio"
+          className="home-preview"
+          style={{ display: 'block' }}
+          aria-label="Open the game creation studio"
+        >
+          <div className="home-preview-head">
+            <Gamepad2 size={16} />
+            <strong style={{ fontWeight: 500 }}>Your next idea, in play</strong>
+            <span>Common Arcade Studio</span>
           </div>
-          <div className="field-grid">
-            <div className="score-card">
-              <span>COMMON BLUE</span>
-              <strong>2</strong>
-            </div>
-            <div className="match-state">
-              <span>67:42</span>
-              <div className="pitch">
-                <i className="player one" />
-                <i className="player two" />
-                <i className="ball" />
-                <i className="player three" />
+          <div className="home-preview-body">
+            <div className="home-preview-board">
+              <div className="home-grid">
+                {['X', '', 'O', '', 'X', '', 'O', '', ''].map((mark, i) => (
+                  <span key={i}>{mark}</span>
+                ))}
               </div>
-              <small>Blue changed shape · protect lead</small>
             </div>
-            <div className="score-card orange">
-              <span>ARCADE XI</span>
-              <strong>1</strong>
-            </div>
+            <aside className="home-preview-note">
+              <Sparkles size={22} color="#a8a29e" />
+              <strong>A canvas for your game.</strong>
+              <p>
+                Change the rules. Find the right look. Point to an idea and work
+                through it with your copilot.
+              </p>
+              <strong>Watch your agents learn the rules.</strong>
+              <p>
+                Run a test, pause at a decision, and see the observation behind
+                every move.
+              </p>
+              <span style={{ fontSize: 11, color: '#a8a29e' }}>
+                Open Studio ↗
+              </span>
+            </aside>
           </div>
-        </div>
+        </Link>
       </section>
-
       <section className="capabilities shell">
-        {capabilities.map(([title, body], index) => (
+        {[
+          [
+            'Create',
+            'A full-screen canvas, a playable preview, and an agent to build alongside you.',
+          ],
+          [
+            'Play',
+            'Human and agent players use the same legal actions. Bring your own agent from any system.',
+          ],
+          [
+            'Understand',
+            'Inspect decisions, annotate revisions, and take a reproducible game contract with you.',
+          ],
+        ].map(([title, body], i) => (
           <article key={title}>
-            <span>0{index + 1}</span>
+            <span>0{i + 1}</span>
             <h2>{title}</h2>
             <p>{body}</p>
           </article>

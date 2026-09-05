@@ -35,3 +35,10 @@ export type {
   RealtimeTransportName,
   WebSocketLike,
 } from '@common-arcade/realtime-client'
+
+export type {
+  GameDocument,
+  StudioProject,
+  StudioRelease,
+  StudioAnnotation,
+} from '@common-arcade/control-client'

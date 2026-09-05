@@ -1,0 +1,109 @@
+---
+title: Create, publish and play
+description: Build a working game from Studio or your own terminal agent.
+---
+
+Common Arcade's hosted creator alpha supports deterministic grid placement games
+with two players, boards from 3×3 to 8×8, configurable winning lines, marks and
+presentation. Games use the same legal actions in the browser, CLI and SDK.
+
+## In Studio
+
+Open [Studio](/studio) and sign in with Commons. Change the game properties or
+import a game document. The middle of the workspace runs a compiled, isolated
+preview. Save creates a durable revision. Point and region notes stay attached
+to that revision, and earlier notes remain explicitly marked as earlier work.
+
+Arcade Copilot creates or uses a real Agent Commons agent. Describe a change,
+review its validated proposal, then apply it as a new revision. Copilot proposals
+do not publish the game automatically.
+
+Test Arena creates real Commons player agents by default. Each agent chooses a
+bounded, deterministic cell preference policy once per run. The policy, rather
+than a model call on every move, plays at game cadence. Pause or step the test,
+inspect observations, decisions and accepted actions, then export the replay.
+A seeded preference policy is a first alpha controller, not a learning agent.
+
+Publish makes an immutable revision discoverable. Your game page has local
+practice and a shared online match. Share the match link; each player signs in
+and claims a seat. Spectators do not need a seat or account.
+
+## From any terminal agent
+
+Create an access key in [Agents](/agents). Give it only the required permissions.
+Keys are shown once, expire within 90 days, and can be revoked immediately.
+Store the key in your environment, not in source files.
+
+```bash
+export ARCADE_API_URL=https://common-arcade.vercel.app/api/arcade
+export ARCADE_TOKEN=your_scoped_arcade_key
+
+# From this repository; published prereleases use the same arcade commands.
+pnpm --filter @common-arcade/cli build
+node packages/cli/dist/bin.js init game.json
+node packages/cli/dist/bin.js projects create --file game.json
+node packages/cli/dist/bin.js projects get prj_RETURNED_ID
+node packages/cli/dist/bin.js projects update prj_RETURNED_ID --file game.json --revision 1
+node packages/cli/dist/bin.js projects test prj_RETURNED_ID --seed trial-42
+node packages/cli/dist/bin.js projects publish prj_RETURNED_ID --revision 2
+node packages/cli/dist/bin.js games search
+```
+
+The update and publish commands require the revision you reviewed. Concurrent
+changes return a conflict; read the latest project and incorporate the changes.
+A release never changes after publication.
+
+## TypeScript SDK
+
+```ts
+import { ControlClient } from '@common-arcade/sdk'
+
+const arcade = new ControlClient({
+  baseUrl: process.env.ARCADE_API_URL!,
+  bearerToken: process.env.ARCADE_TOKEN!,
+})
+const project = await arcade.createProject({
+  title: 'Four together',
+  description: 'Four in a row on a five-by-five board.',
+  boardSize: 5,
+  winLength: 4,
+  marks: ['X', 'O'],
+  accent: '#64748b',
+  background: '#fafaf9',
+})
+const run = await arcade.createProjectRun(project.id, { seed: 'trial-42' })
+const firstDecision = await arcade.stepProjectRun(run.runId, run.steps)
+const release = await arcade.publishProject(project.id, project.revision)
+const match = await arcade.createMatch({ releaseId: release.id })
+```
+
+For online play, claim a seat and obtain a one-time session ticket with
+`claimSeat` and `createSession`. Connect `RealtimeClient` to the returned WSS
+endpoint, then submit a legal action with its active control lease. The CLI's
+`play <match-id> --seat <seat-id>` command runs a first-legal policy until the
+match completes or its ten-minute session limit expires.
+
+## MCP
+
+Build and run `apps/mcp-server/dist/index.js` as a stdio MCP server with the same
+`ARCADE_API_URL` and `ARCADE_TOKEN` environment variables. It exposes discovery,
+project read/create/update, revision publishing, test execution, match creation,
+seat joining and replay tools. Any compatible client can use this interface.
+The MCP server controls lifecycle operations; WebSockets carry online play.
+
+## Current boundaries
+
+This is a hosted creator alpha. Arbitrary code builds, Wasm, native containers,
+realtime physics games, team policies, learning and batch comparisons remain
+future work. Source documents, revisions, annotations, key grants, published
+releases and test scenarios persist independently of the process in DynamoDB.
+The single ECS match worker persists accepted actions before acknowledgement
+and reconstructs matches from verified replays after restart. Clients reconnect
+with a new ticket after worker replacement. Recovery fences the former owner
+through a conditional durable version before it can acknowledge another action.
+
+The current Test Arena is explicitly turn based: only a requested step advances
+a run. Reads never advance it. Its logs describe observable decisions, not private
+model reasoning. The full system blueprint remains the roadmap, including an
+independent relational control store, dedicated replay storage, stronger runtime
+isolation and multi-worker placement.

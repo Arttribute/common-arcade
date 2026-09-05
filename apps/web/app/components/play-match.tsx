@@ -1,6 +1,6 @@
 'use client'
 
-import { ControlClient } from '@common-arcade/control-client'
+import { browserControlClient } from '../../lib/api'
 import { RealtimeClient } from '@common-arcade/realtime-client'
 import type {
   MatchDescriptor,
@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'react'
 const apiUrl = process.env.NEXT_PUBLIC_ARCADE_API_URL ?? 'http://localhost:4100'
 
 interface BoardState {
-  board: Array<'X' | 'O' | null>
+  board: Array<string | null>
   currentSeatId: string
   winnerSeatId: string | null
   draw: boolean
@@ -25,7 +25,7 @@ export function PlayMatch({
   matchId: string
   initialActor: string
 }) {
-  const [actorId, setActorId] = useState(initialActor)
+  const [actorId] = useState(initialActor)
   const [match, setMatch] = useState<MatchDescriptor>()
   const [observation, setObservation] = useState<Observation>()
   const [publicBoard, setPublicBoard] = useState<BoardState>()
@@ -37,7 +37,7 @@ export function PlayMatch({
   const actionSequence = useRef(0)
 
   useEffect(() => {
-    const client = new ControlClient({ baseUrl: apiUrl })
+    const client = browserControlClient()
     void client
       .getMatch(matchId)
       .then(setMatch)
@@ -89,7 +89,7 @@ export function PlayMatch({
     setError(undefined)
     try {
       const controllerId = `browser-${actorId}`
-      const control = new ControlClient({ baseUrl: apiUrl, actorId })
+      const control = browserControlClient()
       if (mode === 'control' && seatId !== undefined) {
         setMatch(await control.claimSeat({ matchId, seatId, controllerId }))
       }
@@ -104,6 +104,7 @@ export function PlayMatch({
       })
       realtime.onMessage(receive)
       realtime.onStateChange(setConnection)
+      clientRef.current?.close()
       clientRef.current = realtime
       await realtime.connect(session.ticket)
     } catch (cause) {
@@ -144,13 +145,9 @@ export function PlayMatch({
     <div className="match-shell">
       <aside className="match-panel">
         <span className="panel-label">ROSTER</span>
-        <label>
-          Your actor ID
-          <input
-            value={actorId}
-            onChange={(event) => setActorId(event.target.value)}
-          />
-        </label>
+        <p style={{ fontSize: 11, color: '#78716c' }}>
+          Sign in with Commons to claim a seat, or watch as a spectator.
+        </p>
         <div className="seat-list">
           {match?.seats.map((seat, index) => (
             <article key={seat.id}>
@@ -180,8 +177,14 @@ export function PlayMatch({
           <span>{match?.status ?? 'loading'}</span>
           <span>{connection}</span>
         </div>
-        <div className="tic-grid" aria-label="Tic-tac-toe board">
-          {Array.from({ length: 9 }, (_, cell) => (
+        <div
+          className="tic-grid"
+          aria-label="Game board"
+          style={{
+            gridTemplateColumns: `repeat(${Math.sqrt(publicBoard?.board.length ?? 9)}, 1fr)`,
+          }}
+        >
+          {Array.from({ length: publicBoard?.board.length ?? 9 }, (_, cell) => (
             <button
               key={cell}
               disabled={!legalCells.has(cell)}

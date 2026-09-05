@@ -31,12 +31,17 @@ permissions:
 jobs:
   infrastructure:
     name: ${{ inputs.operation }} ${{ inputs.stage }}
-    if: vars.AWS_DEPLOY_ENABLED == 'true' && (inputs.operation == 'diff' || inputs.confirm == 'deploy')
+    if: inputs.operation == 'diff' || inputs.confirm == 'deploy'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ inputs.stage }}
 
     steps:
+      - name: Confirm this protected environment permits deployment
+        env:
+          AWS_DEPLOY_ENABLED: ${{ vars.AWS_DEPLOY_ENABLED }}
+        run: test "$AWS_DEPLOY_ENABLED" = true
+
       - name: Checkout
         uses: actions/checkout@v5
 

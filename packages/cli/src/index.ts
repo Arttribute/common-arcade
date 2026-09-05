@@ -1,3 +1,6 @@
+import { readFile, writeFile } from 'node:fs/promises'
+import { RealtimeClient } from '@common-arcade/realtime-client'
+import { gameDocumentSchema, starterDocument } from '@common-arcade/protocol'
 import { ARCADE_PROTOCOL } from '@common-arcade/protocol'
 import { ArcadeApiError, ControlClient } from '@common-arcade/control-client'
 
@@ -11,6 +14,14 @@ export interface RunCliOptions {
 const HELP = `Common Arcade CLI (${ARCADE_PROTOCOL.stability})
 
 Commands:
+  init [file]                         Write a playable starter game.json
+  projects list                       List your saved games
+  projects create --file game.json    Create a game project
+  projects get <id>                    Read a project and exact revision
+  projects update <id> --file <file>   Update (requires --revision N)
+  projects publish <id> --revision N  Publish immutable revision
+  projects test <id>                  Run a pinned game to completion
+  play <match-id> --seat <seat-id>     Join and play a bounded legal policy
   status                              Inspect the control plane
   doctor                              Check API and runtime prerequisites
   games search [query]                Discover compatible games
@@ -70,6 +81,141 @@ export async function runCli(options: RunCliOptions): Promise<number> {
 
   const client = clientFor(options)
   try {
+    if (command === 'init') {
+      const path = subcommand ?? 'game.json'
+      await writeFile(path, json(starterDocument) + '\n', { flag: 'wx' })
+      write(`Created ${path}`)
+      return 0
+    }
+    if (command === 'projects') {
+      const file = option(options.args, '--file')
+      const revision = Number(option(options.args, '--revision'))
+      if (subcommand === 'list') {
+        write(json(await client.listProjects()))
+        return 0
+      }
+      if (subcommand === 'get' && subject) {
+        write(json(await client.getProject(subject)))
+        return 0
+      }
+      if (subcommand === 'create' && file) {
+        write(
+          json(
+            await client.createProject(
+              gameDocumentSchema.parse(
+                JSON.parse(await readFile(file, 'utf8')),
+              ),
+            ),
+          ),
+        )
+        return 0
+      }
+      if (
+        subcommand === 'update' &&
+        subject &&
+        file &&
+        Number.isInteger(revision) &&
+        revision > 0
+      ) {
+        write(
+          json(
+            await client.updateProject(
+              subject,
+              gameDocumentSchema.parse(
+                JSON.parse(await readFile(file, 'utf8')),
+              ),
+              revision,
+            ),
+          ),
+        )
+        return 0
+      }
+      if (
+        subcommand === 'publish' &&
+        subject &&
+        Number.isInteger(revision) &&
+        revision > 0
+      ) {
+        write(json(await client.publishProject(subject, revision)))
+        return 0
+      }
+      if (subcommand === 'test' && subject) {
+        let run = await client.createProjectRun(subject, {
+          seed: option(options.args, '--seed'),
+        })
+        while (run.status === 'running' && run.steps < 64)
+          run = await client.stepProjectRun(run.runId, run.steps)
+        write(json(run))
+        return 0
+      }
+    }
+    if (command === 'play' && subcommand) {
+      const seatId = option(options.args, '--seat')
+      if (!seatId) throw new Error('play requires --seat <seat-id>')
+      const matchId = subcommand,
+        controllerId = `cli-${crypto.randomUUID()}`
+      await client.claimSeat({ matchId, seatId, controllerId })
+      const session = await client.createSession({
+        matchId,
+        mode: 'control',
+        seatId,
+        controllerId,
+      })
+      const realtime = new RealtimeClient({
+        url: `${session.realtimeUrl}?match=${encodeURIComponent(matchId)}`,
+        matchId,
+      })
+      let lease = '',
+        sequence = 0
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          realtime.close()
+          reject(new Error('Play session reached its 10-minute limit.'))
+        }, 600000)
+        realtime.onMessage((message) => {
+          const payload = message.payload as Record<string, any>
+          if (message.type === 'control.granted') lease = payload.controlLease
+          if (message.type === 'error') {
+            clearTimeout(timeout)
+            realtime.close()
+            reject(new Error(String(payload.detail ?? 'Realtime error')))
+          }
+          if (
+            message.type === 'observation.full' &&
+            Array.isArray(payload.legalActions) &&
+            payload.legalActions.length &&
+            lease
+          ) {
+            realtime.submitAction({
+              actionId: `act_${crypto.randomUUID().replaceAll('-', '')}`,
+              matchId,
+              seatId,
+              controlLease: lease,
+              clientSequence: ++sequence,
+              basedOnStateSequence: payload.stateSequence,
+              targetTurn: payload.turn,
+              payload: payload.legalActions[0],
+            })
+          }
+          if (
+            (message.type === 'match.transition' &&
+              payload.status === 'completed') ||
+            (message.type === 'snapshot' &&
+              payload.match?.status === 'completed')
+          ) {
+            write(json(payload))
+            clearTimeout(timeout)
+            realtime.close()
+            resolve()
+          }
+        })
+        realtime.connect(session.ticket).catch((error) => {
+          clearTimeout(timeout)
+          reject(error)
+        })
+      })
+      return 0
+    }
     if (command === 'status') {
       write(json(await client.getStatus()))
       return 0

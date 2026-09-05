@@ -177,6 +177,42 @@ export class AuthoritativeMatch<State, Action> {
     return this.status
   }
 
+  /** Recover only a verified immutable replay; sessions and control leases are never restored. */
+  static async recover<State, Action>(
+    game: GameDefinition<State, Action>,
+    replay: Replay,
+    status: MatchStatus,
+    ownershipEpoch: number,
+    now?: () => Date,
+  ): Promise<AuthoritativeMatch<State, Action>> {
+    const verification = await verifyReplay(game, replay)
+    if (!verification.valid)
+      throw new Error('Persisted match replay failed integrity verification')
+    const match = await AuthoritativeMatch.create({
+      matchId: replay.matchId,
+      game,
+      seed: replay.seed,
+      configuration: replay.configuration,
+      roster: replay.roster,
+      ownershipEpoch,
+      now,
+    })
+    match.start()
+    for (const command of replay.commands)
+      await match.submitAction(
+        { ...command.action, controlLease: 'recovery' },
+        ownershipEpoch,
+      )
+    match.events.splice(0, match.events.length, ...replay.events)
+    match.commands.splice(0, match.commands.length, ...replay.commands)
+    match.checkpoints.splice(0, match.checkpoints.length, ...replay.checkpoints)
+    match.eventSequence = replay.events.at(-1)?.sequence ?? 0
+    match.status = status
+    for (const command of replay.commands)
+      match.actionResults.set(command.action.actionId, command.result)
+    return match
+  }
+
   getOwnershipEpoch(): number {
     return this.ownershipEpoch
   }

@@ -102,3 +102,59 @@ describe('local match worker boundary', () => {
     )
   })
 })
+
+describe('durable match recovery', () => {
+  it('recovers a match, increments ownership and fences the former worker before acknowledgement', async () => {
+    let saved: import('./index.js').PersistedMatch | undefined
+    const persistMatch = async (
+      record: import('./index.js').PersistedMatch,
+      expected?: number,
+    ) => {
+      if (saved?.version !== expected) throw new Error('ownership-conflict')
+      saved = structuredClone(record)
+    }
+    const first = await LocalArcadePlatform.create({ persistMatch })
+    const match = await first.createMatch({
+      releaseId: 'rel_tictactoe1',
+      idempotencyKey: 'durable-one',
+    })
+    for (const [i, seat] of match.seats.entries())
+      await first.claimSeat({
+        matchId: match.id,
+        seatId: seat.id,
+        actorId: `actor_${i}`,
+        controllerId: `controller_${i}`,
+      })
+    const seat = match.seats[0]!
+    const ticket = await first.createSession({
+      matchId: match.id,
+      mode: 'control',
+      seatId: seat.id,
+      actorId: 'actor_0',
+      controllerId: 'controller_0',
+    })
+    const session = await first.connectWithTicket(ticket.ticket, match.id)
+    const second = await LocalArcadePlatform.create({
+      persistMatch,
+      savedMatches: [saved!],
+    })
+    expect((await second.getMatch(match.id)).ownershipEpoch).toBe(2)
+    expect(second.getReplay(match.id).finalStateHash).toBe(
+      first.getReplay(match.id).finalStateHash,
+    )
+    await expect(
+      first.submitAction(session.sessionId, {
+        actionId: 'act_oldowner',
+        matchId: match.id,
+        seatId: seat.id,
+        controlLease: session.controlLease!,
+        clientSequence: 1,
+        basedOnStateSequence: 0,
+        targetTurn: 1,
+        payload: { type: 'place', cell: 0 },
+      }),
+    ).rejects.toThrow('ownership-conflict')
+    expect((await second.getMatch(match.id)).stateSequence).toBe(0)
+    expect(saved?.replay.commands).toHaveLength(0)
+  })
+})

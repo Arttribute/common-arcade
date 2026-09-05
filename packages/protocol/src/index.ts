@@ -64,3 +64,5 @@ export type {
   Replay,
   ReplayCheckpoint,
 } from './schemas.js'
+
+export * from './studio.js'
