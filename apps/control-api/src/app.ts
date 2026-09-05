@@ -1,3 +1,13 @@
+import { createStudioApi } from './studio.js'
+import { createAuthenticator, IdentityError } from './identity.js'
+import {
+  DynamoDocumentStore,
+  MemoryDocumentStore,
+  StoreConflict,
+  type DocumentStore,
+} from './store.js'
+import { getTicTacToeManifest } from '@common-arcade/example-tic-tac-toe'
+import type { StudioRelease } from '@common-arcade/studio'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
@@ -21,6 +31,8 @@ import type { DiagnosticDomain } from '@common-arcade/diagnostics'
 const startedAt = new Date().toISOString()
 
 export interface ControlApiOptions {
+  readonly store?: DocumentStore
+  readonly allowLocalAuth?: boolean
   readonly platform?: LocalArcadePlatform
   readonly publicBaseUrl?: string
   readonly realtimeUrl?: string
@@ -118,25 +130,30 @@ function corsOrigins() {
   )
 }
 
-function localActorId(authorization: string | undefined): string {
-  const match = /^Bearer local:([A-Za-z0-9_-]{3,120})$/.exec(
-    authorization ?? '',
-  )
-  if (match?.[1] === undefined) {
-    throw new ApiError(
-      'AUTHENTICATION_REQUIRED',
-      401,
-      false,
-      'Local development requires Authorization: Bearer local:<actor-id>',
-    )
-  }
-  return match[1]
-}
-
 function problem(
   error: unknown,
   requestIdValue: string,
 ): { body: ProblemDetails; status: ContentfulStatusCode } {
+  if (error instanceof IdentityError || error instanceof StoreConflict) {
+    const status = error instanceof IdentityError ? error.status : 409
+    return {
+      status,
+      body: {
+        type: 'about:blank',
+        title: error.name,
+        status,
+        detail: error.message,
+        code:
+          status === 409
+            ? 'CONFLICT'
+            : status === 401
+              ? 'AUTHENTICATION_REQUIRED'
+              : 'AUTHORIZATION_DENIED',
+        requestId: requestIdValue,
+        retryable: false,
+      },
+    }
+  }
   if (error instanceof ZodError) {
     return {
       status: 422,
@@ -191,6 +208,16 @@ function problem(
 
 export function createApp(options: ControlApiOptions = {}) {
   const app = new Hono()
+  const store =
+    options.store ??
+    (process.env.ARCADE_STUDIO_TABLE
+      ? new DynamoDocumentStore(process.env.ARCADE_STUDIO_TABLE)
+      : new MemoryDocumentStore())
+  const authenticate = createAuthenticator(store, {
+    allowLocal:
+      options.allowLocalAuth ??
+      (Boolean(options.platform) && !process.env.ARCADE_ENV),
+  })
   const publicBaseUrl = options.publicBaseUrl ?? 'http://localhost:4100'
   const realtimeUrl = options.realtimeUrl ?? 'ws://localhost:4100/realtime'
   const testRuns = new Map<
@@ -227,6 +254,38 @@ export function createApp(options: ControlApiOptions = {}) {
     }),
   )
 
+  app.use('/v1/matches*', async (c, next) => {
+    if (options.platform || !process.env.ARCADE_REALTIME_CONTROL_URL)
+      return next()
+    const url = new URL(c.req.url)
+    const target = new URL(
+      url.pathname + url.search,
+      process.env.ARCADE_REALTIME_CONTROL_URL,
+    )
+    const response = await fetch(target, {
+      method: c.req.method,
+      headers: {
+        Authorization: c.req.header('Authorization') ?? '',
+        'Content-Type': 'application/json',
+        'Idempotency-Key': c.req.header('Idempotency-Key') ?? '',
+      },
+      body: ['GET', 'HEAD'].includes(c.req.method)
+        ? undefined
+        : await c.req.text(),
+      redirect: 'error',
+      signal: AbortSignal.timeout(20000),
+    })
+    return new Response(response.body, {
+      status: response.status,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+      },
+    })
+  })
+
+  app.route('/', createStudioApi(store, authenticate))
+
   app.get('/healthz', (context) =>
     context.json({
       status: 'ok',
@@ -239,7 +298,7 @@ export function createApp(options: ControlApiOptions = {}) {
   app.get('/v1/status', (context) =>
     context.json({
       name: 'Common Arcade',
-      phase: 'local-vertical-slice',
+      phase: 'hosted-creator-alpha',
       protocol: {
         namespace: ARCADE_API_VERSION,
         normative: false,
@@ -290,33 +349,92 @@ export function createApp(options: ControlApiOptions = {}) {
 
   app.get('/v1/games', async (context) =>
     context.json({
-      games: await requirePlatform().listGames(),
-      nextCursor: null,
-    }),
-  )
-
-  app.get('/v1/games/:gameId', async (context) =>
-    context.json(await requirePlatform().getGame(context.req.param('gameId'))),
-  )
-
-  app.get('/v1/games/:gameId/releases', async (context) =>
-    context.json({
-      releases: await requirePlatform().listGameReleases(
-        context.req.param('gameId'),
+      games: [
+        await getTicTacToeManifest(),
+        ...(
+          await store.list<{ version: number; release: StudioRelease }>(
+            'releases',
+          )
+        ).map((r) => r.release.manifest),
+      ].filter(
+        (g, i, all) =>
+          all.findLastIndex((x) => x.metadata.id === g.metadata.id) === i,
       ),
       nextCursor: null,
     }),
   )
 
-  app.get('/v1/releases/:releaseId', async (context) =>
+  app.get('/v1/games/:gameId', async (context) =>
     context.json(
-      await requirePlatform().getRelease(context.req.param('releaseId')),
+      (
+        await store.list<{ version: number; release: StudioRelease }>(
+          'releases',
+        )
+      )
+        .map((r) => r.release.manifest)
+        .findLast((g) => g.metadata.id === context.req.param('gameId')) ??
+        (context.req.param('gameId') === 'gam_tictactoe1'
+          ? await getTicTacToeManifest()
+          : (() => {
+              throw new ApiError('NOT_FOUND', 404, false, 'Game not found.')
+            })()),
     ),
   )
 
+  const releases = async () => {
+    const builtin = await getTicTacToeManifest()
+    return [
+      {
+        id: 'rel_tictactoe1',
+        gameId: builtin.metadata.id,
+        version: builtin.metadata.version,
+        digest: builtin.metadata.digest,
+        status: 'published' as const,
+        profiles: builtin.spec.profiles,
+      },
+      ...(
+        await store.list<{ version: number; release: StudioRelease }>(
+          'releases',
+        )
+      ).map(({ release: r }) => ({
+        id: r.id,
+        gameId: r.manifest.metadata.id,
+        version: r.manifest.metadata.version,
+        digest: r.manifest.metadata.digest,
+        status: 'published' as const,
+        profiles: r.manifest.spec.profiles,
+      })),
+    ]
+  }
+  app.get('/v1/games/:gameId/releases', async (c) =>
+    c.json({
+      releases: (await releases()).filter(
+        (r) => r.gameId === c.req.param('gameId'),
+      ),
+      nextCursor: null,
+    }),
+  )
+  app.get('/v1/releases/:releaseId', async (c) => {
+    const release = (await releases()).find(
+      (r) => r.id === c.req.param('releaseId'),
+    )
+    if (!release)
+      throw new ApiError('NOT_FOUND', 404, false, 'Release not found.')
+    return c.json(release)
+  })
+
   app.post('/v1/matches', async (context) => {
-    localActorId(context.req.header('Authorization'))
-    const idempotencyKey = context.req.header('Idempotency-Key')
+    ;(await authenticate(context.req.header('Authorization'), 'matches:play'))
+      .id
+    const rawIdempotencyKey = context.req.header('Idempotency-Key')
+    const identity = await authenticate(
+      context.req.header('Authorization'),
+      'matches:play',
+    )
+    const idempotencyKey =
+      rawIdempotencyKey === undefined
+        ? undefined
+        : `${identity.id}:${rawIdempotencyKey}`
     if (idempotencyKey === undefined) {
       throw new ApiError(
         'IDEMPOTENCY_KEY_REQUIRED',
@@ -349,7 +467,9 @@ export function createApp(options: ControlApiOptions = {}) {
   )
 
   app.post('/v1/matches/:matchId/seats/:seatId/claim', async (context) => {
-    const actorId = localActorId(context.req.header('Authorization'))
+    const actorId = (
+      await authenticate(context.req.header('Authorization'), 'matches:play')
+    ).id
     const body = claimSeatBody.parse(await context.req.json())
     return context.json(
       await requirePlatform().claimSeat({
@@ -362,8 +482,16 @@ export function createApp(options: ControlApiOptions = {}) {
   })
 
   app.post('/v1/matches/:matchId/sessions', async (context) => {
-    const actorId = localActorId(context.req.header('Authorization'))
     const body = createSessionBody.parse(await context.req.json())
+    const actorId =
+      body.mode === 'spectate' && !context.req.header('Authorization')
+        ? `spectator_${crypto.randomUUID()}`
+        : (
+            await authenticate(
+              context.req.header('Authorization'),
+              'matches:play',
+            )
+          ).id
     return context.json(
       {
         ...(await requirePlatform().createSession({
@@ -383,8 +511,18 @@ export function createApp(options: ControlApiOptions = {}) {
 
   app.post('/v1/test-runs', async (context) => {
     requirePlatform()
-    const ownerId = localActorId(context.req.header('Authorization'))
-    const idempotencyKey = context.req.header('Idempotency-Key')
+    const ownerId = (
+      await authenticate(context.req.header('Authorization'), 'matches:play')
+    ).id
+    const rawIdempotencyKey = context.req.header('Idempotency-Key')
+    const identity = await authenticate(
+      context.req.header('Authorization'),
+      'matches:play',
+    )
+    const idempotencyKey =
+      rawIdempotencyKey === undefined
+        ? undefined
+        : `${identity.id}:${rawIdempotencyKey}`
     if (idempotencyKey === undefined) {
       throw new ApiError(
         'IDEMPOTENCY_KEY_REQUIRED',
@@ -441,21 +579,27 @@ export function createApp(options: ControlApiOptions = {}) {
   }
 
   app.get('/v1/test-runs/:runId', async (context) => {
-    const ownerId = localActorId(context.req.header('Authorization'))
+    const ownerId = (
+      await authenticate(context.req.header('Authorization'), 'matches:play')
+    ).id
     return context.json(
       await ownedTestRun(context.req.param('runId'), ownerId).result(),
     )
   })
 
   app.post('/v1/test-runs/:runId/step', async (context) => {
-    const ownerId = localActorId(context.req.header('Authorization'))
+    const ownerId = (
+      await authenticate(context.req.header('Authorization'), 'matches:play')
+    ).id
     const run = ownedTestRun(context.req.param('runId'), ownerId)
     const step = await run.step()
     return context.json({ step, run: await run.result() })
   })
 
-  app.get('/v1/test-runs/:runId/diagnostics', (context) => {
-    const ownerId = localActorId(context.req.header('Authorization'))
+  app.get('/v1/test-runs/:runId/diagnostics', async (context) => {
+    const ownerId = (
+      await authenticate(context.req.header('Authorization'), 'matches:play')
+    ).id
     const run = ownedTestRun(context.req.param('runId'), ownerId)
     const query = diagnosticQuery.parse(context.req.query())
     return context.json({
@@ -560,3 +704,6 @@ function asyncApiDocument(realtimeUrl: string) {
 }
 
 export type ControlApi = ReturnType<typeof createApp>
+
+export { DynamoDocumentStore, MemoryDocumentStore } from './store.js'
+export type { DocumentStore } from './store.js'

@@ -25,7 +25,14 @@
     "@common-arcade/test-arena": "workspace:^",
     "@hono/node-server": "^2.1.1",
     "hono": "^4.13.5",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "@common-arcade/studio": "workspace:^",
+    "@common-arcade/auth": "workspace:^",
+    "@common-arcade/manifest": "workspace:^",
+    "@common-arcade/example-tic-tac-toe": "workspace:^",
+    "@aws-sdk/client-dynamodb": "^3.883.0",
+    "@aws-sdk/lib-dynamodb": "^3.883.0",
+    "jose": "^6.1.0"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.163",

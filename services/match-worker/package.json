@@ -20,7 +20,8 @@
     "@common-arcade/auth": "workspace:^",
     "@common-arcade/example-tic-tac-toe": "workspace:^",
     "@common-arcade/match-runtime": "workspace:^",
-    "@common-arcade/protocol": "workspace:^"
+    "@common-arcade/protocol": "workspace:^",
+    "@common-arcade/studio": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "catalog:",

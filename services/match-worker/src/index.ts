@@ -1,3 +1,4 @@
+import { compileGame, type StudioRelease } from '@common-arcade/studio'
 import {
   LocalRealtimeTicketAuthority,
   type RealtimeTicketClaims,
@@ -31,7 +32,21 @@ interface MutableSeat {
   controllerId?: string
 }
 
+export interface PersistedMatch {
+  version: number
+  idempotencyKey: string
+  replay: Replay
+  manifest: GameManifest
+  seats: MutableSeat[]
+  status: MatchDescriptor['status']
+  ownershipEpoch: number
+  createdAt: string
+  updatedAt: string
+}
+
 interface MatchRecord {
+  version: number
+  idempotencyKey: string
   readonly runtime: LocalMatchRuntime
   readonly manifest: GameManifest
   readonly createdAt: string
@@ -121,6 +136,7 @@ function opaqueId(prefix: string): string {
 }
 
 export class LocalArcadePlatform {
+  private readonly operations = new Map<string, Promise<unknown>>()
   private readonly matches = new Map<string, MatchRecord>()
   private readonly idempotency = new Map<string, string>()
   private readonly sessions = new Map<string, SessionRecord>()
@@ -132,10 +148,23 @@ export class LocalArcadePlatform {
   private constructor(
     private readonly tickets: LocalRealtimeTicketAuthority,
     private readonly now: () => Date,
+    private readonly loadRelease?: (
+      id: string,
+    ) => Promise<StudioRelease | undefined>,
+    private readonly persistMatch?: (
+      record: PersistedMatch,
+      expectedVersion?: number,
+    ) => Promise<void>,
   ) {}
 
   static async create(
     options: {
+      readonly savedMatches?: PersistedMatch[]
+      readonly persistMatch?: (
+        record: PersistedMatch,
+        expectedVersion?: number,
+      ) => Promise<void>
+      readonly loadRelease?: (id: string) => Promise<StudioRelease | undefined>
       readonly ticketSecret?: Uint8Array
       readonly now?: () => Date
     } = {},
@@ -146,7 +175,41 @@ export class LocalArcadePlatform {
     const tickets = await LocalRealtimeTicketAuthority.create(secret, {
       now: () => now().getTime(),
     })
-    return new LocalArcadePlatform(tickets, now)
+    const platform = new LocalArcadePlatform(
+      tickets,
+      now,
+      options.loadRelease,
+      options.persistMatch,
+    )
+    for (const saved of options.savedMatches ?? []) {
+      const release = await options.loadRelease?.(saved.replay.releaseId)
+      const game = release
+        ? compileGame(release.document, release.id, release.digest)
+        : ticTacToeGame
+      const runtime = await AuthoritativeMatch.recover(
+        game,
+        saved.replay,
+        saved.status,
+        saved.ownershipEpoch + 1,
+        now,
+      )
+      const record: MatchRecord = {
+        runtime,
+        version: saved.version,
+        idempotencyKey: saved.idempotencyKey,
+        manifest: saved.manifest,
+        seats: saved.seats.map((s) => ({
+          ...s,
+          status: s.status === 'open' ? 'open' : 'disconnected',
+        })),
+        createdAt: saved.createdAt,
+        updatedAt: saved.updatedAt,
+      }
+      await platform.persist(record)
+      platform.matches.set(saved.replay.matchId, record)
+      platform.idempotency.set(saved.idempotencyKey, saved.replay.matchId)
+    }
+    return platform
   }
 
   async listGames(): Promise<readonly GameManifest[]> {
@@ -206,15 +269,23 @@ export class LocalArcadePlatform {
     const existingId = this.idempotency.get(request.idempotencyKey)
     if (existingId !== undefined) return this.describe(this.record(existingId))
 
-    const manifest = await getTicTacToeManifest()
-    if (request.releaseId !== ticTacToeGame.releaseId) {
+    const custom = await this.loadRelease?.(request.releaseId)
+    const manifest = custom?.manifest ?? (await getTicTacToeManifest())
+    if (!custom && request.releaseId !== ticTacToeGame.releaseId) {
       throw new LocalPlatformError(
         'NOT_FOUND',
         404,
         `Unknown release ${request.releaseId}`,
       )
     }
-    const matchId = opaqueId('mat')
+    const matchId = `mat_${Buffer.from(
+      await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(request.idempotencyKey),
+      ),
+    )
+      .toString('hex')
+      .slice(0, 32)}`
     const suffix = matchId.slice(4)
     const seats: MutableSeat[] = [
       { id: `sea_${suffix}_1`, role: 'player', status: 'open' },
@@ -222,7 +293,9 @@ export class LocalArcadePlatform {
     ]
     const runtime = await AuthoritativeMatch.create({
       matchId,
-      game: ticTacToeGame,
+      game: custom
+        ? compileGame(custom.document, custom.id, custom.digest)
+        : ticTacToeGame,
       seed: request.seed ?? opaqueId('seed'),
       configuration: request.configuration ?? {},
       roster: seats.map((seat) => ({ seatId: seat.id, role: seat.role })),
@@ -230,12 +303,15 @@ export class LocalArcadePlatform {
     })
     const timestamp = this.now().toISOString()
     const record: MatchRecord = {
+      version: 0,
+      idempotencyKey: request.idempotencyKey,
       runtime,
       manifest,
       createdAt: timestamp,
       updatedAt: timestamp,
       seats,
     }
+    await this.persist(record)
     this.matches.set(matchId, record)
     this.idempotency.set(request.idempotencyKey, matchId)
     return this.describe(record)
@@ -258,6 +334,13 @@ export class LocalArcadePlatform {
   }
 
   async claimSeat(request: ClaimSeatRequest): Promise<MatchDescriptor> {
+    return this.exclusive(request.matchId, () =>
+      this.claimSeatInternal(request),
+    )
+  }
+  private async claimSeatInternal(
+    request: ClaimSeatRequest,
+  ): Promise<MatchDescriptor> {
     const record = this.record(request.matchId)
     const seat = record.seats.find(
       (candidate) => candidate.id === request.seatId,
@@ -290,6 +373,7 @@ export class LocalArcadePlatform {
       record.runtime.start()
     }
     record.updatedAt = this.now().toISOString()
+    await this.persist(record)
     const descriptor = await this.describe(record)
     await this.notify(request.matchId)
     return descriptor
@@ -456,6 +540,16 @@ export class LocalArcadePlatform {
     action: ActionSubmission,
   ): Promise<ActionResult> {
     const session = this.getSession(sessionId)
+    return this.exclusive(session.matchId, () =>
+      this.submitActionInternal(sessionId, action),
+    )
+  }
+
+  private async submitActionInternal(
+    sessionId: string,
+    action: ActionSubmission,
+  ): Promise<ActionResult> {
+    const session = this.getSession(sessionId)
     if (
       session.mode !== 'control' ||
       session.seatId === undefined ||
@@ -476,6 +570,7 @@ export class LocalArcadePlatform {
       session.ownershipEpoch,
     )
     record.updatedAt = this.now().toISOString()
+    if (result.disposition === 'accepted') await this.persist(record)
     await this.notify(session.matchId, result)
     return result
   }
@@ -511,6 +606,41 @@ export class LocalArcadePlatform {
     return () => {
       listeners.delete(listener)
       if (listeners.size === 0) this.listeners.delete(matchId)
+    }
+  }
+
+  private async exclusive<T>(
+    matchId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const prior = this.operations.get(matchId) ?? Promise.resolve()
+    const next = prior.catch(() => {}).then(operation)
+    this.operations.set(matchId, next)
+    try {
+      return await next
+    } finally {
+      if (this.operations.get(matchId) === next) this.operations.delete(matchId)
+    }
+  }
+  private async persist(record: MatchRecord) {
+    if (!this.persistMatch) return
+    const saved: PersistedMatch = {
+      version: record.version + 1,
+      idempotencyKey: record.idempotencyKey,
+      replay: record.runtime.exportReplay(),
+      manifest: record.manifest,
+      seats: record.seats,
+      status: record.runtime.getStatus(),
+      ownershipEpoch: record.runtime.getOwnershipEpoch(),
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    }
+    try {
+      await this.persistMatch(saved, record.version || undefined)
+      record.version = saved.version
+    } catch (error) {
+      this.matches.delete(record.runtime.matchId)
+      throw error
     }
   }
 

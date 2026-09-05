@@ -1,10 +1,11 @@
 import { serve } from '@hono/node-server'
-import { createApp } from '@common-arcade/control-api'
+import { createApp, DynamoDocumentStore } from '@common-arcade/control-api'
 import {
   LocalArcadePlatform,
   LocalPlatformError,
   type ConnectedSession,
   type MatchUpdate,
+  type PersistedMatch,
 } from '@common-arcade/match-worker-service'
 import {
   ARCADE_WIRE_VERSION,
@@ -101,7 +102,38 @@ export async function startArcadeServer(
 ): Promise<RunningArcadeServer> {
   const hostname = options.hostname ?? '127.0.0.1'
   const requestedPort = options.port ?? 4100
-  const platform = options.platform ?? (await LocalArcadePlatform.create())
+  const store = process.env.ARCADE_STUDIO_TABLE
+    ? new DynamoDocumentStore(process.env.ARCADE_STUDIO_TABLE)
+    : undefined
+  const platform =
+    options.platform ??
+    (await LocalArcadePlatform.create({
+      savedMatches: store
+        ? (
+            await store.list<{ version: number; match: PersistedMatch }>(
+              'matches',
+            )
+          ).map((r) => r.match)
+        : undefined,
+      persistMatch: store
+        ? (match, expectedVersion) =>
+            store.put(
+              'matches',
+              match.replay.matchId,
+              { version: match.version, match },
+              expectedVersion,
+            )
+        : undefined,
+      loadRelease: store
+        ? async (id) =>
+            (
+              await store.get<{
+                version: number
+                release: import('@common-arcade/studio').StudioRelease
+              }>('releases', id)
+            )?.release
+        : undefined,
+    }))
   const streams = new Map<string, SessionStream>()
   const resumeTokens = new Map<string, string>()
   const wss = new WebSocketServer({
@@ -114,6 +146,7 @@ export async function startArcadeServer(
     options.realtimeUrl ?? `ws://${hostname}:${requestedPort}/realtime`
   const app = createApp({
     platform,
+    store,
     publicBaseUrl: baseUrl,
     realtimeUrl,
     logRequests: options.logRequests ?? false,
