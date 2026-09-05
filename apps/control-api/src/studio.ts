@@ -577,10 +577,33 @@ export async function commonsRequest(
       signal: AbortSignal.timeout(90_000),
     },
   )
-  const result = (await response.json()) as { data?: unknown; message?: string }
+  const result = (await response.json()) as {
+    data?: unknown
+    message?: string
+    error?: { message?: string }
+  }
   if (!response.ok)
-    throw new Error(
-      `Commons agent service: ${result.message ?? response.status}`,
+    throw new CommonsServiceError(
+      response.status === 402
+        ? 402
+        : response.status === 403
+          ? 403
+          : response.status === 429
+            ? 429
+            : 502,
+      response.status === 402
+        ? 'Your Commons account needs credits to run agents. Manage credits in Agent Commons, then retry.'
+        : `Commons agent service: ${result.message ?? result.error?.message ?? response.status}`,
     )
   return result.data ?? result
+}
+
+export class CommonsServiceError extends Error {
+  constructor(
+    public status: 402 | 403 | 429 | 502,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'Commons agent service'
+  }
 }

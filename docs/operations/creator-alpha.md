@@ -31,10 +31,26 @@ identity bootstrap lives in the Agent Commons repository at
 `apps/commons-identity/scripts/bootstrap-arcade-client.ts` and writes client
 credentials only to an operator-selected protected file.
 
-The public app is `https://common-arcade.vercel.app`. The custom hostname is
-attached in Vercel but needs the GoDaddy DNS record `A arcade 76.76.21.21`.
-After DNS verification, set `ARCADE_WEB_URL=https://arcade.agentcommons.io` and
-redeploy; both callbacks are registered with Commons identity.
+The public app is `https://arcade.agentcommons.io`, with
+`https://common-arcade.vercel.app` retained as a Vercel alias. DNS uses
+`A arcade 76.76.21.21`. Set `ARCADE_WEB_URL=https://arcade.agentcommons.io`;
+both callbacks are registered with Commons identity. OAuth grants must include
+`agents:create` as well as read, write and run scopes. Agent execution uses the
+signed-in account's Commons credits.
+
+GitHub's immutable OIDC subject for this repository is
+`repo:Arttribute@134047006/common-arcade@1356998598:environment:development`.
+The AWS deployment role must trust that exact subject and `sts.amazonaws.com`
+audience. A name-only trust will reject newly created GitHub repositories.
+
+## Downloadable tools
+
+`node scripts/bundle-tools.mjs 0.1.0-alpha.1` builds installable SDK and CLI
+tarballs in `dist/releases`. It includes workspace code and SDK declarations;
+only the public Zod package remains as a declaration dependency. Verify these
+in a fresh installation before attaching them to a GitHub release. This is a
+usable download channel while initial npm package registration and protected
+OIDC publishing are being configured; it does not claim an npm publication.
 
 ## Verification
 

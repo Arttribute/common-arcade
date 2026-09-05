@@ -100,7 +100,14 @@ export function createAuthenticator(
           audience: options.audience ?? 'commons-platform',
           algorithms: ['RS256', 'ES256', 'EdDSA'],
         })
-        if (!payload.sub) throw new Error('Missing subject')
+        // Commons client-credentials JWTs identify the service with azp.
+        // Match the platform verifier; never accept azp as a human identity.
+        const subject =
+          payload.sub ??
+          (payload.actor_type === 'service' && typeof payload.azp === 'string'
+            ? payload.azp
+            : undefined)
+        if (!subject) throw new Error('Missing subject')
         const grants =
           typeof payload.scope === 'string'
             ? payload.scope.split(' ')
@@ -112,7 +119,7 @@ export function createAuthenticator(
           scopes.push('projects:read', 'matches:play')
         if (grants.includes('agents:write'))
           scopes.push('projects:write', 'releases:publish', 'keys:manage')
-        principal = { id: payload.sub, scopes, token, provider: 'commons' }
+        principal = { id: subject, scopes, token, provider: 'commons' }
       } catch {
         throw new IdentityError(
           401,

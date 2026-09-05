@@ -1,5 +1,5 @@
 import { bodyLimit } from 'hono/body-limit'
-import { createStudioApi } from './studio.js'
+import { CommonsServiceError, createStudioApi } from './studio.js'
 import { createAuthenticator, IdentityError } from './identity.js'
 import {
   DynamoDocumentStore,
@@ -135,6 +135,23 @@ function problem(
   error: unknown,
   requestIdValue: string,
 ): { body: ProblemDetails; status: ContentfulStatusCode } {
+  if (error instanceof CommonsServiceError) {
+    return {
+      status: error.status,
+      body: {
+        type: 'about:blank',
+        title: error.name,
+        status: error.status,
+        detail: error.message,
+        code:
+          error.status === 402
+            ? 'COMMONS_CREDITS_REQUIRED'
+            : 'COMMONS_AGENT_UNAVAILABLE',
+        requestId: requestIdValue,
+        retryable: error.status === 429 || error.status === 502,
+      },
+    }
+  }
   if (error instanceof IdentityError || error instanceof StoreConflict) {
     const status = error instanceof IdentityError ? error.status : 409
     return {
