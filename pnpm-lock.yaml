@@ -107,7 +107,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.27.7)(tsx@4.23.13)(yaml@2.9.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
 
   apps/match-supervisor:
     devDependencies:
@@ -153,7 +153,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.27.7)(tsx@4.23.13)(yaml@2.9.0))
 
   apps/realtime-gateway:
     dependencies:
@@ -433,9 +433,6 @@ importers:
       '@common-arcade/realtime-client':
         specifier: workspace:^
         version: link:../realtime-client
-      '@common-arcade/studio':
-        specifier: workspace:^
-        version: link:../studio
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -495,9 +492,6 @@ importers:
       '@common-arcade/protocol':
         specifier: workspace:^
         version: link:../protocol
-      '@common-arcade/studio':
-        specifier: workspace:^
-        version: link:../studio
     devDependencies:
       tsup:
         specifier: 'catalog:'

@@ -1,3 +1,15 @@
+import type {
+  GameDocument,
+  StudioProject,
+  StudioRelease,
+  StudioAnnotation,
+} from '@common-arcade/protocol'
+export type {
+  GameDocument,
+  StudioProject,
+  StudioRelease,
+  StudioAnnotation,
+} from '@common-arcade/protocol'
 import {
   gameManifestSchema,
   gameReleaseDescriptorSchema,
@@ -286,6 +298,68 @@ export class ControlClient {
     )) as DiagnosticList
   }
 
+  async listProjects(): Promise<{ projects: StudioProject[] }> {
+    return this.request('/v1/projects') as Promise<{
+      projects: StudioProject[]
+    }>
+  }
+  async createProject(document?: GameDocument): Promise<StudioProject> {
+    return this.request('/v1/projects', {
+      method: 'POST',
+      body: { document },
+    }) as Promise<StudioProject>
+  }
+  async getProject(id: string): Promise<StudioProject> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(id)}`,
+    ) as Promise<StudioProject>
+  }
+  async updateProject(
+    id: string,
+    document: GameDocument,
+    revision: number,
+  ): Promise<StudioProject> {
+    return this.request(`/v1/projects/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: document,
+      headers: { 'If-Match': String(revision) },
+    }) as Promise<StudioProject>
+  }
+  async publishProject(id: string, revision: number): Promise<StudioRelease> {
+    return this.request(`/v1/projects/${encodeURIComponent(id)}/publish`, {
+      method: 'POST',
+      body: {},
+      headers: { 'If-Match': String(revision) },
+    }) as Promise<StudioRelease>
+  }
+  async annotateProject(
+    id: string,
+    annotation: Omit<
+      StudioAnnotation,
+      'id' | 'digest' | 'status' | 'createdAt'
+    >,
+  ): Promise<StudioProject> {
+    return this.request(`/v1/projects/${encodeURIComponent(id)}/annotations`, {
+      method: 'POST',
+      body: annotation,
+    }) as Promise<StudioProject>
+  }
+  async createProjectRun(
+    id: string,
+    input: { seed?: string; preferences?: number[][] } = {},
+  ): Promise<TestRun> {
+    return this.request(`/v1/projects/${encodeURIComponent(id)}/runs`, {
+      method: 'POST',
+      body: input,
+    }) as Promise<TestRun>
+  }
+  async stepProjectRun(id: string, steps: number): Promise<TestRun> {
+    return this.request(`/v1/studio/runs/${encodeURIComponent(id)}/step`, {
+      method: 'POST',
+      body: { steps },
+    }) as Promise<TestRun>
+  }
+
   private async request(
     path: string,
     options: {
@@ -302,13 +376,16 @@ export class ControlClient {
     if (options.body !== undefined) headers['content-type'] = 'application/json'
     if (this.#authorization !== undefined)
       headers.authorization = this.#authorization
-    const response = await this.#fetch(new URL(path, this.#baseUrl), {
-      method: options.method,
-      headers,
-      body:
-        options.body === undefined ? undefined : JSON.stringify(options.body),
-      signal: options.signal,
-    })
+    const response = await this.#fetch(
+      new URL(path.replace(/^\//, ''), this.#baseUrl.href.replace(/\/?$/, '/')),
+      {
+        method: options.method,
+        headers,
+        body:
+          options.body === undefined ? undefined : JSON.stringify(options.body),
+        signal: options.signal,
+      },
+    )
     const body: unknown = await response.json()
     if (!response.ok) {
       const parsed = problemDetailsSchema.safeParse(body)

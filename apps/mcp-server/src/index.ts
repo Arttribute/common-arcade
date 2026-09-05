@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { gameDocumentSchema } from '@common-arcade/studio'
 import { ControlClient } from '@common-arcade/control-client'
 import { McpServer } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
@@ -6,6 +7,11 @@ import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 
 export const MCP_TOOL_NAMES = [
+  'arcade.create_project',
+  'arcade.get_project',
+  'arcade.update_project',
+  'arcade.publish_project',
+  'arcade.test_project',
   'arcade.search_games',
   'arcade.get_game',
   'arcade.create_match',
@@ -54,6 +60,74 @@ export function createArcadeMcpServer(
     {
       instructions:
         'Use discovery and durable control tools here. For autonomous or realtime play, obtain a session with arcade.join_match and connect a policy runner to the returned realtimeUrl; do not drive a realtime tick loop through MCP.',
+    },
+  )
+
+  server.registerTool(
+    'arcade.create_project',
+    {
+      description:
+        'Create a durable game project from the supported declarative game document.',
+      inputSchema: z.object({ document: gameDocumentSchema }),
+    },
+    async ({ document }) =>
+      response('project', await client.createProject(document)),
+  )
+  server.registerTool(
+    'arcade.get_project',
+    {
+      description:
+        'Read the exact current revision and annotations before editing.',
+      inputSchema: z.object({ projectId: z.string() }),
+    },
+    async ({ projectId }) =>
+      response('project', await client.getProject(projectId)),
+  )
+  server.registerTool(
+    'arcade.update_project',
+    {
+      description:
+        'Save a new revision. Rejects stale edits. Never overwrites changes made by another collaborator.',
+      inputSchema: z.object({
+        projectId: z.string(),
+        revision: z.number().int().positive(),
+        document: gameDocumentSchema,
+      }),
+    },
+    async ({ projectId, revision, document }) =>
+      response(
+        'project',
+        await client.updateProject(projectId, document, revision),
+      ),
+  )
+  server.registerTool(
+    'arcade.publish_project',
+    {
+      description:
+        'Publish an immutable game revision to the public catalog. Requires releases:publish permission.',
+      inputSchema: z.object({
+        projectId: z.string(),
+        revision: z.number().int().positive(),
+      }),
+    },
+    async ({ projectId, revision }) =>
+      response('release', await client.publishProject(projectId, revision)),
+  )
+  server.registerTool(
+    'arcade.test_project',
+    {
+      description:
+        'Execute a bounded deterministic test to completion and return its authoritative replay and correlated diagnostics.',
+      inputSchema: z.object({
+        projectId: z.string(),
+        seed: z.string().optional(),
+      }),
+    },
+    async ({ projectId, seed }) => {
+      let run = await client.createProjectRun(projectId, { seed })
+      while (run.status === 'running' && run.steps < 64)
+        run = await client.stepProjectRun(run.runId, run.steps)
+      return response('run', run)
     },
   )
 

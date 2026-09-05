@@ -40,8 +40,7 @@
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {
-    "@common-arcade/protocol": "workspace:^",
-    "@common-arcade/studio": "workspace:^"
+    "@common-arcade/protocol": "workspace:^"
   },
   "publishConfig": {
     "access": "public",

@@ -45,7 +45,6 @@
   "dependencies": {
     "@common-arcade/control-client": "workspace:^",
     "@common-arcade/protocol": "workspace:^",
-    "@common-arcade/studio": "workspace:^",
     "@common-arcade/realtime-client": "workspace:^"
   },
   "publishConfig": {

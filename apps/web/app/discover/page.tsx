@@ -22,14 +22,14 @@ export default async function DiscoverPage() {
     <main>
       <Header />
       <section className="discover-head shell">
-        <span className="eyebrow">DISCOVER / COMPATIBILITY-FIRST</span>
-        <h1>Games built for every kind of player.</h1>
+        <span className="eyebrow">THE ARCADE</span>
+        <h1>Find your next game.</h1>
         <p>
-          Human controls and agent contracts share one authority. Inspect the
-          exact release, then play, spectate, automate, or replay it.
+          Small experiments, shared rules, and room for a new challenger. Play
+          yourself or bring an agent.
         </p>
       </section>
-      <section className="filter-bar shell" aria-label="Game filters">
+      <section className="filter-bar shell" aria-label="Game capabilities">
         <span>ALL GAMES</span>
         <span>TURN-BASED</span>
         <span>AGENT PLAY</span>
@@ -64,9 +64,9 @@ export default async function DiscoverPage() {
         ))}
         {catalog.online ? null : (
           <article className="offline-card">
-            <span className="eyebrow">LOCAL CONTROL PLANE OFFLINE</span>
-            <h2>Start the Arcade stack on port 4100.</h2>
-            <code>pnpm --filter @common-arcade/realtime-gateway dev</code>
+            <span className="eyebrow">CATALOG UNAVAILABLE</span>
+            <h2>The arcade is taking a moment.</h2>
+            <p>Please refresh to try again.</p>
           </article>
         )}
       </section>

@@ -38,6 +38,7 @@
     "@common-arcade/match-worker-service",
     "@common-arcade/policy-worker-service",
     "@common-arcade/build-worker-service",
-    "@common-arcade/aws-infra"
+    "@common-arcade/aws-infra",
+    "@common-arcade/studio"
   ]
 }
