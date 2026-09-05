@@ -1,5 +1,9 @@
 import { serve } from '@hono/node-server'
-import { createApp, DynamoDocumentStore } from '@common-arcade/control-api'
+import {
+  createApp,
+  DynamoDocumentStore,
+  MemoryDocumentStore,
+} from '@common-arcade/control-api'
 import {
   LocalArcadePlatform,
   LocalPlatformError,
@@ -104,7 +108,7 @@ export async function startArcadeServer(
   const requestedPort = options.port ?? 4100
   const store = process.env.ARCADE_STUDIO_TABLE
     ? new DynamoDocumentStore(process.env.ARCADE_STUDIO_TABLE)
-    : undefined
+    : new MemoryDocumentStore()
   const platform =
     options.platform ??
     (await LocalArcadePlatform.create({

@@ -1,6 +1,7 @@
 ---
 '@common-arcade/protocol': patch
 '@common-arcade/control-client': patch
+'@common-arcade/realtime-client': patch
 '@common-arcade/sdk': patch
 '@common-arcade/cli': patch
 ---
