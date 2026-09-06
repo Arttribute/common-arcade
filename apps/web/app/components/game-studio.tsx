@@ -57,7 +57,7 @@ import {
   type StudioRelease,
 } from '@common-arcade/studio'
 import type { TestRun } from '@common-arcade/control-client'
-import { arcade, arcadeCopilot } from '../../lib/api'
+import { arcade, arcadeCopilot, type CopilotActivity } from '../../lib/api'
 import { RecordingShelf, storeRecording } from './recording-shelf'
 
 type Agent = { agentId: string; name: string }
@@ -74,12 +74,6 @@ type Log = {
   category: string
   source: { seatId?: string; kind: string }
   data: unknown
-}
-type Proposal = {
-  summary: string
-  document: GameDocument
-  baseRevision: number
-  agentId: string
 }
 export function GameStudio({ projectId }: { projectId: string }) {
   const router = useRouter()
@@ -173,11 +167,16 @@ export function GameStudio({ projectId }: { projectId: string }) {
     [note, setNote] = useState('')
   const [agents, setAgents] = useState<Agent[]>([]),
     [copilotId, setCopilotId] = useState('')
-  const [prompt, setPrompt] = useState(''),
-    [proposal, setProposal] = useState<Proposal>()
+  const [prompt, setPrompt] = useState('')
   const [messages, setMessages] = useState<
-    { role: 'user' | 'assistant'; text: string }[]
+    {
+      role: 'user' | 'assistant'
+      text: string
+      sessionId?: string
+      activities?: CopilotActivity[]
+    }[]
   >([])
+  const [copilotActivity, setCopilotActivity] = useState<CopilotActivity[]>([])
   const [busy, setBusy] = useState(''),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('')
@@ -207,8 +206,8 @@ export function GameStudio({ projectId }: { projectId: string }) {
     setBrowserRun(undefined)
     setBrowserEvents([])
     setPlaying(false)
-    setProposal(undefined)
     setMessages([])
+    setCopilotActivity([])
     setDraft(undefined)
     window.history.replaceState(null, '', `/studio/${p.id}`)
   }, [])
@@ -348,11 +347,8 @@ export function GameStudio({ projectId }: { projectId: string }) {
         a.revision ===
         (view === 'test' && run ? run.revision : project.revision),
     ) ?? []
-  /**
-   * One copilot turn: the request goes out, the finished game comes back and is
-   * saved straight away. Creating a game is a single run, so the creator lands
-   * on a playable revision rather than on a proposal they must accept first.
-   */
+  /** One raw user turn runs in a durable Commons session. Arcade project
+   * changes arrive through tool calls and are already authoritative revisions. */
   const runCopilot = useCallback(
     async (
       message: string,
@@ -362,21 +358,35 @@ export function GameStudio({ projectId }: { projectId: string }) {
       task('copilot', async () => {
         const p = !project || dirty ? await save() : project
         setMessages((m) => [...m, { role: 'user', text: message }])
-        const result = (await arcadeCopilot(
+        setCopilotActivity([])
+        const result = await arcadeCopilot(
           p.id,
           { message, agentId: copilotId, attachments, model },
-          { onWait: setElapsed },
-        )) as Proposal
+          { onWait: setElapsed, onUpdate: setCopilotActivity },
+        )
         setElapsed(0)
-        setMessages((m) => [...m, { role: 'assistant', text: result.summary }])
-        if (result.baseRevision === p.revision) {
-          await save(result.document)
-          setProposal(undefined)
-          setView('preview')
-        } else {
-          // The project moved while the agent worked; let the creator decide.
-          setProposal(result)
-        }
+        const latest = await arcade<StudioProject>(`projects/${p.id}`)
+        setProject(latest)
+        setDocument(latest.document)
+        setSource(JSON.stringify(latest.document, null, 2))
+        setProjects((all) => [latest, ...all.filter((x) => x.id !== latest.id)])
+        setMessages((m) => [
+          ...m,
+          {
+            role: 'assistant',
+            text: result.response,
+            sessionId: result.sessionId,
+            activities: result.events,
+          },
+        ])
+        setCopilotActivity([])
+        setView('preview')
+        setPreviewKey((key) => key + 1)
+        setNotice(
+          latest.revision > p.revision
+            ? `Copilot saved revision ${latest.revision}.`
+            : 'Copilot finished without changing the project.',
+        )
       }),
     [project, dirty, copilotId],
   )
@@ -874,47 +884,58 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       <small>
                         {m.role === 'user' ? 'You' : 'Arcade Copilot'}
                       </small>
+                      {m.activities?.length ? (
+                        <div className="studio-agent-activity">
+                          <span>
+                            Worked with {m.activities.length}{' '}
+                            {m.activities.length === 1 ? 'step' : 'steps'}
+                          </span>
+                          {m.activities.map((activity) => (
+                            <div key={activity.sequence}>
+                              {activity.status === 'running' ? (
+                                <Loader2 size={12} className="spin" />
+                              ) : (
+                                <Check size={12} />
+                              )}
+                              <span>{activity.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                       <p>{m.text}</p>
+                      {m.role === 'assistant' && m.sessionId ? (
+                        <a
+                          href={`https://www.agentcommons.io/studio/agents/${copilotId}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="studio-session-link"
+                        >
+                          View Commons session
+                        </a>
+                      ) : null}
                     </div>
                   ))}
                   {busy === 'copilot' && (
-                    <div className="studio-thinking" role="status">
-                      {elapsed > 4
-                        ? `Building your game… ${elapsed}s`
-                        : 'Building your game…'}
-                    </div>
-                  )}
-                  {proposal && (
-                    <div className="studio-proposal">
-                      <span>
-                        <Check size={13} />
-                        Validated game proposal
-                      </span>
-                      <p>{proposal.summary}</p>
-                      <Button
-                        variant="primary"
-                        disabled={
-                          !!busy || proposal.baseRevision !== project?.revision
-                        }
-                        onClick={() =>
-                          void task('save', async () => {
-                            await save(proposal.document)
-                            setProposal(undefined)
-                            setView('preview')
-                            setNotice(
-                              'Copilot changes saved as a new revision.',
-                            )
-                          })
-                        }
-                      >
-                        Apply changes
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        onClick={() => setProposal(undefined)}
-                      >
-                        Dismiss
-                      </Button>
+                    <div role="status">
+                      <div className="studio-thinking">
+                        {elapsed > 4
+                          ? `Worked for ${elapsed}s`
+                          : 'Arcade Copilot is working…'}
+                      </div>
+                      {copilotActivity.length ? (
+                        <div className="studio-agent-activity is-live">
+                          {copilotActivity.map((activity) => (
+                            <div key={activity.sequence}>
+                              {activity.status === 'running' ? (
+                                <Loader2 size={12} className="spin" />
+                              ) : (
+                                <Check size={12} />
+                              )}
+                              <span>{activity.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </div>

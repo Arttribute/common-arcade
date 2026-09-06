@@ -787,6 +787,41 @@ h3 {
 .studio-message.assistant p {
   color: #292524;
 }
+.studio-agent-activity {
+  margin: 2px 0 14px;
+  padding-left: 2px;
+  color: #78716c;
+  font-size: 10px;
+}
+.studio-agent-activity > span {
+  display: block;
+  margin-bottom: 8px;
+  color: #57534e;
+  font-weight: 550;
+}
+.studio-agent-activity > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 25px;
+  border-left: 1px solid #e7e5e4;
+  padding-left: 10px;
+}
+.studio-agent-activity > div svg {
+  flex: none;
+  color: #a8a29e;
+}
+.studio-agent-activity.is-live {
+  margin-top: 2px;
+}
+.studio-session-link {
+  display: inline-block;
+  margin-top: 10px;
+  color: #78716c;
+  font-size: 10px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .studio-thinking {
   display: flex;
   align-items: center;
