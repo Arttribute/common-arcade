@@ -315,7 +315,11 @@ export function createApp(options: ControlApiOptions = {}) {
       status: 'ok',
       service: 'common-arcade-control-api',
       startedAt,
-      matchService: options.platform === undefined ? 'unconfigured' : 'local',
+      matchService: options.platform
+        ? 'local'
+        : process.env.ARCADE_REALTIME_CONTROL_URL
+          ? 'remote'
+          : 'unconfigured',
     }),
   )
 

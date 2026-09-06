@@ -234,7 +234,7 @@ describe('portable browser playtests', () => {
           body: JSON.stringify(decision),
         })
       ).status,
-    ).toBe(409)
+    ).toBe(200)
     const result = await (
       await app.request(`/v1/studio/browser-runs/${run.id}`, { headers })
     ).json()

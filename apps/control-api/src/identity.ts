@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, jwtVerify } from 'jose'
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
 import type { DocumentStore, StoredDocument } from './store.js'
 
 export type Principal = {
@@ -95,11 +95,47 @@ export function createAuthenticator(
       if (!keys || !issuer)
         throw new IdentityError(401, 'Commons identity is not configured.')
       try {
-        const { payload } = await jwtVerify(token, keys, {
-          issuer,
-          audience: options.audience ?? 'commons-platform',
-          algorithms: ['RS256', 'ES256', 'EdDSA'],
-        })
+        let payload: JWTPayload
+        if (token.split('.').length === 3) {
+          payload = (
+            await jwtVerify(token, keys, {
+              issuer,
+              audience: options.audience ?? 'commons-platform',
+              algorithms: ['RS256', 'ES256', 'EdDSA'],
+            })
+          ).payload
+        } else {
+          if (token.startsWith('local:'))
+            throw new Error('Local identities are disabled')
+          const response = await fetch(
+            `${(process.env.COMMONS_API_URL ?? 'https://api.agentcommons.io').replace(/\/$/, '')}/v1/identity`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+              redirect: 'error',
+              signal: AbortSignal.timeout(15000),
+            },
+          )
+          if (!response.ok) throw new Error('Inactive Commons credential')
+          const identity = (await response.json()) as {
+            actorId?: unknown
+            actorType?: unknown
+            scopes?: unknown
+            credentialType?: unknown
+          }
+          if (
+            typeof identity.actorId !== 'string' ||
+            !identity.actorId ||
+            identity.credentialType !== 'oauth' ||
+            !Array.isArray(identity.scopes) ||
+            !identity.scopes.every((s) => typeof s === 'string')
+          )
+            throw new Error('Invalid verified principal')
+          payload = {
+            sub: identity.actorId,
+            actor_type: identity.actorType,
+            scopes: identity.scopes,
+          }
+        }
         // Commons client-credentials JWTs identify the service with azp.
         // Match the platform verifier; never accept azp as a human identity.
         const subject =
