@@ -4,6 +4,7 @@ import {
   compileGame,
   compilePresentation,
   documentDigest,
+  emptyBrowserDocument,
   exampleDocument,
   gameDocumentSchema,
   releaseManifest,
@@ -31,7 +32,7 @@ import {
 
 type ProjectRecord = StoredDocument & { project: StudioProject }
 /** How long a proposal may run before the studio stops waiting on it. */
-const COPILOT_JOB_DEADLINE_MS = 300_000
+const COPILOT_JOB_DEADLINE_MS = 590_000
 type CopilotJob = StoredDocument & {
   id: string
   projectId: string
@@ -201,7 +202,7 @@ export function createStudioApi(
       .object({ document: gameDocumentSchema.optional() })
       .strict()
       .parse(await c.req.json())
-    const document = body.document ?? starterDocument,
+    const document = body.document ?? emptyBrowserDocument,
       now = new Date().toISOString()
     const project: StudioProject = {
       id: id('prj'),
