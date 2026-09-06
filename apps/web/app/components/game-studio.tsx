@@ -1,4 +1,5 @@
 'use client'
+import { AccountMenu } from './account-menu'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -429,6 +430,12 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 Sign in to create
               </a>
             )}
+            <AccountMenu
+              user={user}
+              beforeSignOut={async () => {
+                if (dirty) await save()
+              }}
+            />
             {icon(
               <PanelRightClose size={16} />,
               'Toggle assistant panel',

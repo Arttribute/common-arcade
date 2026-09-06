@@ -1,4 +1,5 @@
 'use client'
+import { AccountMenu } from './account-menu'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -82,11 +83,7 @@ export function StudioHome() {
         <nav>
           <Link href="/agents">My agents</Link>
           <Link href="/docs">Documentation</Link>
-          {identity.user ? (
-            <span>{identity.user.name}</span>
-          ) : (
-            <a href="/api/auth/login?next=/studio">Sign in</a>
-          )}
+          <AccountMenu user={identity.user} />
         </nav>
       </header>
       <section className="studio-home-create">
