@@ -173,6 +173,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
       role: 'user' | 'assistant'
       text: string
       sessionId?: string
+      durationSeconds?: number
       activities?: CopilotActivity[]
     }[]
   >([])
@@ -376,6 +377,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
             role: 'assistant',
             text: result.response,
             sessionId: result.sessionId,
+            durationSeconds: result.durationSeconds,
             activities: result.events,
           },
         ])
@@ -887,8 +889,9 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       {m.activities?.length ? (
                         <div className="studio-agent-activity">
                           <span>
-                            Worked with {m.activities.length}{' '}
-                            {m.activities.length === 1 ? 'step' : 'steps'}
+                            {m.durationSeconds
+                              ? `Worked for ${m.durationSeconds}s`
+                              : `Used ${m.activities.length} ${m.activities.length === 1 ? 'tool' : 'tools'}`}
                           </span>
                           {m.activities.map((activity) => (
                             <div key={activity.sequence}>

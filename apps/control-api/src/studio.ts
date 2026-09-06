@@ -923,6 +923,14 @@ export function createStudioApi(
             projectRevision: job.projectRevision,
             agentId: job.agentId,
             sessionId: job.sessionId,
+            durationSeconds: Math.max(
+              0,
+              Math.round(
+                (Date.parse(job.finishedAt ?? new Date().toISOString()) -
+                  Date.parse(job.startedAt)) /
+                  1000,
+              ),
+            ),
           }
         : {}),
       events: job.events,
@@ -1176,7 +1184,10 @@ export function createStudioApi(
     agentId: string,
   ) {
     const partition = `commons-project-sessions:${p.id}`
-    const key = `${project.id}:${agentId}`
+    // JSON proposal sessions contain the retired response contract in their
+    // history. A versioned key gives the native tool runtime a clean first turn
+    // while preserving every prior Commons session for audit and review.
+    const key = `${project.id}:${agentId}:native-v1`
     const current = await store.get<CommonsProjectSession>(partition, key)
     if (current?.sessionId) return current.sessionId
     const created = (await commonsRequest(p, '/v1/sessions', {
