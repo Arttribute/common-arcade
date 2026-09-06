@@ -1300,7 +1300,7 @@ h3 {
   color: #b91c1c;
 }
 @media (max-width: 650px) {
-  .studio-home > header nav a {
+  .studio-home > header nav > a:not(.arcade-sign-in) {
     display: none;
   }
   .studio-home-create {
