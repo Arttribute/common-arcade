@@ -3,6 +3,7 @@ import { CfnOutput, Duration, Stack, type StackProps } from 'aws-cdk-lib'
 import * as apigateway from 'aws-cdk-lib/aws-apigatewayv2'
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations'
 import type { ITable } from 'aws-cdk-lib/aws-dynamodb'
+import { PolicyStatement } from 'aws-cdk-lib/aws-iam'
 import * as lambda from 'aws-cdk-lib/aws-lambda'
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs'
 import type { Construct } from 'constructs'
@@ -48,7 +49,22 @@ export class ControlPlaneStack extends Stack {
 
     props.table.grantReadWriteData(handler)
     props.recordingsBucket.grantReadWrite(handler)
-    handler.grantInvoke(handler)
+    // Avoid referencing the function from its own role policy: that makes the
+    // function depend on a policy which itself depends on the function ARN.
+    // The stack prefix still limits this worker role to Common Arcade control
+    // functions in this account and region.
+    handler.addToRolePolicy(
+      new PolicyStatement({
+        actions: ['lambda:InvokeFunction'],
+        resources: [
+          this.formatArn({
+            service: 'lambda',
+            resource: 'function',
+            resourceName: `${this.stackName.slice(0, 31)}-*`,
+          }),
+        ],
+      }),
+    )
     const functionUrl = handler.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.NONE,
       invokeMode: lambda.InvokeMode.BUFFERED,
