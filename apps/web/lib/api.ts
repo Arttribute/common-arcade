@@ -39,10 +39,22 @@ export async function arcadeCopilot(
   },
   options: { signal?: AbortSignal; onWait?: (seconds: number) => void } = {},
 ): Promise<CopilotProposal> {
-  const started = await arcade<{ jobId: string }>(
+  const started = await arcade<{ jobId?: string } & Partial<CopilotProposal>>(
     `projects/${projectId}/copilot`,
     request,
   )
+  // A control plane that has not shipped the job endpoint yet answers with the
+  // finished proposal. Accepting both shapes means the web and the API can be
+  // released in either order without a broken window between them.
+  if (!started.jobId && started.document)
+    return {
+      summary: started.summary ?? '',
+      document: started.document,
+      baseRevision: started.baseRevision ?? 0,
+      agentId: started.agentId ?? request.agentId,
+    }
+  if (!started.jobId)
+    throw new Error('The build could not be started. Please retry.')
   const startedAt = Date.now()
   for (;;) {
     await new Promise((resolve) => setTimeout(resolve, 2000))
