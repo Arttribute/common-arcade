@@ -26,6 +26,8 @@ function stubCommons(reply: () => Promise<Response> | Response) {
         scopes: ['agents:read', 'agents:write'],
       })
     if (url.includes('/v1/agents/run')) return reply()
+    if (url.endsWith('/v1/sessions'))
+      return Response.json({ data: { sessionId: 'ses_arcade_project' } })
     return Response.json({ data: { agentId: 'agt_copilot', name: 'Copilot' } })
   })
   return calls
@@ -105,6 +107,7 @@ describe('building a game with a Commons agent', () => {
     // The run must not ask for CLI tools it has no way to execute.
     const run = calls.find((call) => call.url.includes('/v1/agents/run'))
     expect(run?.body.cliContext).toBeUndefined()
+    expect(run?.body.sessionId).toBe('ses_arcade_project')
     expect(run?.body.messages[0].content).toContain('window.arcade')
 
     const saved = await app.request(`/v1/projects/${project.id}`, {
@@ -127,6 +130,123 @@ describe('building a game with a Commons agent', () => {
     expect(
       (await app.request(`/v1/studio/releases/${release.id}/preview`)).status,
     ).toBe(200)
+  })
+
+  it('continues later turns in the same durable Commons session', async () => {
+    const calls = stubCommons(() =>
+      Response.json({
+        data: { content: JSON.stringify({ summary: 'ok', document: duel }) },
+      }),
+    )
+    const { app } = setup()
+    const { project, jobId } = await start(app)
+    await poll(app, jobId)
+    const second = await app.request(`/v1/projects/${project.id}/copilot`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        message: 'Make the jump taller.',
+        agentId: 'agt_copilot',
+      }),
+    })
+    await poll(app, (await second.json()).jobId)
+    expect(
+      calls.filter((call) => call.url.endsWith('/v1/sessions')),
+    ).toHaveLength(1)
+    expect(
+      calls
+        .filter((call) => call.url.includes('/v1/agents/run'))
+        .map((call) => call.body.sessionId),
+    ).toEqual(['ses_arcade_project', 'ses_arcade_project'])
+  })
+
+  it('queues hosted work and completes it only through the private worker', async () => {
+    stubCommons(() =>
+      Response.json({
+        data: {
+          content: JSON.stringify({ summary: 'queued', document: duel }),
+        },
+      }),
+    )
+    const store = new MemoryDocumentStore()
+    let queued: any
+    const app = createApp({
+      store,
+      logRequests: false,
+      workerSecret: 'worker-test-secret',
+      dispatchCopilotJob: async (invocation) => {
+        queued = invocation
+      },
+    })
+    const { jobId } = await start(app)
+    expect(queued.jobId).toBe(jobId)
+    expect(
+      await (
+        await app.request(`/v1/studio/copilot-jobs/${jobId}`, { headers })
+      ).json(),
+    ).toMatchObject({ status: 'running' })
+    expect(
+      (
+        await app.request(`/v1/internal/copilot-jobs/${jobId}/run`, {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'X-Arcade-Worker-Secret': 'wrong',
+          },
+          body: JSON.stringify(queued.input),
+        })
+      ).status,
+    ).toBe(404)
+    expect(
+      (
+        await app.request(`/v1/internal/copilot-jobs/${jobId}/run`, {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'X-Arcade-Worker-Secret': 'worker-test-secret',
+          },
+          body: JSON.stringify(queued.input),
+        })
+      ).status,
+    ).toBe(200)
+    expect(await poll(app, jobId)).toMatchObject({
+      status: 'ready',
+      summary: 'queued',
+    })
+  })
+
+  it('returns a repaired game after compiler feedback in the same session', async () => {
+    let attempt = 0
+    const calls = stubCommons(() => {
+      attempt++
+      return Response.json({
+        data: {
+          content: JSON.stringify({
+            summary: attempt === 1 ? 'broken first draft' : 'repaired duel',
+            document:
+              attempt === 1
+                ? {
+                    ...duel,
+                    files: [
+                      duel.files[0],
+                      { path: 'main.js', content: 'const broken = ;' },
+                    ],
+                  }
+                : duel,
+          }),
+        },
+      })
+    })
+    const { app } = setup()
+    const { jobId } = await start(app)
+    expect(await poll(app, jobId)).toMatchObject({
+      status: 'ready',
+      summary: 'repaired duel',
+    })
+    const runs = calls.filter((call) => call.url.includes('/v1/agents/run'))
+    expect(runs).toHaveLength(2)
+    expect(runs[1]?.body.sessionId).toBe('ses_arcade_project')
+    expect(runs[1]?.body.messages[0].content).toContain('Validator feedback')
   })
 
   it('reports an agent that answers with prose instead of failing the studio', async () => {

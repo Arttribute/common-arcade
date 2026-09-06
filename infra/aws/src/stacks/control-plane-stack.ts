@@ -38,7 +38,7 @@ export class ControlPlaneStack extends Stack {
       handler: 'handler',
       memorySize: 512,
       runtime: lambda.Runtime.NODEJS_22_X,
-      timeout: Duration.seconds(120),
+      timeout: Duration.seconds(600),
       tracing: lambda.Tracing.ACTIVE,
       bundling: {
         minify: true,
@@ -48,6 +48,7 @@ export class ControlPlaneStack extends Stack {
 
     props.table.grantReadWriteData(handler)
     props.recordingsBucket.grantReadWrite(handler)
+    handler.grantInvoke(handler)
     const functionUrl = handler.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.NONE,
       invokeMode: lambda.InvokeMode.BUFFERED,
