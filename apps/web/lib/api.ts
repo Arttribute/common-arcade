@@ -18,6 +18,66 @@ export async function arcade<T>(
   return result as T
 }
 
+export type CopilotProposal = {
+  summary: string
+  document: unknown
+  baseRevision: number
+  agentId: string
+}
+/**
+ * Runs one copilot turn to completion. The build itself is a single agent run;
+ * it is collected by polling because a whole game takes minutes and every CDN
+ * in front of the control plane closes a response long before then.
+ */
+export async function arcadeCopilot(
+  projectId: string,
+  request: {
+    message: string
+    agentId: string
+    attachments?: { fileId: string }[]
+    model?: { provider: string; modelId: string }
+  },
+  options: { signal?: AbortSignal; onWait?: (seconds: number) => void } = {},
+): Promise<CopilotProposal> {
+  const started = await arcade<{ jobId?: string } & Partial<CopilotProposal>>(
+    `projects/${projectId}/copilot`,
+    request,
+  )
+  // A control plane that has not shipped the job endpoint yet answers with the
+  // finished proposal. Accepting both shapes means the web and the API can be
+  // released in either order without a broken window between them.
+  if (!started.jobId && started.document)
+    return {
+      summary: started.summary ?? '',
+      document: started.document,
+      baseRevision: started.baseRevision ?? 0,
+      agentId: started.agentId ?? request.agentId,
+    }
+  if (!started.jobId)
+    throw new Error('The build could not be started. Please retry.')
+  const startedAt = Date.now()
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+    if (options.signal?.aborted) throw new Error('Build cancelled.')
+    const job = await arcade<
+      {
+        status: 'running' | 'ready' | 'failed'
+        error?: string
+      } & Partial<CopilotProposal>
+    >(`studio/copilot-jobs/${started.jobId}`)
+    if (job.status === 'ready')
+      return {
+        summary: job.summary ?? '',
+        document: job.document,
+        baseRevision: job.baseRevision ?? 0,
+        agentId: job.agentId ?? request.agentId,
+      }
+    if (job.status === 'failed')
+      throw new Error(job.error ?? 'The agent could not build this game.')
+    options.onWait?.(Math.round((Date.now() - startedAt) / 1000))
+  }
+}
+
 export function browserControlClient() {
   return new ControlClient({
     baseUrl: 'https://arcade.invalid',

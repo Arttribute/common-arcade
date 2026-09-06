@@ -40,26 +40,12 @@ export function StudioHome() {
       const project = await arcade<StudioProject>('projects', {
         document: emptyBrowserDocument,
       })
-      // Allocate the durable workspace before any generation starts.
+      // The workspace runs the build, so the creator watches their game take
+      // shape in the studio instead of waiting on this page for it to appear.
       sessionStorage.setItem(
         `arcade-prompt:${project.id}`,
         generate ? prompt : '',
       )
-      if (generate) {
-        const proposal = await arcade<{
-          document: StudioProject['document']
-          summary: string
-        }>(`projects/${project.id}/copilot`, {
-          message: prompt,
-          agentId,
-          attachments,
-          model,
-        })
-        await arcade(`projects/${project.id}`, proposal.document, 'PUT', {
-          'If-Match': String(project.revision),
-        })
-        sessionStorage.removeItem(`arcade-prompt:${project.id}`)
-      }
       router.push(`/studio/${project.id}`)
     } catch (e) {
       setError(
@@ -108,8 +94,8 @@ export function StudioHome() {
           }
         />
         {busy && (
-          <p role="status">
-            Building your first playable version. This can take a minute…
+          <p role="status" className="studio-thinking">
+            Opening your workspace…
           </p>
         )}
         {error && <p role="alert">{error}</p>}

@@ -755,32 +755,67 @@ h3 {
   width: 28px;
   height: 28px;
 }
+/* The conversation follows the Commons session chat: an indigo user bubble,
+   the agent's reply as plain text with no card around it, and a shimmering
+   status line instead of a spinner. */
 .studio-message {
-  padding: 12px;
-  margin: 10px 0;
-  border-radius: 9px;
-  background: #fafaf9;
+  margin: 14px 0;
+  max-width: 100%;
 }
 .studio-message.user {
-  background: #f0eeeb;
+  max-width: 86%;
+  margin-left: auto;
+  padding: 9px 13px;
+  border-radius: 16px;
+  background: #e0e7ff;
+  color: #111827;
 }
 .studio-message small {
-  font-size: 9px;
-  color: #a8a29e;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .studio-message p {
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.7;
   white-space: pre-wrap;
-  margin: 5px 0 0;
+  margin: 0;
+}
+.studio-message.assistant p {
+  color: #292524;
 }
 .studio-thinking {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 10px;
-  color: #a8a29e;
-  padding: 15px 0;
+  font-size: 13px;
+  padding: 12px 0;
+  background: linear-gradient(90deg, #a8a29e 25%, #292524 50%, #a8a29e 75%) 0
+    0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: studio-shimmer 2.2s linear infinite;
+}
+@keyframes studio-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-thinking {
+    animation: none;
+    background: none;
+    color: #78716c;
+  }
+}
+.ac-canvas-center > .studio-window {
+  flex: 1;
+  min-height: 0;
+  margin: 14px;
 }
 .studio-proposal {
   border: 1px solid #d6d3d1;
@@ -1288,6 +1323,9 @@ h3 {
 }
 .ac-canvas-center > .ac-source-browser {
   flex: 1;
+  min-height: 0;
+}
+.studio-window .ac-source-browser {
   min-height: 0;
 }
 .ac-canvas-left .ac-panel-content,

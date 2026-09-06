@@ -37,6 +37,51 @@ export async function tokenHash(token: string) {
     await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)),
   ).toString('hex')
 }
+/**
+ * Resolves an opaque Commons OAuth token into verified claims. The gateway
+ * performs the introspection, so Arcade never holds the platform's internal
+ * secret. A transport failure is reported separately from a rejected
+ * credential: telling a signed-in creator to sign in again when the identity
+ * service is merely unreachable sends them around a loop that cannot help.
+ */
+async function resolveOpaqueCommonsToken(token: string): Promise<JWTPayload> {
+  if (token.startsWith('local:'))
+    throw new Error('Local identities are disabled')
+  const url = `${(process.env.COMMONS_API_URL ?? 'https://api.agentcommons.io').replace(/\/$/, '')}/v1/identity`
+  let response: Response
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      redirect: 'error',
+      signal: AbortSignal.timeout(15000),
+    })
+  } catch {
+    throw new IdentityError(
+      401,
+      'Commons identity is unreachable right now. Please retry in a moment.',
+    )
+  }
+  if (!response.ok) throw new Error('Inactive Commons credential')
+  const identity = (await response.json()) as {
+    actorId?: unknown
+    actorType?: unknown
+    scopes?: unknown
+    credentialType?: unknown
+  }
+  if (
+    typeof identity.actorId !== 'string' ||
+    !identity.actorId ||
+    identity.credentialType !== 'oauth' ||
+    !Array.isArray(identity.scopes) ||
+    !identity.scopes.every((s) => typeof s === 'string')
+  )
+    throw new Error('Invalid verified principal')
+  return {
+    sub: identity.actorId,
+    actor_type: identity.actorType,
+    scopes: identity.scopes,
+  } as JWTPayload
+}
 export function createAuthenticator(
   store: DocumentStore,
   options: {
@@ -95,47 +140,20 @@ export function createAuthenticator(
       if (!keys || !issuer)
         throw new IdentityError(401, 'Commons identity is not configured.')
       try {
-        let payload: JWTPayload
-        if (token.split('.').length === 3) {
-          payload = (
-            await jwtVerify(token, keys, {
-              issuer,
-              audience: options.audience ?? 'commons-platform',
-              algorithms: ['RS256', 'ES256', 'EdDSA'],
-            })
-          ).payload
-        } else {
-          if (token.startsWith('local:'))
-            throw new Error('Local identities are disabled')
-          const response = await fetch(
-            `${(process.env.COMMONS_API_URL ?? 'https://api.agentcommons.io').replace(/\/$/, '')}/v1/identity`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-              redirect: 'error',
-              signal: AbortSignal.timeout(15000),
-            },
-          )
-          if (!response.ok) throw new Error('Inactive Commons credential')
-          const identity = (await response.json()) as {
-            actorId?: unknown
-            actorType?: unknown
-            scopes?: unknown
-            credentialType?: unknown
-          }
-          if (
-            typeof identity.actorId !== 'string' ||
-            !identity.actorId ||
-            identity.credentialType !== 'oauth' ||
-            !Array.isArray(identity.scopes) ||
-            !identity.scopes.every((s) => typeof s === 'string')
-          )
-            throw new Error('Invalid verified principal')
-          payload = {
-            sub: identity.actorId,
-            actor_type: identity.actorType,
-            scopes: identity.scopes,
-          }
-        }
+        // Signed platform JWTs are the normal Commons credential and are
+        // verified offline. Opaque OAuth tokens carry no claims, so they are
+        // resolved once through the Commons gateway's verified principal
+        // endpoint; that hop is a fallback, never the primary path.
+        const payload =
+          token.split('.').length === 3
+            ? (
+                await jwtVerify(token, keys, {
+                  issuer,
+                  audience: options.audience ?? 'commons-platform',
+                  algorithms: ['RS256', 'ES256', 'EdDSA'],
+                })
+              ).payload
+            : await resolveOpaqueCommonsToken(token)
         // Commons client-credentials JWTs identify the service with azp.
         // Match the platform verifier; never accept azp as a human identity.
         const subject =
@@ -156,11 +174,13 @@ export function createAuthenticator(
         if (grants.includes('agents:write'))
           scopes.push('projects:write', 'releases:publish', 'keys:manage')
         principal = { id: subject, scopes, token, provider: 'commons' }
-      } catch {
-        throw new IdentityError(
-          401,
-          'Commons session could not be verified. Sign in again.',
-        )
+      } catch (error) {
+        throw error instanceof IdentityError
+          ? error
+          : new IdentityError(
+              401,
+              'Commons session could not be verified. Sign in again.',
+            )
       }
     }
     if (scope && !principal.scopes.includes(scope))

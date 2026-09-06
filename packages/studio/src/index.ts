@@ -9,6 +9,7 @@ import { ARCADE_API_VERSION, type GameManifest } from '@common-arcade/protocol'
 export {
   gameDocumentSchema,
   starterDocument,
+  exampleDocument,
   emptyBrowserDocument,
   isBrowserGame,
 } from '@common-arcade/protocol'
