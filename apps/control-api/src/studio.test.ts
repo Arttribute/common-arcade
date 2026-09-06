@@ -71,7 +71,7 @@ describe('hosted Studio boundary', () => {
     expect(
       catalog.games.some(
         (g: { metadata: { title: string } }) =>
-          g.metadata.title === starterDocument.title,
+          g.metadata.title === p.document.title,
       ),
     ).toBe(true)
     expect(
@@ -301,7 +301,10 @@ describe('worked example project', () => {
     })
     const listed = await (await app.request('/v1/projects', { headers })).json()
     expect(listed.projects).toHaveLength(1)
-    expect(listed.projects[0].document.title).toBe(starterDocument.title)
+    expect(listed.projects[0].document).toMatchObject({
+      kind: 'browser',
+      title: 'Untitled game',
+    })
   })
 })
 

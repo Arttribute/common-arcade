@@ -4,6 +4,7 @@ import {
   compileGame,
   compilePresentation,
   documentDigest,
+  emptyBrowserDocument,
   exampleDocument,
   gameDocumentSchema,
   releaseManifest,
@@ -31,11 +32,12 @@ import {
 
 type ProjectRecord = StoredDocument & { project: StudioProject }
 /** How long a proposal may run before the studio stops waiting on it. */
-const COPILOT_JOB_DEADLINE_MS = 300_000
+const COPILOT_JOB_DEADLINE_MS = 590_000
 type CopilotJob = StoredDocument & {
   id: string
   projectId: string
   agentId: string
+  sessionId?: string
   status: 'running' | 'ready' | 'failed'
   startedAt: string
   finishedAt?: string
@@ -43,6 +45,25 @@ type CopilotJob = StoredDocument & {
   document?: StudioProject['document']
   baseRevision?: number
   error?: string
+}
+export type CopilotJobInvocation = {
+  jobId: string
+  authorization: string
+  input: {
+    contract: string
+    message: string
+    attachments?: { fileId: string }[]
+    model?: { provider: string; modelId: string }
+    document: StudioProject['document']
+    annotations: StudioProject['annotations']
+    revision: number
+  }
+}
+type CommonsProjectSession = StoredDocument & {
+  projectId: string
+  agentId: string
+  sessionId: string
+  createdAt: string
 }
 type ReleaseRecord = StoredDocument & { release: StudioRelease }
 type RunRecord = StoredDocument & {
@@ -84,6 +105,10 @@ const annotationBody = z
 export function createStudioApi(
   store: DocumentStore,
   authenticate: (authorization?: string, scope?: string) => Promise<Principal>,
+  options: {
+    workerSecret?: string
+    dispatchCopilotJob?: (invocation: CopilotJobInvocation) => Promise<void>
+  } = {},
 ) {
   const app = new Hono()
   const owned = async (owner: string, projectId: string) => {
@@ -177,7 +202,7 @@ export function createStudioApi(
       .object({ document: gameDocumentSchema.optional() })
       .strict()
       .parse(await c.req.json())
-    const document = body.document ?? starterDocument,
+    const document = body.document ?? emptyBrowserDocument,
       now = new Date().toISOString()
     const project: StudioProject = {
       id: id('prj'),
@@ -673,6 +698,11 @@ export function createStudioApi(
       .strict()
       .parse(await c.req.json())
     await commonsRequest(p, `/v1/agents/${encodeURIComponent(body.agentId)}`)
+    const sessionId = await ensureCommonsProjectSession(
+      p,
+      project,
+      body.agentId,
+    )
     // The contract travels inside the turn, not as CLI context: cliContext also
     // hands the agent local filesystem and shell tools that only the Commons
     // CLI can execute, so a hosted run that called one would stall until the
@@ -690,20 +720,63 @@ export function createStudioApi(
       id: jobId,
       projectId: project.id,
       agentId: body.agentId,
+      sessionId,
       status: 'running',
       startedAt: new Date().toISOString(),
     }
     await store.put(`copilot:${p.id}`, jobId, job)
-    void runCopilotJob(p, job, {
-      contract,
-      message: body.message,
-      attachments: body.attachments,
-      model: body.model,
-      document: project.document,
-      annotations: project.annotations.filter((a) => a.status === 'open'),
-      revision: project.revision,
-    })
+    const invocation: CopilotJobInvocation = {
+      jobId,
+      authorization: `Bearer ${p.token}`,
+      input: {
+        contract,
+        message: body.message,
+        attachments: body.attachments,
+        model: body.model,
+        document: project.document,
+        annotations: project.annotations.filter((a) => a.status === 'open'),
+        revision: project.revision,
+      },
+    }
+    if (options.dispatchCopilotJob) await options.dispatchCopilotJob(invocation)
+    else void runCopilotJob(p, job, invocation.input)
     return c.json({ jobId, status: 'running' as const }, 202)
+  })
+  app.post('/v1/internal/copilot-jobs/:jobId/run', async (c) => {
+    if (
+      !options.workerSecret ||
+      c.req.header('X-Arcade-Worker-Secret') !== options.workerSecret
+    )
+      return c.json({ error: 'Not found' }, 404)
+    const p = await authenticate(
+      c.req.header('Authorization'),
+      'projects:write',
+    )
+    const invocation = z
+      .object({
+        contract: z.string().min(1),
+        message: z.string().min(1),
+        attachments: z
+          .array(z.object({ fileId: z.string().min(1) }).strict())
+          .optional(),
+        model: z
+          .object({ provider: z.string().min(1), modelId: z.string().min(1) })
+          .strict()
+          .optional(),
+        document: gameDocumentSchema,
+        annotations: z.array(z.any()),
+        revision: z.number().int().positive(),
+      })
+      .strict()
+      .parse(await c.req.json()) as CopilotJobInvocation['input']
+    const job = await store.get<CopilotJob>(
+      `copilot:${p.id}`,
+      c.req.param('jobId'),
+    )
+    if (!job || job.status !== 'running')
+      return c.json({ error: 'Job is unavailable' }, 404)
+    await runCopilotJob(p, job, invocation)
+    return c.json({ ok: true })
   })
   /**
    * Reports on a running proposal. A job whose host died mid-run would
@@ -737,6 +810,7 @@ export function createStudioApi(
             document: job.document,
             baseRevision: job.baseRevision,
             agentId: job.agentId,
+            sessionId: job.sessionId,
           }
         : {}),
       ...(job.status === 'failed' ? { error: job.error } : {}),
@@ -775,40 +849,52 @@ export function createStudioApi(
         )
         .catch(() => undefined)
     try {
-      const result = await commonsRequest(p, '/v1/agents/run', {
-        agentId: job.agentId,
-        attachments: input.attachments,
-        model: input.model,
-        initiatorId: p.id,
-        messages: [
-          {
-            role: 'user',
-            content: `${input.contract}\n\nRequest: ${input.message}\n\nCurrent project data: ${JSON.stringify({ document: input.document, annotations: input.annotations, revision: input.revision })}`,
-          },
-        ],
-      })
-      const parsed = z
-        .object({ summary: z.string().max(4000), document: gameDocumentSchema })
-        .strict()
-        .safeParse(extractAgentJson(result))
-      // A malformed proposal is the agent's mistake, not the creator's request:
-      // reporting it as request validation sends them looking in the wrong place.
-      if (!parsed.success)
+      let parsed:
+        { summary: string; document: StudioProject['document'] } | undefined
+      let validationError = ''
+      for (let attempt = 0; attempt < 2 && !parsed; attempt++) {
+        const result = await commonsRequest(p, '/v1/agents/run', {
+          agentId: job.agentId,
+          sessionId: job.sessionId,
+          attachments: attempt === 0 ? input.attachments : undefined,
+          model: input.model,
+          initiatorId: p.id,
+          messages: [
+            {
+              role: 'user',
+              content:
+                attempt === 0
+                  ? `${input.contract}\n\nRequest: ${input.message}\n\nCurrent project data: ${JSON.stringify({ document: input.document, annotations: input.annotations, revision: input.revision })}`
+                  : `${input.contract}\n\nArcade rejected the previous game during compilation. Fix every issue and return the complete proposal again. Validator feedback: ${validationError}`,
+            },
+          ],
+        })
+        try {
+          const candidate = z
+            .object({
+              summary: z.string().max(4000),
+              document: gameDocumentSchema,
+            })
+            .strict()
+            .parse(extractAgentJson(result))
+          compilePresentation(candidate.document)
+          parsed = candidate
+        } catch (error) {
+          validationError = copilotValidationError(error)
+        }
+      }
+      // Give malformed source one repair turn in its existing Commons session.
+      // The reported duel response contained invalid JavaScript; the validator
+      // feedback now reaches the same agent before the creator sees a failure.
+      if (!parsed)
         throw new CommonsServiceError(
           502,
-          `The agent's game did not match the project format (${parsed.error.issues
-            .slice(0, 3)
-            .map(
-              (issue) =>
-                `${issue.path.join('.') || 'document'}: ${issue.message}`,
-            )
-            .join('; ')}). Send the request again.`,
+          `The agent's game could not compile after a repair attempt (${validationError}). Try a smaller change or edit the source directly.`,
         )
-      compilePresentation(parsed.data.document)
       await finish({
         status: 'ready',
-        summary: parsed.data.summary,
-        document: parsed.data.document,
+        summary: parsed.summary,
+        document: parsed.document,
         baseRevision: input.revision,
       })
     } catch (error) {
@@ -823,7 +909,60 @@ export function createStudioApi(
       })
     }
   }
+
+  /**
+   * Give each project/agent pair one ordinary Commons web session. This is the
+   * same durable conversation model used by CommonLab: Arcade supplies the
+   * current project context while Commons owns history, memory, usage, logs,
+   * model routing and the agent runtime itself.
+   */
+  async function ensureCommonsProjectSession(
+    p: Principal,
+    project: StudioProject,
+    agentId: string,
+  ) {
+    const partition = `commons-project-sessions:${p.id}`
+    const key = `${project.id}:${agentId}`
+    const current = await store.get<CommonsProjectSession>(partition, key)
+    if (current?.sessionId) return current.sessionId
+    const created = (await commonsRequest(p, '/v1/sessions', {
+      agentId,
+      initiator: p.id,
+      title: `Common Arcade · ${project.document.title}`.slice(0, 120),
+      source: 'web',
+    })) as { sessionId?: string }
+    if (!created.sessionId)
+      throw new CommonsServiceError(
+        502,
+        'Commons could not create a conversation for this game. Try again.',
+      )
+    const record: CommonsProjectSession = {
+      version: 1,
+      projectId: project.id,
+      agentId,
+      sessionId: created.sessionId,
+      createdAt: new Date().toISOString(),
+    }
+    try {
+      await store.put(partition, key, record)
+      return record.sessionId
+    } catch (error) {
+      if (!(error instanceof StoreConflict)) throw error
+      const winner = await store.get<CommonsProjectSession>(partition, key)
+      if (!winner?.sessionId) throw error
+      return winner.sessionId
+    }
+  }
   return app
+}
+
+function copilotValidationError(error: unknown) {
+  if (error instanceof z.ZodError)
+    return error.issues
+      .slice(0, 3)
+      .map((issue) => `${issue.path.join('.') || 'document'}: ${issue.message}`)
+      .join('; ')
+  return error instanceof Error ? error.message.slice(0, 1000) : 'invalid game'
 }
 
 /** Flattens the content shapes a Commons run can return into plain text. */

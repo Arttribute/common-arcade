@@ -50,6 +50,9 @@ importers:
       '@aws-sdk/client-dynamodb':
         specifier: ^3.883.0
         version: 3.1127.0
+      '@aws-sdk/client-lambda':
+        specifier: ^3.883.0
+        version: 3.1127.0
       '@aws-sdk/client-s3':
         specifier: ^3.1127.0
         version: 3.1127.0
@@ -116,7 +119,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.27.7)(tsx@4.23.13)(yaml@2.9.0))
 
   apps/match-supervisor:
     devDependencies:
@@ -131,7 +134,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.27.7)(tsx@4.23.13)(yaml@2.9.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
 
   apps/mcp-server:
     dependencies:
@@ -879,6 +882,10 @@ packages:
 
   '@aws-sdk/client-dynamodb@3.1127.0':
     resolution: {integrity: sha512-rV9TC7gqtwekWR9jXBdzuvCG65fnv7jphnYdJmFBfLX1b0Q+ma3xijzZaGGeN+US2pKw/XaQiZapJX/nZqtBJw==}
+    engines: {node: '>=20.0.0'}
+
+  '@aws-sdk/client-lambda@3.1127.0':
+    resolution: {integrity: sha512-fyfvc2mtIz9Wrb7ThJWhSb2fa5GFafMM1H9kzUR69wZ7U8woW+9RNjpTT2gVYpyiMT5JkcNyjAZDvlOzswYbig==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/client-s3@3.1127.0':
@@ -4116,6 +4123,17 @@ snapshots:
       '@aws-sdk/credential-provider-node': 3.972.82
       '@aws-sdk/dynamodb-codec': 3.973.44
       '@aws-sdk/middleware-endpoint-discovery': 3.972.30
+      '@aws-sdk/types': 3.974.5
+      '@smithy/core': 3.33.3
+      '@smithy/fetch-http-handler': 5.8.0
+      '@smithy/node-http-handler': 4.12.1
+      '@smithy/types': 4.18.0
+      tslib: 2.8.1
+
+  '@aws-sdk/client-lambda@3.1127.0':
+    dependencies:
+      '@aws-sdk/core': 3.977.9
+      '@aws-sdk/credential-provider-node': 3.972.82
       '@aws-sdk/types': 3.974.5
       '@smithy/core': 3.33.3
       '@smithy/fetch-http-handler': 5.8.0

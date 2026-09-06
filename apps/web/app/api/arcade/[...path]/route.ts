@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readSession } from '../../../../lib/session'
+import {
+  cookieOptions,
+  readSession,
+  sessionCookie,
+} from '../../../../lib/session'
 export const maxDuration = 120
 async function proxy(
   request: NextRequest,
@@ -56,7 +60,7 @@ async function proxy(
         signal: AbortSignal.timeout(110_000),
       },
     )
-    return new NextResponse(response.body, {
+    const output = new NextResponse(response.body, {
       status: response.status,
       headers: {
         'Content-Type':
@@ -64,6 +68,20 @@ async function proxy(
         'Cache-Control': 'no-store',
       },
     })
+    // An old or revoked Commons token must not poison every Arcade page. The
+    // next render should be honestly signed out and offer a fresh sign-in.
+    // Only clear the browser session when this proxy supplied its token; an
+    // external caller's Authorization header remains entirely caller-owned.
+    if (
+      response.status === 401 &&
+      session &&
+      !request.headers.get('authorization')
+    )
+      output.cookies.set(sessionCookie, '', {
+        ...cookieOptions,
+        maxAge: 0,
+      })
+    return output
   } catch {
     return NextResponse.json(
       { detail: 'Arcade is temporarily unavailable. Please retry.' },

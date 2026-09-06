@@ -1,7 +1,11 @@
 import { createBrowserTestApi } from './browser-tests.js'
 import { createRecordingApi } from './recordings.js'
 import { bodyLimit } from 'hono/body-limit'
-import { CommonsServiceError, createStudioApi } from './studio.js'
+import {
+  CommonsServiceError,
+  createStudioApi,
+  type CopilotJobInvocation,
+} from './studio.js'
 import { createAuthenticator, IdentityError } from './identity.js'
 import {
   DynamoDocumentStore,
@@ -41,6 +45,10 @@ export interface ControlApiOptions {
   readonly publicBaseUrl?: string
   readonly realtimeUrl?: string
   readonly logRequests?: boolean
+  readonly workerSecret?: string
+  readonly dispatchCopilotJob?: (
+    invocation: CopilotJobInvocation,
+  ) => Promise<void>
 }
 
 class ApiError extends Error {
@@ -306,7 +314,13 @@ export function createApp(options: ControlApiOptions = {}) {
     })
   })
 
-  app.route('/', createStudioApi(store, authenticate))
+  app.route(
+    '/',
+    createStudioApi(store, authenticate, {
+      workerSecret: options.workerSecret,
+      dispatchCopilotJob: options.dispatchCopilotJob,
+    }),
+  )
   app.route('/', createRecordingApi(store, authenticate))
   app.route('/', createBrowserTestApi(store, authenticate))
 
