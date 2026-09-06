@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createApp } from './app.js'
+import { extractAgentJson } from './studio.js'
 import { MemoryDocumentStore } from './store.js'
-import { starterDocument } from '@common-arcade/studio'
+import { exampleDocument, starterDocument } from '@common-arcade/studio'
 
 describe('hosted Studio boundary', () => {
   const headers = {
@@ -247,5 +248,84 @@ describe('portable browser playtests', () => {
         })
       ).status,
     ).toBe(403)
+  })
+})
+
+describe('worked example project', () => {
+  const headers = {
+    Authorization: 'Bearer local:creator_example',
+    'Content-Type': 'application/json',
+  }
+  const setup = () => {
+    const store = new MemoryDocumentStore()
+    return {
+      store,
+      app: createApp({ store, allowLocalAuth: true, logRequests: false }),
+    }
+  }
+  it('seeds one playable example that the owner can edit and publish', async () => {
+    const { app, store } = setup()
+    const first = await (await app.request('/v1/projects', { headers })).json()
+    expect(first.projects).toHaveLength(1)
+    const example = first.projects[0]
+    expect(example.document).toMatchObject({
+      kind: 'browser',
+      title: exampleDocument.title,
+    })
+    // Listing again must not accumulate copies, including from a second instance.
+    const other = createApp({ store, allowLocalAuth: true, logRequests: false })
+    expect(
+      (await (await other.request('/v1/projects', { headers })).json())
+        .projects,
+    ).toHaveLength(1)
+    const preview = await app.request(`/v1/projects/${example.id}`, { headers })
+    expect(preview.status).toBe(200)
+    const published = await app.request(`/v1/projects/${example.id}/publish`, {
+      method: 'POST',
+      headers: { ...headers, 'If-Match': '1' },
+      body: '{}',
+    })
+    expect(published.status).toBe(201)
+    const release = await published.json()
+    const html = await (
+      await app.request(`/v1/studio/releases/${release.id}/preview`)
+    ).text()
+    expect(html).toContain('window.arcade')
+  })
+  it('leaves an account that already has projects untouched', async () => {
+    const { app } = setup()
+    await app.request('/v1/projects', {
+      method: 'POST',
+      headers,
+      body: '{}',
+    })
+    const listed = await (await app.request('/v1/projects', { headers })).json()
+    expect(listed.projects).toHaveLength(1)
+    expect(listed.projects[0].document.title).toBe(starterDocument.title)
+  })
+})
+
+describe('agent proposal parsing', () => {
+  it('reads a proposal that arrives wrapped in prose, fences or content parts', () => {
+    const proposal = {
+      summary: 'Added a scoreboard',
+      document: starterDocument,
+    }
+    const body = JSON.stringify(proposal)
+    for (const result of [
+      { content: body },
+      { content: '```json\n' + body + '\n```' },
+      { content: `Here is the game you asked for:\n${body}\nLet me know.` },
+      { content: [{ type: 'text', text: body }] },
+      { messages: [{ role: 'assistant', content: body }] },
+    ]) {
+      expect(extractAgentJson(result)).toEqual(proposal)
+    }
+  })
+  it('reports plain replies as an agent problem rather than a server fault', () => {
+    expect(() => extractAgentJson({ content: 'I cannot do that.' })).toThrow(
+      /replied with text/,
+    )
+    expect(() => extractAgentJson({})).toThrow(/without a game proposal/)
   })
 })

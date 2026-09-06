@@ -4,6 +4,7 @@ import {
   compileGame,
   compilePresentation,
   documentDigest,
+  exampleDocument,
   gameDocumentSchema,
   releaseManifest,
   starterDocument,
@@ -29,6 +30,20 @@ import {
 } from './store.js'
 
 type ProjectRecord = StoredDocument & { project: StudioProject }
+/** How long a proposal may run before the studio stops waiting on it. */
+const COPILOT_JOB_DEADLINE_MS = 300_000
+type CopilotJob = StoredDocument & {
+  id: string
+  projectId: string
+  agentId: string
+  status: 'running' | 'ready' | 'failed'
+  startedAt: string
+  finishedAt?: string
+  summary?: string
+  document?: StudioProject['document']
+  baseRevision?: number
+  error?: string
+}
 type ReleaseRecord = StoredDocument & { release: StudioRelease }
 type RunRecord = StoredDocument & {
   id: string
@@ -110,13 +125,48 @@ export function createStudioApi(
     const p = await authenticate(c.req.header('Authorization'))
     return c.json({ id: p.id, provider: p.provider, scopes: p.scopes })
   })
+  /**
+   * Gives a new account something finished to open. The id is derived from the
+   * owner so a repeated seed is a conflict rather than a duplicate, and the
+   * project is an ordinary owned project afterwards: editable, playable and
+   * publishable, with nothing special-cased about it.
+   */
+  const seedExampleProject = async (owner: string) => {
+    const digest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(`arcade-example:${owner}`),
+    )
+    const projectId = `prj_${Array.from(
+      new Uint8Array(digest).slice(0, 16),
+      (n) => n.toString(16).padStart(2, '0'),
+    ).join('')}`
+    const now = new Date().toISOString()
+    const project: StudioProject = {
+      id: projectId,
+      ownerId: owner,
+      revision: 1,
+      digest: await documentDigest(exampleDocument),
+      document: exampleDocument,
+      annotations: [],
+      createdAt: now,
+      updatedAt: now,
+    }
+    await revision(project)
+    await store.put(`owner:${owner}`, projectId, { version: 1, project })
+    return project
+  }
   app.get('/v1/projects', async (c) => {
     const p = await authenticate(c.req.header('Authorization'), 'projects:read')
-    return c.json({
-      projects: (await store.list<ProjectRecord>(`owner:${p.id}`, 'prj_')).map(
-        (r) => r.project,
-      ),
-    })
+    let projects = (
+      await store.list<ProjectRecord>(`owner:${p.id}`, 'prj_')
+    ).map((r) => r.project)
+    if (!projects.length) {
+      // A failed seed must never block the listing: an empty studio is a far
+      // smaller problem than a studio that will not open at all.
+      const example = await seedExampleProject(p.id).catch(() => undefined)
+      if (example) projects = [example]
+    }
+    return c.json({ projects })
   })
   app.post('/v1/projects', async (c) => {
     const p = await authenticate(
@@ -623,53 +673,235 @@ export function createStudioApi(
       .strict()
       .parse(await c.req.json())
     await commonsRequest(p, `/v1/agents/${encodeURIComponent(body.agentId)}`)
-    const result = await commonsRequest(p, '/v1/agents/run', {
+    // The contract travels inside the turn, not as CLI context: cliContext also
+    // hands the agent local filesystem and shell tools that only the Commons
+    // CLI can execute, so a hosted run that called one would stall until the
+    // request timed out.
+    const contract = isBrowserGame(project.document)
+      ? 'You are in Common Arcade Studio. Return ONLY valid JSON {"summary":"short explanation","document":{"kind":"browser","title":"...","description":"...","entryFile":"index.html","files":[{"path":"index.html","content":"..."},{"path":"style.css","content":"..."},{"path":"main.js","content":"..."}]}}. Build a complete playable game that meets the request. Use vanilla browser APIs, canvas, SVG, HTML/CSS and JavaScript or TypeScript. Local ES module imports work. For engines or UI libraries add optional dependencies object mapping npm package names to exact semver versions, for example {"three":"0.185.1"}; imports from those packages compile through esm.sh. React JSX/TSX is supported when react and react-dom dependencies are declared. Prefer vanilla canvas unless an engine is useful. No backend or host credentials. Remote executable scripts outside the declared dependency imports are unsupported. Include every source file, with HTML referencing local scripts/styles. Maximum total source 120 KB, 60 files; keep generated code concise. Escape JSON strings correctly. Include responsive layout, visible instructions, restart and score/feedback. For agent playtesting expose window.arcade = { observe:()=> serializable state, actions:()=> [{id,label}], step:(id)=> execute action }; expose only meaningful bounded game actions. Preserve existing files/mechanics unless changing them is requested. Read uploaded context and open annotations. Never claim to have saved, published or run a test.'
+      : 'You are in Common Arcade Studio. Return ONLY a JSON object with "summary" (short explanation) and "document" (the entire revised game document). Document schema: title string 1-100 chars, description string <=1000 chars, boardSize integer 3-8, winLength integer 3 through boardSize, marks two distinct strings 1-3 chars, accent and background #RRGGBB colors. These are grid placement games. Do not pretend to add unsupported mechanics, 3D engines or external assets. For unsupported requests explain the limitation in summary and preserve document. Never publish or call other tools. Keep stable game properties unless requested to change them.'
+    // Building a game routinely takes minutes, and every CDN and gateway in
+    // front of this service closes a response long before then. The run is
+    // started here and its result is collected by polling, so a slow game is a
+    // slow job rather than a failed request.
+    const jobId = id('job')
+    const job: CopilotJob = {
+      version: 1,
+      id: jobId,
+      projectId: project.id,
       agentId: body.agentId,
+      status: 'running',
+      startedAt: new Date().toISOString(),
+    }
+    await store.put(`copilot:${p.id}`, jobId, job)
+    void runCopilotJob(p, job, {
+      contract,
+      message: body.message,
       attachments: body.attachments,
       model: body.model,
-      initiatorId: p.id,
-      messages: [
-        {
-          role: 'user',
-          content: `Request: ${body.message}\n\nCurrent project data: ${JSON.stringify({ document: project.document, annotations: project.annotations.filter((a) => a.status === 'open'), revision: project.revision })}`,
-        },
-      ],
-      cliContext: isBrowserGame(project.document)
-        ? 'You are in Common Arcade Studio. Return ONLY valid JSON {"summary":"short explanation","document":{"kind":"browser","title":"...","description":"...","entryFile":"index.html","files":[{"path":"index.html","content":"..."},{"path":"style.css","content":"..."},{"path":"main.js","content":"..."}]}}. Build a complete playable game that meets the request. Use vanilla browser APIs, canvas, SVG, HTML/CSS and JavaScript or TypeScript. Local ES module imports work. For engines or UI libraries add optional dependencies object mapping npm package names to exact semver versions, for example {"three":"0.185.1"}; imports from those packages compile through esm.sh. React JSX/TSX is supported when react and react-dom dependencies are declared. Prefer vanilla canvas unless an engine is useful. No backend or host credentials. Remote executable scripts outside the declared dependency imports are unsupported. Include every source file, with HTML referencing local scripts/styles. Maximum total source 120 KB, 60 files; keep generated code concise. Escape JSON strings correctly. Include responsive layout, visible instructions, restart and score/feedback. For agent playtesting expose window.arcade = { observe:()=> serializable state, actions:()=> [{id,label}], step:(id)=> execute action }; expose only meaningful bounded game actions. Preserve existing files/mechanics unless changing them is requested. Read uploaded context and open annotations. Never claim to have saved, published or run a test.'
-        : 'You are in Common Arcade Studio. Return ONLY a JSON object with "summary" (short explanation) and "document" (the entire revised game document). Document schema: title string 1-100 chars, description string <=1000 chars, boardSize integer 3-8, winLength integer 3 through boardSize, marks two distinct strings 1-3 chars, accent and background #RRGGBB colors. These are grid placement games. Do not pretend to add unsupported mechanics, 3D engines or external assets. For unsupported requests explain the limitation in summary and preserve document. Never publish or call other tools. Keep stable game properties unless requested to change them.',
+      document: project.document,
+      annotations: project.annotations.filter((a) => a.status === 'open'),
+      revision: project.revision,
     })
-    const proposal = z
-      .object({ summary: z.string().max(4000), document: gameDocumentSchema })
-      .strict()
-      .parse(extractAgentJson(result))
-    compilePresentation(proposal.document)
+    return c.json({ jobId, status: 'running' as const }, 202)
+  })
+  /**
+   * Reports on a running proposal. A job whose host died mid-run would
+   * otherwise stay "running" forever, so a job past its deadline reads as
+   * failed rather than leaving the studio waiting on nothing.
+   */
+  app.get('/v1/studio/copilot-jobs/:jobId', async (c) => {
+    const p = await authenticate(c.req.header('Authorization'), 'projects:read')
+    const job = await store.get<CopilotJob>(
+      `copilot:${p.id}`,
+      c.req.param('jobId'),
+    )
+    if (!job)
+      return c.json({ error: 'This request is no longer available.' }, 404)
+    if (
+      job.status === 'running' &&
+      Date.now() - Date.parse(job.startedAt) > COPILOT_JOB_DEADLINE_MS
+    )
+      return c.json({
+        jobId: job.id,
+        status: 'failed',
+        error:
+          'The agent did not finish in time. Try again, or ask for a smaller change.',
+      })
     return c.json({
-      ...proposal,
-      baseRevision: project.revision,
-      agentId: body.agentId,
+      jobId: job.id,
+      status: job.status,
+      ...(job.status === 'ready'
+        ? {
+            summary: job.summary,
+            document: job.document,
+            baseRevision: job.baseRevision,
+            agentId: job.agentId,
+          }
+        : {}),
+      ...(job.status === 'failed' ? { error: job.error } : {}),
     })
   })
+  /**
+   * Runs one proposal to completion and records the outcome. It never rejects:
+   * a failure belongs in the job so the studio can show the creator what went
+   * wrong, not in an unhandled rejection on the server.
+   */
+  async function runCopilotJob(
+    p: Principal,
+    job: CopilotJob,
+    input: {
+      contract: string
+      message: string
+      attachments?: { fileId: string }[]
+      model?: { provider: string; modelId: string }
+      document: StudioProject['document']
+      annotations: StudioProject['annotations']
+      revision: number
+    },
+  ) {
+    const finish = (result: Partial<CopilotJob>) =>
+      store
+        .put(
+          `copilot:${p.id}`,
+          job.id,
+          {
+            ...job,
+            ...result,
+            version: job.version + 1,
+            finishedAt: new Date().toISOString(),
+          },
+          job.version,
+        )
+        .catch(() => undefined)
+    try {
+      const result = await commonsRequest(p, '/v1/agents/run', {
+        agentId: job.agentId,
+        attachments: input.attachments,
+        model: input.model,
+        initiatorId: p.id,
+        messages: [
+          {
+            role: 'user',
+            content: `${input.contract}\n\nRequest: ${input.message}\n\nCurrent project data: ${JSON.stringify({ document: input.document, annotations: input.annotations, revision: input.revision })}`,
+          },
+        ],
+      })
+      const parsed = z
+        .object({ summary: z.string().max(4000), document: gameDocumentSchema })
+        .strict()
+        .safeParse(extractAgentJson(result))
+      // A malformed proposal is the agent's mistake, not the creator's request:
+      // reporting it as request validation sends them looking in the wrong place.
+      if (!parsed.success)
+        throw new CommonsServiceError(
+          502,
+          `The agent's game did not match the project format (${parsed.error.issues
+            .slice(0, 3)
+            .map(
+              (issue) =>
+                `${issue.path.join('.') || 'document'}: ${issue.message}`,
+            )
+            .join('; ')}). Send the request again.`,
+        )
+      compilePresentation(parsed.data.document)
+      await finish({
+        status: 'ready',
+        summary: parsed.data.summary,
+        document: parsed.data.document,
+        baseRevision: input.revision,
+      })
+    } catch (error) {
+      await finish({
+        status: 'failed',
+        error:
+          error instanceof CommonsServiceError || error instanceof IdentityError
+            ? error.message
+            : error instanceof Error && error.name === 'TimeoutError'
+              ? 'The agent did not finish in time. Try again, or ask for a smaller change.'
+              : `The agent could not build this game: ${error instanceof Error ? error.message : 'unknown error'}.`,
+      })
+    }
+  }
   return app
 }
 
+/** Flattens the content shapes a Commons run can return into plain text. */
+function agentText(content: unknown): string | undefined {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    const text = content
+      .map((part) =>
+        typeof part === 'string'
+          ? part
+          : part &&
+              typeof part === 'object' &&
+              typeof (part as any).text === 'string'
+            ? (part as any).text
+            : '',
+      )
+      .join('')
+    return text || undefined
+  }
+  return undefined
+}
+/**
+ * Returns the first balanced JSON object in the text. Models routinely wrap a
+ * proposal in a sentence or a fenced block, and a game's own source contains
+ * braces and escaped quotes, so the object is located by scanning with string
+ * and escape awareness rather than by a regular expression.
+ */
+function firstJsonObject(text: string): string | undefined {
+  const start = text.indexOf('{')
+  if (start < 0) return undefined
+  let depth = 0,
+    inString = false,
+    escaped = false
+  for (let i = start; i < text.length; i++) {
+    const char = text[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (char === '\\') escaped = true
+      else if (char === '"') inString = false
+      continue
+    }
+    if (char === '"') inString = true
+    else if (char === '{') depth++
+    else if (char === '}' && --depth === 0) return text.slice(start, i + 1)
+  }
+  return undefined
+}
 export function extractAgentJson(result: unknown): unknown {
-  const r = result as Record<string, unknown>
+  const r = (result ?? {}) as Record<string, unknown>
   if (r.document) return r
-  let content = r.content ?? r.text ?? r.output ?? r.message
-  if (typeof content !== 'string' && Array.isArray(r.messages)) {
+  let content = agentText(r.content ?? r.text ?? r.output ?? r.message)
+  if (content === undefined && Array.isArray(r.messages)) {
     const message = [...r.messages]
       .reverse()
       .find((m) => m && typeof m === 'object' && 'content' in m)
-    content = message?.content
+    content = agentText((message as any)?.content)
   }
-  if (typeof content !== 'string')
-    throw new Error(
-      'Commons agent returned no structured proposal. Please retry.',
+  if (content === undefined)
+    throw new CommonsServiceError(
+      502,
+      'The agent finished without a game proposal. Send the request again.',
     )
   const clean = content
     .replace(/^\s*```(?:json)?\s*/, '')
     .replace(/\s*```\s*$/, '')
-  return JSON.parse(clean)
+    .trim()
+  for (const candidate of [clean, firstJsonObject(clean)]) {
+    if (!candidate) continue
+    try {
+      return JSON.parse(candidate)
+    } catch {
+      // Fall through to the balanced-object scan, then to the reported error.
+    }
+  }
+  throw new CommonsServiceError(
+    502,
+    `The agent replied with text instead of a game proposal: "${clean.replace(/\s+/g, ' ').slice(0, 200)}". Try again, or ask for a smaller change.`,
+  )
 }
 
 export async function commonsRequest(
@@ -692,13 +924,26 @@ export async function commonsRequest(
         'x-initiator': p.id,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(90_000),
+      // Generating a whole game is a minutes-long call. Callers run it as a
+      // job, so the budget here is the agent's, not a browser's.
+      signal: AbortSignal.timeout(240_000),
     },
   )
-  const result = (await response.json()) as {
+  // An error from a proxy in front of Commons arrives as HTML, not JSON.
+  // Parsing it blindly turned every such failure into an unexplained 500.
+  const raw = await response.text()
+  let result: {
     data?: unknown
     message?: string
     error?: { message?: string }
+  }
+  try {
+    result = JSON.parse(raw)
+  } catch {
+    throw new CommonsServiceError(
+      response.ok ? 502 : response.status === 402 ? 402 : 502,
+      `Commons agent service returned an unreadable response (${response.status}): ${raw.replace(/\s+/g, ' ').slice(0, 160)}`,
+    )
   }
   if (!response.ok)
     throw new CommonsServiceError(

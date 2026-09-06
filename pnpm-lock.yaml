@@ -116,7 +116,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.27.7)(tsx@4.23.13)(yaml@2.9.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
 
   apps/match-supervisor:
     devDependencies:
@@ -131,7 +131,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(tsx@4.23.13)(yaml@2.9.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.27.7)(tsx@4.23.13)(yaml@2.9.0))
 
   apps/mcp-server:
     dependencies:
@@ -237,8 +237,8 @@ importers:
   apps/web:
     dependencies:
       '@agent-commons/ui':
-        specifier: file:../../vendor/agent-commons-ui-0.2.4.tgz
-        version: file:vendor/agent-commons-ui-0.2.4.tgz(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        specifier: file:../../vendor/agent-commons-ui-0.2.5.tgz
+        version: file:vendor/agent-commons-ui-0.2.5.tgz(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@common-arcade/control-client':
         specifier: workspace:^
         version: link:../../packages/control-client
@@ -853,9 +853,9 @@ importers:
 
 packages:
 
-  '@agent-commons/ui@file:vendor/agent-commons-ui-0.2.4.tgz':
-    resolution: {integrity: sha512-JdzHxRAzXg9lCxumNqSqciRjT8tA2e4x0Uk1h8AqS2S/VbV2l6TbSqlpYooPMJh2KIWHE2652qV25VN3ISVMsg==, tarball: file:vendor/agent-commons-ui-0.2.4.tgz}
-    version: 0.2.4
+  '@agent-commons/ui@file:vendor/agent-commons-ui-0.2.5.tgz':
+    resolution: {integrity: sha512-KusGNBdQfHe+0JmUcDvW+L55cn7diE5lu6uyhbzNuGkokJ8qZwTaZLwwNs+Kp7ZMWgBM/k7gSeVeT9Unyd6P1g==, tarball: file:vendor/agent-commons-ui-0.2.5.tgz}
+    version: 0.2.5
     peerDependencies:
       react: '>=18'
       react-dom: '>=18'
@@ -4089,7 +4089,7 @@ packages:
 
 snapshots:
 
-  '@agent-commons/ui@file:vendor/agent-commons-ui-0.2.4.tgz(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@agent-commons/ui@file:vendor/agent-commons-ui-0.2.5.tgz(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@rrweb/record': 2.1.1
       '@rrweb/replay': 2.1.1

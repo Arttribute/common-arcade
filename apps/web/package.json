@@ -25,7 +25,7 @@
     "react-dom": "^19.2.8",
     "@common-arcade/studio": "workspace:^",
     "jose": "^6.1.0",
-    "@agent-commons/ui": "file:../../vendor/agent-commons-ui-0.2.4.tgz"
+    "@agent-commons/ui": "file:../../vendor/agent-commons-ui-0.2.5.tgz"
   },
   "devDependencies": {
     "@types/mdx": "^2.0.13",

@@ -42,6 +42,7 @@ import {
   type AnnotationGeometry,
   CanvasToolButton,
   CodeFileBrowser,
+  CommonsWindow,
   type CompiledFrameHandle,
   type CanvasObservation,
   type CanvasRecording,
@@ -56,7 +57,7 @@ import {
   type StudioRelease,
 } from '@common-arcade/studio'
 import type { TestRun } from '@common-arcade/control-client'
-import { arcade } from '../../lib/api'
+import { arcade, arcadeCopilot } from '../../lib/api'
 import { RecordingShelf, storeRecording } from './recording-shelf'
 
 type Agent = { agentId: string; name: string }
@@ -163,6 +164,8 @@ export function GameStudio({ projectId }: { projectId: string }) {
   )
   const [view, setView] = useState<'preview' | 'code' | 'test'>('preview')
   const [right, setRight] = useState<'copilot' | 'notes' | 'history'>('copilot')
+  const [elapsed, setElapsed] = useState(0)
+  const [pendingPrompt, setPendingPrompt] = useState('')
   const [leftOpen, setLeftOpen] = useState(true),
     [rightOpen, setRightOpen] = useState(true)
   const [tool, setTool] = useState<'select' | 'point' | 'region'>('select')
@@ -226,8 +229,10 @@ export function GameStudio({ projectId }: { projectId: string }) {
         load(p)
         const initial = sessionStorage.getItem(`arcade-prompt:${projectId}`)
         if (initial) {
-          setPrompt(initial)
           sessionStorage.removeItem(`arcade-prompt:${projectId}`)
+          // The build was asked for on the home page; run it here so the
+          // creator watches it happen in the workspace it belongs to.
+          setPendingPrompt(initial)
         }
       })
       .catch((e) => {
@@ -343,7 +348,53 @@ export function GameStudio({ projectId }: { projectId: string }) {
         a.revision ===
         (view === 'test' && run ? run.revision : project.revision),
     ) ?? []
+  /**
+   * One copilot turn: the request goes out, the finished game comes back and is
+   * saved straight away. Creating a game is a single run, so the creator lands
+   * on a playable revision rather than on a proposal they must accept first.
+   */
+  const runCopilot = useCallback(
+    async (
+      message: string,
+      attachments: { fileId: string }[] = [],
+      model?: { provider: string; modelId: string },
+    ) =>
+      task('copilot', async () => {
+        const p = !project || dirty ? await save() : project
+        setMessages((m) => [...m, { role: 'user', text: message }])
+        const result = (await arcadeCopilot(
+          p.id,
+          { message, agentId: copilotId, attachments, model },
+          { onWait: setElapsed },
+        )) as Proposal
+        setElapsed(0)
+        setMessages((m) => [...m, { role: 'assistant', text: result.summary }])
+        if (result.baseRevision === p.revision) {
+          await save(result.document)
+          setProposal(undefined)
+          setView('preview')
+        } else {
+          // The project moved while the agent worked; let the creator decide.
+          setProposal(result)
+        }
+      }),
+    [project, dirty, copilotId],
+  )
+  useEffect(() => {
+    if (!pendingPrompt || !project || !copilotId || busy) return
+    const message = pendingPrompt
+    setPendingPrompt('')
+    void runCopilot(message)
+  }, [pendingPrompt, project, copilotId, busy, runCopilot])
   const title = project?.document.title ?? 'New game'
+  const sourceSize = useMemo(() => {
+    if (!isBrowserGame(document)) return ''
+    const bytes = document.files.reduce(
+      (total, file) => total + new TextEncoder().encode(file.content).length,
+      0,
+    )
+    return bytes < 1024 ? `${bytes} B` : `${Math.round(bytes / 1024)} KB`
+  }, [document])
   const icon = (
     node: React.ReactNode,
     label: string,
@@ -827,9 +878,10 @@ export function GameStudio({ projectId }: { projectId: string }) {
                     </div>
                   ))}
                   {busy === 'copilot' && (
-                    <div className="studio-thinking">
-                      <Loader2 size={14} className="spin" />
-                      Reading the revision and preparing a proposal…
+                    <div className="studio-thinking" role="status">
+                      {elapsed > 4
+                        ? `Building your game… ${elapsed}s`
+                        : 'Building your game…'}
                     </div>
                   )}
                   {proposal && (
@@ -879,24 +931,9 @@ export function GameStudio({ projectId }: { projectId: string }) {
                   }
                   onSubmit={(attachments, model) => {
                     if (!user || !prompt.trim() || !copilotId) return
-                    void task('copilot', async () => {
-                      const p = !project || dirty ? await save() : project
-                      const message = prompt
-                      setPrompt('')
-                      setMessages((m) => [
-                        ...m,
-                        { role: 'user', text: message },
-                      ])
-                      const result = await arcade<Proposal>(
-                        `projects/${p.id}/copilot`,
-                        { message, agentId: copilotId, attachments, model },
-                      )
-                      setProposal(result)
-                      setMessages((m) => [
-                        ...m,
-                        { role: 'assistant', text: result.summary },
-                      ])
-                    })
+                    const message = prompt
+                    setPrompt('')
+                    void runCopilot(message, attachments, model)
                   }}
                 />
               </div>
@@ -1258,16 +1295,26 @@ export function GameStudio({ projectId }: { projectId: string }) {
       </div>
       {view === 'code' ? (
         isBrowserGame(document) ? (
-          <CodeFileBrowser
-            files={document.files}
-            onChange={(path, content) =>
-              update({
-                files: document.files.map((f) =>
-                  f.path === path ? { ...f, content } : f,
-                ),
-              })
-            }
-          />
+          // Generated source is shown in the same window chrome Commons uses
+          // for an agent's code project, so a game reads as a work product
+          // rather than as a text box inside a settings panel.
+          <CommonsWindow
+            className="studio-window"
+            tone="dark"
+            title={`${title} — source`}
+            status={`${document.files.length} file${document.files.length === 1 ? '' : 's'} · ${sourceSize}`}
+          >
+            <CodeFileBrowser
+              files={document.files}
+              onChange={(path, content) =>
+                update({
+                  files: document.files.map((f) =>
+                    f.path === path ? { ...f, content } : f,
+                  ),
+                })
+              }
+            />
+          </CommonsWindow>
         ) : (
           <div className="studio-code">
             <div>

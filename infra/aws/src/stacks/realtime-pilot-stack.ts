@@ -121,6 +121,12 @@ export class RealtimePilotStack extends Stack {
           compress: false,
           origin: new origins.LoadBalancerV2Origin(service.loadBalancer, {
             protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+            // CloudFront's default 30s origin timeout is shorter than a
+            // publish, a recording upload or a studio poll behind a cold
+            // task. 60s is the ceiling without a service quota increase;
+            // work that can outlast it runs as a job, not a request.
+            readTimeout: Duration.seconds(60),
+            keepaliveTimeout: Duration.seconds(60),
           }),
           originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER,
           viewerProtocolPolicy:

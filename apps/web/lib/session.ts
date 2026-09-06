@@ -80,6 +80,15 @@ export async function exchange(body: URLSearchParams): Promise<{
 }> {
   body.set('client_id', process.env.COMMONS_IDENTITY_CLIENT_ID ?? '')
   body.set('client_secret', process.env.COMMONS_IDENTITY_CLIENT_SECRET ?? '')
+  // RFC 8707 resource indicator. Commons only mints a signed platform JWT when
+  // the token request names the audience; without it the grant returns an
+  // opaque token that no downstream service can verify offline. The value must
+  // be sent on every grant, including refreshes, or the session silently
+  // degrades to an unverifiable credential after fifteen minutes.
+  body.set(
+    'resource',
+    process.env.COMMONS_IDENTITY_AUDIENCE ?? 'commons-platform',
+  )
   const response = await fetch(`${issuer()}/oauth2/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
