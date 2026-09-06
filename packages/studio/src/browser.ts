@@ -1,6 +1,15 @@
 import { transform } from '@babel/standalone'
 import type { BrowserGameDocument } from '@common-arcade/protocol'
 
+const attribute = (attrs: string, name: string) => {
+  const match = attrs.match(
+    new RegExp(
+      `(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
+      'i',
+    ),
+  )
+  return match?.[1] ?? match?.[2] ?? match?.[3]
+}
 const scriptSafe = (s: string) => s.replace(/<\/script/gi, '<\\/script')
 /** Compilation only: user source never executes in the host process. */
 export function compileBrowserPresentation(
@@ -55,6 +64,11 @@ export function compileBrowserPresentation(
     if (path in modules || path.startsWith('external:')) return
     modules[path] = ''
     imports[path] = {}
+    if (path.endsWith('.css')) {
+      modules[path] =
+        `const style=document.createElement('style');style.textContent=${JSON.stringify(files.get(path))};document.head.append(style);module.exports={};`
+      return
+    }
     if (path.endsWith('.json')) {
       modules[path] =
         `module.exports=${JSON.stringify(JSON.parse(files.get(path)!))}`
@@ -81,8 +95,9 @@ export function compileBrowserPresentation(
   const entries: string[] = []
   let html = files.get(document.entryFile)!
   html = html.replace(/<link\b([^>]*?)>/gi, (tag, attrs: string) => {
-    const href = attrs.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1]
-    if (!href || !/\brel\s*=\s*["']stylesheet["']/i.test(attrs)) return tag
+    const href = attribute(attrs, 'href')
+    if (!href || attribute(attrs, 'rel')?.toLowerCase() !== 'stylesheet')
+      return tag
     const css = files.get(resolve(document.entryFile, href))!
     return `<style>${css.replace(/<\/style/gi, '<\\/style')}</style>`
   })
@@ -90,9 +105,13 @@ export function compileBrowserPresentation(
   html = html.replace(
     /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi,
     (tag, attrs: string, content: string) => {
-      if (/\btype\s*=\s*["'](?:application\/json|importmap)["']/i.test(attrs))
+      if (
+        ['application/json', 'importmap'].includes(
+          attribute(attrs, 'type')?.toLowerCase() ?? '',
+        )
+      )
         return tag
-      const src = attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i)?.[1]
+      const src = attribute(attrs, 'src')
       const path = src
         ? resolve(document.entryFile, src)
         : `${document.entryFile.slice(0, document.entryFile.lastIndexOf('/') + 1)}__inline_${inline++}.js`

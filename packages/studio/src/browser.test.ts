@@ -28,6 +28,28 @@ describe('browser game projects', () => {
     expect(html).toContain('score = 7')
     expect(html).toContain('"./state":"state.ts"')
   })
+  it('supports unquoted HTML attributes and stylesheet imports', () => {
+    const html = compilePresentation({
+      ...emptyBrowserDocument,
+      files: [
+        {
+          path: 'index.html',
+          content:
+            '<html><head><link rel=stylesheet href=base.css></head><body><script type=module src=main.ts></script></body></html>',
+        },
+        { path: 'base.css', content: 'body{margin:0}' },
+        {
+          path: 'main.ts',
+          content:
+            'import "./theme.css"; const score:number=42; document.title=String(score)',
+        },
+        { path: 'theme.css', content: '.orb{background:gold}' },
+      ],
+    })
+    expect(html).toContain('score = 42')
+    expect(html).toContain('body{margin:0}')
+    expect(html).toContain('.orb{background:gold}')
+  })
   it('rejects missing entries, duplicate files and paths outside the project', () => {
     for (const patch of [
       { entryFile: 'missing.html' },
