@@ -1,3 +1,5 @@
+import { createBrowserTestApi } from './browser-tests.js'
+import { createRecordingApi } from './recordings.js'
 import { bodyLimit } from 'hono/body-limit'
 import { CommonsServiceError, createStudioApi } from './studio.js'
 import { createAuthenticator, IdentityError } from './identity.js'
@@ -257,7 +259,7 @@ export function createApp(options: ControlApiOptions = {}) {
   }
 
   app.use('*', requestId())
-  app.use('*', bodyLimit({ maxSize: 96 * 1024 }))
+  app.use('*', bodyLimit({ maxSize: 256 * 1024 }))
   if (options.logRequests !== false) app.use('*', logger())
   app.use(
     '/v1/*',
@@ -305,6 +307,8 @@ export function createApp(options: ControlApiOptions = {}) {
   })
 
   app.route('/', createStudioApi(store, authenticate))
+  app.route('/', createRecordingApi(store, authenticate))
+  app.route('/', createBrowserTestApi(store, authenticate))
 
   app.get('/healthz', (context) =>
     context.json({
@@ -707,11 +711,47 @@ function openApiDocument(serverUrl: string) {
       '/v1/studio/runs/{id}/step': {
         post: { summary: 'Advance one test decision with expected steps' },
       },
-      '/v1/keys': {
+      '/v1/commons/agents': {
+        get: { summary: 'List canonical Commons agents' },
+        post: { summary: 'Create a canonical Commons agent' },
+      },
+      '/v1/commons/copilot': {
+        post: { summary: 'Ensure the signed-in account has an Arcade copilot' },
+      },
+      '/v1/commons/models': {
+        get: { summary: 'List available Commons models' },
+      },
+      '/v1/projects/{id}/browser-runs': {
+        post: { summary: 'Create a pinned browser playtest' },
+      },
+      '/v1/studio/browser-runs/{id}': {
+        get: { summary: 'Read browser observations and action decisions' },
+      },
+      '/v1/studio/browser-runs/{id}/decide': {
+        post: {
+          summary: 'Choose a legal action for the expected browser test step',
+        },
+      },
+      '/v1/projects/{id}/recordings': {
+        get: { summary: 'List private project recordings' },
+        post: { summary: 'Request a bounded recording upload' },
+      },
+      '/v1/studio/recordings/{id}/complete': {
+        post: { summary: 'Verify and finalize a recording upload' },
+      },
+      '/v1/studio/recordings/{id}': {
+        get: { summary: 'Read a recording and a short-lived download URL' },
+      },
+      '/v1/games/{id}/recordings': {
+        get: { summary: 'List shared spectator recordings' },
+      },
+      '/v1/access-keys': {
         get: { summary: 'List access key metadata' },
         post: { summary: 'Create an expiring scoped access key' },
       },
-      '/v1/keys/{id}': { delete: { summary: 'Revoke an owned access key' } },
+      '/v1/access-keys/{id}': {
+        delete: { summary: 'Revoke an owned access key' },
+      },
       '/v1/games': { get: { summary: 'Discover games' } },
       '/v1/games/{gameId}': { get: { summary: 'Inspect a game manifest' } },
       '/v1/games/{gameId}/releases': {
@@ -764,7 +804,9 @@ function openApiDocument(serverUrl: string) {
         method !== 'get' ||
         path.startsWith('/v1/projects') ||
         path === '/v1/me' ||
-        path.startsWith('/v1/keys') ||
+        path.startsWith('/v1/access-keys') ||
+        path.startsWith('/v1/commons') ||
+        path.startsWith('/v1/studio/browser-runs') ||
         path.startsWith('/v1/studio/runs')
       )
         operation.security = [{ bearerAuth: [] }]

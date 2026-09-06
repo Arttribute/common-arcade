@@ -1,3 +1,4 @@
+import type { IBucket } from 'aws-cdk-lib/aws-s3'
 import { CfnOutput, Duration, Stack, type StackProps } from 'aws-cdk-lib'
 import * as apigateway from 'aws-cdk-lib/aws-apigatewayv2'
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations'
@@ -9,6 +10,7 @@ import { resolve } from 'node:path'
 import type { DeploymentStage } from '../config.js'
 
 export interface ControlPlaneStackProps extends StackProps {
+  recordingsBucket: IBucket
   table: ITable
   realtimeControlUrl: string
   stage: DeploymentStage
@@ -28,6 +30,7 @@ export class ControlPlaneStack extends Stack {
         ARCADE_CORS_ORIGINS:
           'https://arcade.agentcommons.io,https://common-arcade.vercel.app',
         ARCADE_STUDIO_TABLE: props.table.tableName,
+        ARCADE_RECORDINGS_BUCKET: props.recordingsBucket.bucketName,
         COMMONS_IDENTITY_ISSUER: 'https://auth.agentcommons.io/api/auth',
         ARCADE_REALTIME_CONTROL_URL: props.realtimeControlUrl,
         ARCADE_PUBLIC_BASE_URL: 'https://arcade.agentcommons.io/api/arcade',
@@ -44,6 +47,7 @@ export class ControlPlaneStack extends Stack {
     })
 
     props.table.grantReadWriteData(handler)
+    props.recordingsBucket.grantReadWrite(handler)
     const functionUrl = handler.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.NONE,
       invokeMode: lambda.InvokeMode.BUFFERED,

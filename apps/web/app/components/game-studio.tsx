@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { ArcadeComposer, useArcadeIdentity } from './studio-composer'
 import {
   ArrowLeft,
   ArrowUp,
@@ -37,17 +39,24 @@ import {
   CommonsButton as Button,
   CompiledArtifactFrame,
   type AnnotationGeometry,
+  CanvasToolButton,
+  CodeFileBrowser,
+  type CompiledFrameHandle,
+  type CanvasObservation,
+  type CanvasRecording,
 } from '@agent-commons/ui'
 import {
   compilePresentation,
   gameDocumentSchema,
-  starterDocument,
+  emptyBrowserDocument,
+  isBrowserGame,
   type GameDocument,
   type StudioProject,
   type StudioRelease,
 } from '@common-arcade/studio'
 import type { TestRun } from '@common-arcade/control-client'
 import { arcade } from '../../lib/api'
+import { RecordingShelf, storeRecording } from './recording-shelf'
 
 type Agent = { agentId: string; name: string }
 type Run = TestRun & {
@@ -70,12 +79,87 @@ type Proposal = {
   baseRevision: number
   agentId: string
 }
-export function GameStudio() {
+export function GameStudio({ projectId }: { projectId: string }) {
+  const router = useRouter()
+  const compiledRef = useRef<CompiledFrameHandle>(null)
+  const annotationContext = useRef<Promise<unknown> | undefined>(undefined)
+  const [shareRecordings, setShareRecordings] = useState(false),
+    [recordingsRefresh, setRecordingsRefresh] = useState(0)
+  const [browserRun, setBrowserRun] = useState<{
+    id: string
+    step: number
+    revision: number
+  }>()
+  const [browserEvents, setBrowserEvents] = useState<
+    {
+      step: number
+      observation: CanvasObservation
+      decision: { actionId: string; reason: string }
+    }[]
+  >([])
+  async function browserDecision() {
+    if (!project || dirty)
+      throw new Error('Save the project before running a browser playtest.')
+    if (!compiledRef.current)
+      throw new Error('Open Preview to playtest the game.')
+    const current =
+      browserRun ??
+      (await arcade<{ id: string; step: number; revision: number }>(
+        `projects/${project.id}/browser-runs`,
+        { agentId: selectedAgents[0] || copilotId },
+      ))
+    if (current.revision !== project.revision)
+      throw new Error('Start a new playtest for this revision.')
+    const observation = await compiledRef.current.observe()
+    const event = await arcade<{
+      step: number
+      observation: CanvasObservation
+      decision: { actionId: string; reason: string }
+    }>(`studio/browser-runs/${current.id}/decide`, {
+      step: current.step,
+      observation,
+    })
+    await compiledRef.current.act(event.decision.actionId)
+    setBrowserRun({ ...current, step: current.step + 1 })
+    setBrowserEvents((all) => [...all, event])
+  }
+  async function saveInteractionRecording(recording: CanvasRecording) {
+    if (!project || dirty) {
+      setError(
+        'Save source changes before recording. This recording is available as a local download.',
+      )
+      return
+    }
+    try {
+      await storeRecording(
+        project.id,
+        project.revision,
+        recording,
+        shareRecordings,
+      )
+      setRecordingsRefresh((r) => r + 1)
+      setNotice(
+        shareRecordings
+          ? 'Recording saved and shared with spectators.'
+          : 'Private recording saved.',
+      )
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'Could not store recording. Download remains available.',
+      )
+    }
+  }
+  const identity = useArcadeIdentity()
+  const [zoom, setZoom] = useState(1)
   const [user, setUser] = useState<{ id: string; name: string } | null>(null)
   const [project, setProject] = useState<StudioProject>()
   const [projects, setProjects] = useState<StudioProject[]>([])
-  const [document, setDocument] = useState<GameDocument>(starterDocument)
-  const [source, setSource] = useState(JSON.stringify(starterDocument, null, 2))
+  const [document, setDocument] = useState<GameDocument>(emptyBrowserDocument)
+  const [source, setSource] = useState(
+    JSON.stringify(emptyBrowserDocument, null, 2),
+  )
   const [view, setView] = useState<'preview' | 'code' | 'test'>('preview')
   const [right, setRight] = useState<'copilot' | 'notes' | 'history'>('copilot')
   const [leftOpen, setLeftOpen] = useState(true),
@@ -107,18 +191,22 @@ export function GameStudio() {
   const file = useRef<HTMLInputElement>(null)
   const dirty = project
     ? JSON.stringify(project.document) !== JSON.stringify(document) ||
-      (view === 'code' && source !== JSON.stringify(document, null, 2))
+      (!isBrowserGame(document) &&
+        view === 'code' &&
+        source !== JSON.stringify(document, null, 2))
     : false
   const load = useCallback((p: StudioProject) => {
     setProject(p)
     setDocument(p.document)
     setSource(JSON.stringify(p.document, null, 2))
     setRun(undefined)
+    setBrowserRun(undefined)
+    setBrowserEvents([])
     setPlaying(false)
     setProposal(undefined)
     setMessages([])
     setDraft(undefined)
-    window.history.replaceState(null, '', `/studio?project=${p.id}`)
+    window.history.replaceState(null, '', `/studio/${p.id}`)
   }, [])
   useEffect(() => {
     let active = true
@@ -127,29 +215,19 @@ export function GameStudio() {
       .then(async (s) => {
         if (!active) return
         setUser(s.user)
-        if (!s.user) {
-          if (new URLSearchParams(window.location.search).has('authError'))
-            setError(
-              'Commons sign-in could not finish. Please try signing in again.',
-            )
-          return
-        }
-        const result = await arcade<{ projects: StudioProject[] }>('projects')
+        if (!s.user) return
+        const [p, result] = await Promise.all([
+          arcade<StudioProject>(`projects/${projectId}`),
+          arcade<{ projects: StudioProject[] }>('projects'),
+        ])
         if (!active) return
         setProjects(result.projects)
-        const target = new URLSearchParams(window.location.search).get(
-          'project',
-        )
-        const p =
-          result.projects.find((p) => p.id === target) ?? result.projects[0]
-        if (p) load(p)
-        const a = await arcade<{ agents: Agent[] | { agents: Agent[] } }>(
-          'commons/agents',
-        )
-        if (active)
-          setAgents(
-            Array.isArray(a.agents) ? a.agents : (a.agents.agents ?? []),
-          )
+        load(p)
+        const initial = sessionStorage.getItem(`arcade-prompt:${projectId}`)
+        if (initial) {
+          setPrompt(initial)
+          sessionStorage.removeItem(`arcade-prompt:${projectId}`)
+        }
       })
       .catch((e) => {
         if (active) setError(e.message)
@@ -157,7 +235,11 @@ export function GameStudio() {
     return () => {
       active = false
     }
-  }, [load])
+  }, [load, projectId])
+  useEffect(() => {
+    setAgents(identity.agents)
+    if (identity.copilotId) setCopilotId(identity.copilotId)
+  }, [identity.agents, identity.copilotId])
   useEffect(() => {
     if (!dirty) return
     const warn = (e: BeforeUnloadEvent) => {
@@ -180,7 +262,7 @@ export function GameStudio() {
     }
   }
   async function save(
-    next = view === 'code'
+    next = view === 'code' && !isBrowserGame(document)
       ? gameDocumentSchema.parse(JSON.parse(source))
       : document,
   ) {
@@ -194,13 +276,13 @@ export function GameStudio() {
     setDocument(p.document)
     setSource(JSON.stringify(p.document, null, 2))
     setProjects((all) => [p, ...all.filter((x) => x.id !== p.id)])
-    window.history.replaceState(null, '', `/studio?project=${p.id}`)
+    window.history.replaceState(null, '', `/studio/${p.id}`)
     return p
   }
   function update(patch: Partial<GameDocument>) {
     setPlaying(false)
     setDocument((d) => {
-      const next = { ...d, ...patch }
+      const next = { ...d, ...patch } as GameDocument
       setSource(JSON.stringify(next, null, 2))
       return next
     })
@@ -267,15 +349,9 @@ export function GameStudio() {
     action: () => void,
     active = false,
   ) => (
-    <button
-      className={`studio-icon ${active ? 'is-active' : ''}`}
-      title={label}
-      aria-label={label}
-      aria-pressed={active}
-      onClick={action}
-    >
+    <CanvasToolButton label={label} active={active} onClick={action}>
       {node}
-    </button>
+    </CanvasToolButton>
   )
   return (
     <CanvasShell
@@ -381,7 +457,7 @@ export function GameStudio() {
                 disabled={!!busy || dirty}
                 onChange={(e) => {
                   const p = projects.find((p) => p.id === e.target.value)
-                  if (p) load(p)
+                  if (p) router.push(`/studio/${p.id}`)
                 }}
               >
                 <option value="">New game</option>
@@ -395,12 +471,7 @@ export function GameStudio() {
                 aria-label="Create new game"
                 disabled={!user || !!busy || dirty}
                 onClick={() => {
-                  setProject(undefined)
-                  setDocument(starterDocument)
-                  setSource(JSON.stringify(starterDocument, null, 2))
-                  setRun(undefined)
-                  setPlaying(false)
-                  window.history.replaceState(null, '', '/studio')
+                  router.push('/studio')
                 }}
               >
                 <Plus size={14} />
@@ -428,118 +499,211 @@ export function GameStudio() {
                   onChange={(e) => update({ description: e.target.value })}
                 />
               </label>
-              <div className="studio-field-pair">
-                <label>
-                  Board
-                  <select
-                    value={document.boardSize}
-                    onChange={(e) => {
-                      const n = Number(e.target.value)
-                      update({
-                        boardSize: n,
-                        winLength: Math.min(n, document.winLength),
-                      })
-                    }}
-                  >
-                    {[3, 4, 5, 6, 7, 8].map((n) => (
-                      <option key={n} value={n}>
-                        {n} × {n}
-                      </option>
+              {!isBrowserGame(document) && (
+                <>
+                  {' '}
+                  <div className="studio-field-pair">
+                    <label>
+                      Board
+                      <select
+                        value={document.boardSize}
+                        onChange={(e) => {
+                          const n = Number(e.target.value)
+                          update({
+                            boardSize: n,
+                            winLength: Math.min(
+                              n,
+                              !isBrowserGame(document) ? document.winLength : 3,
+                            ),
+                          })
+                        }}
+                      >
+                        {[3, 4, 5, 6, 7, 8].map((n) => (
+                          <option key={n} value={n}>
+                            {n} × {n}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      In a row
+                      <select
+                        value={document.winLength}
+                        onChange={(e) =>
+                          update({ winLength: Number(e.target.value) })
+                        }
+                      >
+                        {Array.from(
+                          { length: document.boardSize - 2 },
+                          (_, i) => i + 3,
+                        ).map((n) => (
+                          <option key={n}>{n}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="studio-field-pair">
+                    {[0, 1].map((i) => (
+                      <label key={i}>
+                        Player {i + 1}
+                        <input
+                          value={
+                            !isBrowserGame(document) ? document.marks[i] : ''
+                          }
+                          maxLength={3}
+                          onChange={(e) => {
+                            const marks: [string, string] = [
+                              ...(!isBrowserGame(document)
+                                ? document.marks
+                                : (['X', 'O'] as [string, string])),
+                            ]
+                            marks[i] = e.target.value || (i === 0 ? 'X' : 'O')
+                            update({ marks })
+                          }}
+                        />
+                      </label>
                     ))}
-                  </select>
-                </label>
-                <label>
-                  In a row
-                  <select
-                    value={document.winLength}
-                    onChange={(e) =>
-                      update({ winLength: Number(e.target.value) })
-                    }
-                  >
-                    {Array.from(
-                      { length: document.boardSize - 2 },
-                      (_, i) => i + 3,
-                    ).map((n) => (
-                      <option key={n}>{n}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="studio-field-pair">
-                {[0, 1].map((i) => (
-                  <label key={i}>
-                    Player {i + 1}
+                  </div>
+                  <div className="studio-field-pair">
+                    <label>
+                      Accent
+                      <input
+                        type="color"
+                        value={document.accent}
+                        onChange={(e) => update({ accent: e.target.value })}
+                      />
+                    </label>
+                    <label>
+                      Canvas
+                      <input
+                        type="color"
+                        value={document.background}
+                        onChange={(e) => update({ background: e.target.value })}
+                      />
+                    </label>
+                  </div>
+                </>
+              )}
+              {isBrowserGame(document) && (
+                <p className="studio-help">
+                  {document.files.length} source files · Browser game
+                  <br />
+                  Edit every file in Code, or describe a change to your agent.
+                </p>
+              )}
+            </div>
+            {!isBrowserGame(document) && (
+              <>
+                {' '}
+                <div className="studio-section">
+                  <div className="studio-section-label">
+                    <Bot size={13} />
+                    Test players
+                  </div>
+                  {[0, 1].map((i) => (
+                    <label key={i}>
+                      Seat {i + 1}
+                      <select
+                        value={selectedAgents[i]}
+                        onChange={(e) =>
+                          setSelectedAgents((ids) => {
+                            const next: [string, string] = [...ids]
+                            next[i] = e.target.value
+                            return next
+                          })
+                        }
+                      >
+                        <option value="">Create a Commons agent</option>
+                        {agents.map((a) => (
+                          <option key={a.agentId} value={a.agentId}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                  <label>
+                    Scenario seed
                     <input
-                      value={document.marks[i]}
-                      maxLength={3}
-                      onChange={(e) => {
-                        const marks: [string, string] = [...document.marks]
-                        marks[i] = e.target.value || (i === 0 ? 'X' : 'O')
-                        update({ marks })
-                      }}
+                      value={seed}
+                      onChange={(e) => setSeed(e.target.value)}
+                      maxLength={200}
                     />
                   </label>
-                ))}
-              </div>
-              <div className="studio-field-pair">
+                  <p className="studio-help">
+                    Commons agents choose a bounded play policy. Every move uses
+                    the same game rules.
+                  </p>
+                </div>
+              </>
+            )}
+            {isBrowserGame(document) && (
+              <div className="studio-section">
+                <div className="studio-section-label">
+                  <Bot size={13} />
+                  Browser playtest
+                </div>
                 <label>
-                  Accent
-                  <input
-                    type="color"
-                    value={document.accent}
-                    onChange={(e) => update({ accent: e.target.value })}
-                  />
-                </label>
-                <label>
-                  Canvas
-                  <input
-                    type="color"
-                    value={document.background}
-                    onChange={(e) => update({ background: e.target.value })}
-                  />
-                </label>
-              </div>
-            </div>
-            <div className="studio-section">
-              <div className="studio-section-label">
-                <Bot size={13} />
-                Test players
-              </div>
-              {[0, 1].map((i) => (
-                <label key={i}>
-                  Seat {i + 1}
+                  Player
                   <select
-                    value={selectedAgents[i]}
+                    value={selectedAgents[0]}
                     onChange={(e) =>
-                      setSelectedAgents((ids) => {
-                        const next: [string, string] = [...ids]
-                        next[i] = e.target.value
-                        return next
-                      })
+                      setSelectedAgents([e.target.value, selectedAgents[1]])
                     }
                   >
-                    <option value="">Create a Commons agent</option>
+                    <option value="">Arcade Copilot</option>
                     {agents.map((a) => (
-                      <option key={a.agentId} value={a.agentId}>
+                      <option value={a.agentId} key={a.agentId}>
                         {a.name}
                       </option>
                     ))}
                   </select>
                 </label>
-              ))}
-              <label>
-                Scenario seed
-                <input
-                  value={seed}
-                  onChange={(e) => setSeed(e.target.value)}
-                  maxLength={200}
+                <Button
+                  disabled={
+                    !!busy ||
+                    !user ||
+                    dirty ||
+                    view !== 'preview' ||
+                    (browserRun?.step ?? 0) >= 20
+                  }
+                  onClick={() => void task('agent playtest', browserDecision)}
+                >
+                  Run one agent action
+                </Button>
+                {browserRun && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setBrowserRun(undefined)
+                      setBrowserEvents([])
+                    }}
+                  >
+                    New playtest
+                  </Button>
+                )}
+                <p className="studio-help">
+                  Agent decisions use the current browser observation.{' '}
+                  {browserRun?.step ?? 0} / 20 actions.
+                </p>
+              </div>
+            )}
+            {project && (
+              <div className="studio-section">
+                <label className="studio-help">
+                  <input
+                    type="checkbox"
+                    checked={shareRecordings}
+                    onChange={(e) => setShareRecordings(e.target.checked)}
+                  />
+                  Share new recordings with spectators
+                </label>
+                <RecordingShelf
+                  projectId={project.id}
+                  refresh={recordingsRefresh}
                 />
-              </label>
-              <p className="studio-help">
-                Commons agents choose a bounded play policy. Every move uses the
-                same game rules.
-              </p>
-            </div>
+              </div>
+            )}
             <div className="studio-section">
               <Button onClick={() => file.current?.click()}>
                 <Code2 size={13} />
@@ -620,18 +784,6 @@ export function GameStudio() {
                     <small>Powered by your Commons agent</small>
                   </div>
                 </div>
-                <select
-                  aria-label="Copilot agent"
-                  value={copilotId}
-                  onChange={(e) => setCopilotId(e.target.value)}
-                >
-                  <option value="">Create my Arcade Copilot</option>
-                  {agents.map((a) => (
-                    <option key={a.agentId} value={a.agentId}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
                 <div className="studio-conversation">
                   {messages.length === 0 && (
                     <div className="studio-copilot-welcome">
@@ -643,11 +795,11 @@ export function GameStudio() {
                       <button
                         onClick={() =>
                           setPrompt(
-                            'Make this a five by five game where four in a row wins. Give it a calm blue palette and a fitting name.',
+                            'Improve the controls and add clear feedback when the player scores or loses. Keep the current visual style.',
                           )
                         }
                       >
-                        A bigger board, a new strategy <ArrowUp size={12} />
+                        Improve the play experience <ArrowUp size={12} />
                       </button>
                       <button
                         onClick={() => {
@@ -707,17 +859,21 @@ export function GameStudio() {
                     </div>
                   )}
                 </div>
-                <form
-                  className="studio-prompt"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    if (!user || !prompt.trim()) return
+                <ArcadeComposer
+                  value={prompt}
+                  onChange={setPrompt}
+                  identity={{ ...identity, agents, copilotId }}
+                  onAgentChange={setCopilotId}
+                  busy={!!busy}
+                  context={
+                    project
+                      ? `Revision ${project.revision} · ${visibleNotes.length} notes attached`
+                      : 'Project context'
+                  }
+                  onSubmit={(attachments, model) => {
+                    if (!user || !prompt.trim() || !copilotId) return
                     void task('copilot', async () => {
                       const p = !project || dirty ? await save() : project
-                      const agentId =
-                        copilotId ||
-                        (await ensureAgent('copilot', 'Arcade Copilot'))
-                      setCopilotId(agentId)
                       const message = prompt
                       setPrompt('')
                       setMessages((m) => [
@@ -726,7 +882,7 @@ export function GameStudio() {
                       ])
                       const result = await arcade<Proposal>(
                         `projects/${p.id}/copilot`,
-                        { message, agentId },
+                        { message, agentId: copilotId, attachments, model },
                       )
                       setProposal(result)
                       setMessages((m) => [
@@ -735,33 +891,7 @@ export function GameStudio() {
                       ])
                     })
                   }}
-                >
-                  <textarea
-                    aria-label="Message Arcade Copilot"
-                    placeholder={
-                      user
-                        ? 'What should we create or change?'
-                        : 'Sign in to create with your agent'
-                    }
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    maxLength={8000}
-                    rows={3}
-                  />
-                  <div>
-                    <span>
-                      {project
-                        ? `Revision ${project.revision} attached`
-                        : 'Game context attached'}
-                    </span>
-                    <button
-                      aria-label="Send to copilot"
-                      disabled={!user || !!busy || !prompt.trim()}
-                    >
-                      <ArrowUp size={15} />
-                    </button>
-                  </div>
-                </form>
+                />
               </div>
             ) : right === 'notes' ? (
               <div className="studio-notes">
@@ -776,6 +906,7 @@ export function GameStudio() {
                             `projects/${p.id}/annotations`,
                             {
                               ...draft,
+                              context: await annotationContext.current,
                               body: note,
                               revision: p.revision,
                               ...(view === 'test' && run
@@ -899,77 +1030,92 @@ export function GameStudio() {
         )
       }
       bottom={
-        view === 'test' && (
-          <>
-            <div className="studio-log-heading">
-              <FlaskConical size={13} />
-              <strong>Test Arena</strong>
-              <span>
-                {run
-                  ? `${run.steps} decisions · ${run.status}`
-                  : 'No run started'}
-              </span>
-              <select
-                aria-label="Filter diagnostics"
-                value={logFilter}
-                onChange={(e) => setLogFilter(e.target.value)}
-              >
-                <option value="all">All events</option>
-                <option value="policy">Observations & decisions</option>
-                <option value="runtime">Actions & state</option>
-              </select>
-              {run && (
-                <button
-                  onClick={() => {
-                    const blob = new Blob([JSON.stringify(run, null, 2)], {
-                        type: 'application/json',
-                      }),
-                      url = URL.createObjectURL(blob)
-                    const a = window.document.createElement('a')
-                    a.href = url
-                    a.download = `${run.runId}.json`
-                    a.click()
-                    URL.revokeObjectURL(url)
-                  }}
-                  aria-label="Export replay"
+        isBrowserGame(document) && browserEvents.length > 0 ? (
+          <div className="studio-browser-events">
+            <strong>Browser playtest · client observations</strong>
+            {browserEvents.map((event) => (
+              <details key={event.step}>
+                <summary>
+                  {event.step + 1}. {event.decision.actionId} ·{' '}
+                  {event.decision.reason}
+                </summary>
+                <pre>{JSON.stringify(event.observation, null, 2)}</pre>
+              </details>
+            ))}
+          </div>
+        ) : (
+          view === 'test' && (
+            <>
+              <div className="studio-log-heading">
+                <FlaskConical size={13} />
+                <strong>Test Arena</strong>
+                <span>
+                  {run
+                    ? `${run.steps} decisions · ${run.status}`
+                    : 'No run started'}
+                </span>
+                <select
+                  aria-label="Filter diagnostics"
+                  value={logFilter}
+                  onChange={(e) => setLogFilter(e.target.value)}
                 >
-                  <Download size={14} />
-                </button>
-              )}
-            </div>
-            <div className="studio-log-body">
-              <div className="studio-log-list">
-                {logs
-                  .filter(
-                    (l) => logFilter === 'all' || l.category === logFilter,
-                  )
-                  .map((l) => (
-                    <button
-                      key={l.sequence}
-                      className={
-                        selected?.sequence === l.sequence ? 'is-active' : ''
-                      }
-                      onClick={() => setSelected(l)}
-                    >
-                      <span>{String(l.sequence).padStart(3, '0')}</span>
-                      <strong>{l.type}</strong>
-                      <small>{l.summary}</small>
-                    </button>
-                  ))}
-                {!logs.length && (
-                  <p className="studio-help">
-                    Start a test to inspect agent observations, policy decisions
-                    and accepted actions.
-                  </p>
+                  <option value="all">All events</option>
+                  <option value="policy">Observations & decisions</option>
+                  <option value="runtime">Actions & state</option>
+                </select>
+                {run && (
+                  <button
+                    onClick={() => {
+                      const blob = new Blob([JSON.stringify(run, null, 2)], {
+                          type: 'application/json',
+                        }),
+                        url = URL.createObjectURL(blob)
+                      const a = window.document.createElement('a')
+                      a.href = url
+                      a.download = `${run.runId}.json`
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    }}
+                    aria-label="Export replay"
+                  >
+                    <Download size={14} />
+                  </button>
                 )}
               </div>
-              {selected && (
-                <pre className="studio-log-detail">
-                  {JSON.stringify(selected.data, null, 2)}
-                </pre>
-              )}
-            </div>
-          </>
+              <div className="studio-log-body">
+                <div className="studio-log-list">
+                  {logs
+                    .filter(
+                      (l) => logFilter === 'all' || l.category === logFilter,
+                    )
+                    .map((l) => (
+                      <button
+                        key={l.sequence}
+                        className={
+                          selected?.sequence === l.sequence ? 'is-active' : ''
+                        }
+                        onClick={() => setSelected(l)}
+                      >
+                        <span>{String(l.sequence).padStart(3, '0')}</span>
+                        <strong>{l.type}</strong>
+                        <small>{l.summary}</small>
+                      </button>
+                    ))}
+                  {!logs.length && (
+                    <p className="studio-help">
+                      Start a test to inspect agent observations, policy
+                      decisions and accepted actions.
+                    </p>
+                  )}
+                </div>
+                {selected && (
+                  <pre className="studio-log-detail">
+                    {JSON.stringify(selected.data, null, 2)}
+                  </pre>
+                )}
+              </div>
+            </>
+          )
         )
       }
     >
@@ -1006,7 +1152,10 @@ export function GameStudio() {
       )}
       <div className="studio-stage-toolbar">
         <div className="studio-segment">
-          {(['preview', 'code', 'test'] as const).map((v) => (
+          {(isBrowserGame(document)
+            ? (['preview', 'code'] as const)
+            : (['preview', 'code', 'test'] as const)
+          ).map((v) => (
             <button
               key={v}
               className={view === v ? 'is-active' : ''}
@@ -1086,6 +1235,13 @@ export function GameStudio() {
                 },
                 tool === 'region',
               )}
+              {icon(<span>−</span>, 'Zoom out', () =>
+                setZoom((z) => Math.max(0.5, z - 0.1)),
+              )}
+              <span className="studio-help">{Math.round(zoom * 100)}%</span>
+              {icon(<span>+</span>, 'Zoom in', () =>
+                setZoom((z) => Math.min(2, z + 0.1)),
+              )}
               {icon(<RotateCcw size={14} />, 'Restart preview', () =>
                 setPreviewKey((k) => k + 1),
               )}
@@ -1094,28 +1250,41 @@ export function GameStudio() {
         </div>
       </div>
       {view === 'code' ? (
-        <div className="studio-code">
-          <div>
-            <Code2 size={13} />
-            game.json
-            <Button
-              onClick={() =>
-                void task('compile', async () => {
-                  update(gameDocumentSchema.parse(JSON.parse(source)))
-                  setView('preview')
-                })
-              }
-            >
-              Compile preview
-            </Button>
-          </div>
-          <textarea
-            aria-label="Game document source"
-            spellCheck={false}
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
+        isBrowserGame(document) ? (
+          <CodeFileBrowser
+            files={document.files}
+            onChange={(path, content) =>
+              update({
+                files: document.files.map((f) =>
+                  f.path === path ? { ...f, content } : f,
+                ),
+              })
+            }
           />
-        </div>
+        ) : (
+          <div className="studio-code">
+            <div>
+              <Code2 size={13} />
+              game.json
+              <Button
+                onClick={() =>
+                  void task('compile', async () => {
+                    update(gameDocumentSchema.parse(JSON.parse(source)))
+                    setView('preview')
+                  })
+                }
+              >
+                Compile preview
+              </Button>
+            </div>
+            <textarea
+              aria-label="Game document source"
+              spellCheck={false}
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+            />
+          </div>
+        )
       ) : (
         <div className="studio-preview-stage">
           <div className="studio-preview-meta">
@@ -1125,20 +1294,33 @@ export function GameStudio() {
                 : 'Compiled game preview'}
             </span>
             <span>
-              {document.boardSize} × {document.boardSize} · Turn based
+              {isBrowserGame(document)
+                ? 'Browser project'
+                : `${document.boardSize} × ${document.boardSize} · Turn based`}
             </span>
           </div>
-          <div className="studio-preview-frame">
+          <div
+            className="studio-preview-frame"
+            style={{
+              transform: `scale(${zoom})`,
+              transformOrigin: 'top center',
+            }}
+          >
             <CompiledArtifactFrame
+              ref={compiledRef}
+              onRecording={(recording) =>
+                void saveInteractionRecording(recording)
+              }
               preview={
                 html
                   ? { type: 'html', html }
                   : {
                       type: 'unavailable',
                       error:
-                        'Complete the game properties to compile a preview. Names and player marks must be non-empty and each player needs a different mark.',
+                        'The source could not compile. Check the entry file and local imports, or ask your copilot to fix the project.',
                     }
               }
+              interactive={tool === 'select'}
               title={`${document.title} compiled game`}
               revision={`${previewKey}:${view}:${run?.steps ?? 0}`}
             />
@@ -1146,6 +1328,44 @@ export function GameStudio() {
               tool={view === 'test' ? 'select' : tool}
               notes={visibleNotes}
               onCreate={(g) => {
+                const frame = compiledRef.current
+                const moment = frame?.moment()
+                annotationContext.current = frame
+                  ? Promise.all([
+                      frame.observe(),
+                      frame
+                        .snapshot()
+                        .then(async (snapshot) => {
+                          if (!project || dirty) return undefined
+                          const saved = await storeRecording(
+                            project.id,
+                            project.revision,
+                            snapshot,
+                            false,
+                          )
+                          setRecordingsRefresh((r) => r + 1)
+                          return saved.id
+                        })
+                        .catch((error) => {
+                          setNotice(
+                            error instanceof Error
+                              ? error.message
+                              : 'Could not save the annotation snapshot.',
+                          )
+                          return undefined
+                        }),
+                    ])
+                      .then(([observation, snapshotRecordingId]) => ({
+                        viewport: { width: 1280, height: 720 },
+                        moment,
+                        observation,
+                        snapshotRecordingId,
+                      }))
+                      .catch(() => ({
+                        viewport: { width: 1280, height: 720 },
+                        moment,
+                      }))
+                  : undefined
                 setDraft(g)
                 setRight('notes')
                 setRightOpen(true)

@@ -42,5 +42,6 @@ new ControlPlaneStack(app, `CommonArcade-${config.stage}-ControlPlane`, {
   stage: config.stage,
   table: foundation.coordinationTable,
   realtimeControlUrl: realtime.publicBaseUrl,
+  recordingsBucket: foundation.replaysBucket,
   terminationProtection: config.terminationProtection,
 })
