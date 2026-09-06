@@ -31,6 +31,7 @@ export type CopilotResult = {
   projectRevision: number
   agentId: string
   sessionId?: string
+  durationSeconds: number
   events: CopilotActivity[]
 }
 /**
@@ -75,6 +76,7 @@ export async function arcadeCopilot(
         projectRevision: job.projectRevision ?? 0,
         agentId: job.agentId ?? request.agentId,
         sessionId: job.sessionId,
+        durationSeconds: job.durationSeconds ?? 0,
         events: job.events ?? [],
       }
     if (job.status === 'failed')
