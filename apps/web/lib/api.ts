@@ -18,11 +18,20 @@ export async function arcade<T>(
   return result as T
 }
 
-export type CopilotProposal = {
-  summary: string
-  document: unknown
-  baseRevision: number
+export type CopilotActivity = {
+  sequence: number
+  type: 'status' | 'tool'
+  label: string
+  status?: string
+  tool?: string
+  timestamp: string
+}
+export type CopilotResult = {
+  response: string
+  projectRevision: number
   agentId: string
+  sessionId?: string
+  events: CopilotActivity[]
 }
 /**
  * Runs one copilot turn to completion. The build itself is a single agent run;
@@ -37,22 +46,16 @@ export async function arcadeCopilot(
     attachments?: { fileId: string }[]
     model?: { provider: string; modelId: string }
   },
-  options: { signal?: AbortSignal; onWait?: (seconds: number) => void } = {},
-): Promise<CopilotProposal> {
-  const started = await arcade<{ jobId?: string } & Partial<CopilotProposal>>(
+  options: {
+    signal?: AbortSignal
+    onWait?: (seconds: number) => void
+    onUpdate?: (events: CopilotActivity[]) => void
+  } = {},
+): Promise<CopilotResult> {
+  const started = await arcade<{ jobId?: string }>(
     `projects/${projectId}/copilot`,
     request,
   )
-  // A control plane that has not shipped the job endpoint yet answers with the
-  // finished proposal. Accepting both shapes means the web and the API can be
-  // released in either order without a broken window between them.
-  if (!started.jobId && started.document)
-    return {
-      summary: started.summary ?? '',
-      document: started.document,
-      baseRevision: started.baseRevision ?? 0,
-      agentId: started.agentId ?? request.agentId,
-    }
   if (!started.jobId)
     throw new Error('The build could not be started. Please retry.')
   const startedAt = Date.now()
@@ -63,14 +66,16 @@ export async function arcadeCopilot(
       {
         status: 'running' | 'ready' | 'failed'
         error?: string
-      } & Partial<CopilotProposal>
+      } & Partial<CopilotResult>
     >(`studio/copilot-jobs/${started.jobId}`)
+    options.onUpdate?.(job.events ?? [])
     if (job.status === 'ready')
       return {
-        summary: job.summary ?? '',
-        document: job.document,
-        baseRevision: job.baseRevision ?? 0,
+        response: job.response ?? 'Done.',
+        projectRevision: job.projectRevision ?? 0,
         agentId: job.agentId ?? request.agentId,
+        sessionId: job.sessionId,
+        events: job.events ?? [],
       }
     if (job.status === 'failed')
       throw new Error(job.error ?? 'The agent could not build this game.')
