@@ -113,8 +113,12 @@ export class DynamoDocumentStore implements DocumentStore {
       const result = await this.client.send(
         new QueryCommand({
           TableName: this.table,
-          KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
-          ExpressionAttributeValues: { ':pk': partition, ':prefix': prefix },
+          KeyConditionExpression: prefix
+            ? 'pk = :pk AND begins_with(sk, :prefix)'
+            : 'pk = :pk',
+          ExpressionAttributeValues: prefix
+            ? { ':pk': partition, ':prefix': prefix }
+            : { ':pk': partition },
           ConsistentRead: true,
           ExclusiveStartKey: cursor,
         }),
