@@ -19,20 +19,23 @@
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.883.0",
+    "@aws-sdk/client-s3": "^3.1127.0",
+    "@aws-sdk/lib-dynamodb": "^3.883.0",
+    "@aws-sdk/s3-presigned-post": "^3.1127.0",
+    "@aws-sdk/s3-request-presigner": "^3.1127.0",
+    "@common-arcade/auth": "workspace:^",
     "@common-arcade/diagnostics": "workspace:^",
+    "@common-arcade/example-tic-tac-toe": "workspace:^",
+    "@common-arcade/manifest": "workspace:^",
     "@common-arcade/match-worker-service": "workspace:^",
     "@common-arcade/protocol": "workspace:^",
+    "@common-arcade/studio": "workspace:^",
     "@common-arcade/test-arena": "workspace:^",
     "@hono/node-server": "^2.1.1",
     "hono": "^4.13.5",
-    "zod": "catalog:",
-    "@common-arcade/studio": "workspace:^",
-    "@common-arcade/auth": "workspace:^",
-    "@common-arcade/manifest": "workspace:^",
-    "@common-arcade/example-tic-tac-toe": "workspace:^",
-    "@aws-sdk/client-dynamodb": "^3.883.0",
-    "@aws-sdk/lib-dynamodb": "^3.883.0",
-    "jose": "^6.1.0"
+    "jose": "^6.1.0",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.163",

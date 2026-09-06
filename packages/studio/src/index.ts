@@ -1,3 +1,4 @@
+import { compileBrowserPresentation } from './browser.js'
 import {
   createGridPlacementGame,
   type GridPlacementRuleSet,
@@ -5,15 +6,22 @@ import {
 import { computeManifestDigest } from '@common-arcade/manifest'
 import { ARCADE_API_VERSION, type GameManifest } from '@common-arcade/protocol'
 
-export { gameDocumentSchema, starterDocument } from '@common-arcade/protocol'
+export {
+  gameDocumentSchema,
+  starterDocument,
+  emptyBrowserDocument,
+  isBrowserGame,
+} from '@common-arcade/protocol'
 export type {
   GameDocument,
+  BrowserGameDocument,
   StudioProject,
   StudioRelease,
   StudioAnnotation,
 } from '@common-arcade/protocol'
 import {
   gameDocumentSchema,
+  isBrowserGame,
   type GameDocument,
   type StudioProject,
 } from '@common-arcade/protocol'
@@ -24,6 +32,10 @@ export function rulesFor(
   digest: string,
 ): GridPlacementRuleSet {
   const d = gameDocumentSchema.parse(document)
+  if (isBrowserGame(d))
+    throw new Error(
+      'Browser projects run in an isolated browser. This release does not provide an authoritative grid runtime.',
+    )
   const lines: number[][] = []
   for (let y = 0; y < d.boardSize; y++)
     for (let x = 0; x < d.boardSize; x++) {
@@ -87,22 +99,32 @@ export async function releaseManifest(
         id: `pub_${project.ownerId.replace(/[^a-zA-Z0-9_]/g, '_')}`,
         name: 'Arcade creator',
       },
-      tags: ['grid', 'turn-based', 'agents'],
+      tags: isBrowserGame(project.document)
+        ? ['browser', 'interactive', 'agents']
+        : ['grid', 'turn-based', 'agents'],
     },
     spec: {
-      mode: 'turn-based',
-      profiles: [
-        'base-v1',
-        'turn-based-v1',
-        'replay-v1',
-        'generic-controls-v1',
-        'policy-v1',
-      ],
+      mode: isBrowserGame(project.document) ? 'hybrid' : 'turn-based',
+      profiles: isBrowserGame(project.document)
+        ? ['base-v1']
+        : [
+            'base-v1',
+            'turn-based-v1',
+            'replay-v1',
+            'generic-controls-v1',
+            'policy-v1',
+          ],
       extensions: [],
       seats: {
-        min: 2,
-        max: 2,
-        roles: [{ id: 'player', title: 'Player', count: 2 }],
+        min: isBrowserGame(project.document) ? 1 : 2,
+        max: isBrowserGame(project.document) ? 1 : 2,
+        roles: [
+          {
+            id: 'player',
+            title: 'Player',
+            count: isBrowserGame(project.document) ? 1 : 2,
+          },
+        ],
         spectators: true,
         lateJoin: false,
       },
@@ -122,7 +144,9 @@ export async function releaseManifest(
       ) as GameManifest['spec']['schemas'],
       runtime: {
         type: 'declarative',
-        module: 'grid-placement',
+        module: isBrowserGame(project.document)
+          ? 'browser-presentation'
+          : 'grid-placement',
         digest: project.digest,
       },
       presentation: { generic: true, bridge: 'semantic-v1' },
@@ -151,6 +175,7 @@ export function compilePresentation(
   interactive = true,
 ): string {
   const d = gameDocumentSchema.parse(document)
+  if (isBrowserGame(d)) return compileBrowserPresentation(d)
   const rules = rulesFor(d, 'rel_preview', `sha256:${'0'.repeat(64)}`)
   const board =
     state?.board ?? Array<string | null>(d.boardSize ** 2).fill(null)

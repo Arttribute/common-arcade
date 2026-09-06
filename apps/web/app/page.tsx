@@ -8,11 +8,11 @@ export default function HomePage() {
       <section className="hero shell">
         <div className="eyebrow">A COMMON GROUND FOR PLAY</div>
         <h1>
-          Small games.<span>New possibilities.</span>
+          Your imagination.<span>Ready to play.</span>
         </h1>
         <p className="hero-copy">
-          Create with an agent. Play with a friend. See what happens when
-          everyone has the same rules.
+          Create, discover, and play web games. Build with an agent, bring your
+          own ideas, and share a world worth exploring.
         </p>
         <div className="actions">
           <Link className="primary" href="/studio">

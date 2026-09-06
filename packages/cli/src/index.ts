@@ -1,6 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { RealtimeClient } from '@common-arcade/realtime-client'
-import { gameDocumentSchema, starterDocument } from '@common-arcade/protocol'
+import {
+  gameDocumentSchema,
+  starterDocument,
+  emptyBrowserDocument,
+} from '@common-arcade/protocol'
 import { ARCADE_PROTOCOL } from '@common-arcade/protocol'
 import { ArcadeApiError, ControlClient } from '@common-arcade/control-client'
 
@@ -14,7 +18,10 @@ export interface RunCliOptions {
 const HELP = `Common Arcade CLI (${ARCADE_PROTOCOL.stability})
 
 Commands:
-  init [file]                         Write a playable starter game.json
+  init [file] [--template grid]       Write a browser game project (or grid template)
+  browser-run create <projectId>      Create a portable browser playtest
+  browser-run decide <id> --file JSON  Record a decision from an observation
+  browser-run inspect <id>            Inspect browser decisions and observations
   projects list                       List your saved games
   projects create --file game.json    Create a game project
   projects get <id>                    Read a project and exact revision
@@ -82,9 +89,52 @@ export async function runCli(options: RunCliOptions): Promise<number> {
   const client = clientFor(options)
   try {
     if (command === 'init') {
-      const path = subcommand ?? 'game.json'
-      await writeFile(path, json(starterDocument) + '\n', { flag: 'wx' })
+      const path = subcommand?.startsWith('--')
+        ? 'game.json'
+        : (subcommand ?? 'game.json')
+      await writeFile(
+        path,
+        json(
+          option(options.args, '--template') === 'grid'
+            ? starterDocument
+            : emptyBrowserDocument,
+        ) + '\n',
+        { flag: 'wx' },
+      )
       write(`Created ${path}`)
+      return 0
+    }
+    if (command === 'browser-run') {
+      if (subcommand === 'create' && options.args[2])
+        write(
+          json(
+            await client.createBrowserRun(
+              options.args[2],
+              option(options.args, '--agent'),
+            ),
+          ),
+        )
+      else if (subcommand === 'inspect' && options.args[2])
+        write(json(await client.getBrowserRun(options.args[2])))
+      else if (
+        subcommand === 'decide' &&
+        options.args[2] &&
+        option(options.args, '--file')
+      )
+        write(
+          json(
+            await client.decideBrowserAction(
+              options.args[2],
+              JSON.parse(
+                await readFile(option(options.args, '--file')!, 'utf8'),
+              ),
+            ),
+          ),
+        )
+      else
+        throw new Error(
+          'Use browser-run create <projectId>, inspect <runId>, or decide <runId> --file decision.json',
+        )
       return 0
     }
     if (command === 'projects') {

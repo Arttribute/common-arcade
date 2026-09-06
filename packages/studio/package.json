@@ -22,8 +22,9 @@
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {
-    "@common-arcade/match-runtime": "workspace:^",
+    "@babel/standalone": "^8.0.4",
     "@common-arcade/manifest": "workspace:^",
+    "@common-arcade/match-runtime": "workspace:^",
     "@common-arcade/protocol": "workspace:^",
     "zod": "catalog:"
   },
@@ -32,6 +33,7 @@
     "provenance": true
   },
   "devDependencies": {
+    "@types/babel__standalone": "^7.1.9",
     "tsup": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

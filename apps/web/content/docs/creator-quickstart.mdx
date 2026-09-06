@@ -1,32 +1,53 @@
 ---
 title: Create, publish and play
-description: Build a working game from Studio or your own terminal agent.
+description: Build web games with Commons agents or your own terminal agent.
 ---
 
-Common Arcade's hosted creator alpha supports deterministic grid placement games
-with two players, boards from 3×3 to 8×8, configurable winning lines, marks and
-presentation. Games use the same legal actions in the browser, CLI and SDK.
+Common Arcade is a workspace for creating, discovering and playing web games.
+Start with a description, bring an existing project, or use the API from your
+own agent. The hosted creator release supports multi-file HTML, CSS, JavaScript,
+TypeScript and JSX/TSX projects, alongside deterministic grid-game templates.
 
 ## In Studio
 
-Open [Studio](/studio) and sign in with Commons. Change the game properties or
-import a game document. The middle of the workspace runs a compiled, isolated
-preview. Save creates a durable revision. Point and region notes stay attached
-to that revision, and earlier notes remain explicitly marked as earlier work.
+Open [Studio](/studio) and sign in with Commons. Your existing Commons agents
+appear automatically, including your Arcade Copilot. Agents created here also
+belong to your Commons account. Describe a game in the shared composer, attach
+reference files, and choose an agent and model. A new draft receives its own
+`/studio/prj_…` address before generation begins.
 
-Arcade Copilot creates or uses a real Agent Commons agent. Describe a change,
-review its validated proposal, then apply it as a new revision. Copilot proposals
-do not publish the game automatically.
+The workspace has Preview and Code views, a source-file browser, resizable
+panels and a conversation with your agent. Review a proposed revision before
+applying it. Publishing is a separate action and produces an immutable release.
+HTML projects can import local files and declare exact-version npm dependencies.
+The browser compiler reports missing imports and invalid source before a
+proposal can be applied or published.
 
-Test Arena creates real Commons player agents by default. Each agent chooses a
-bounded, deterministic cell preference policy once per run. The policy, rather
-than a model call on every move, plays at game cadence. Pause or step the test,
-inspect observations, decisions and accepted actions, then export the replay.
-A seeded preference policy is a first alpha controller, not a learning agent.
+Use Interact to play and Point or Region to annotate. Compiled previews use a
+fixed logical viewport so notes stay aligned when panels resize or you zoom.
+Annotations retain their revision, normalized geometry, observable game state,
+and a private recording snapshot when storage is available. Image and video
+annotations in Commons use the artifact's content bounds, including letterboxing.
 
-Publish makes an immutable revision discoverable. Your game page has local
-practice and a shared online match. Share the match link; each player signs in
-and claims a seat. Spectators do not need a seat or account.
+Record interaction captures DOM/canvas activity for later playback. Recordings
+are private by default; opt into spectator sharing before recording to add a
+session to the published game's page. Downloaded recordings can also be opened
+locally. Recording is bounded to five minutes or 8 MB of event data; it is a
+browser replay, not a screen-video encoder, and cross-origin or protected media
+may not be captured.
+
+## Agent playtests
+
+For browser games, expose `window.arcade.observe()`, `actions()` and `step(id)`
+to give an agent structured state and legal actions. Without a bridge, Studio
+uses visible button labels and page text. Choose a Commons agent and advance
+its decisions, inspecting the observations, chosen actions and reasons in the
+playtest log. Browser tests are client-observed sessions, not authoritative
+competitive matches. Each session accepts up to 20 decisions.
+
+Grid templates additionally support the deterministic Test Arena and online
+matches with authoritative actions, reconnectable seats and verified replays.
+Use `arcade init game.json --template grid` for this runtime.
 
 ## From any terminal agent
 
@@ -37,24 +58,23 @@ Store the key in your environment, not in source files.
 ```bash
 export ARCADE_API_URL=https://arcade.agentcommons.io/api/arcade
 export ARCADE_TOKEN=your_scoped_arcade_key
-
 npm install -g https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.1/common-arcade-cli-0.1.0-alpha.1.tgz
 arcade init game.json
 arcade projects create --file game.json
 arcade projects get prj_RETURNED_ID
 arcade projects update prj_RETURNED_ID --file game.json --revision 1
-arcade projects test prj_RETURNED_ID --seed trial-42
 arcade projects publish prj_RETURNED_ID --revision 2
 arcade games search
 ```
 
-The update and publish commands require the revision you reviewed. Concurrent
-changes return a conflict; read the latest project and incorporate the changes.
-A release never changes after publication.
+Update and publish require the revision you reviewed. On conflict, read the
+latest project and incorporate its changes. The portable
+[Common Arcade skill](https://github.com/Arttribute/common-arcade/blob/main/skills/common-arcade/SKILL.md)
+documents source files, the browser bridge and external-agent workflows.
 
 ## TypeScript SDK
 
-Install the creator alpha from its versioned release asset (Node.js 22 or newer):
+Install the versioned release asset with Node.js 22 or newer:
 
 ```bash
 npm install https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.1/common-arcade-sdk-0.1.0-alpha.1.tgz
@@ -62,53 +82,37 @@ npm install https://github.com/Arttribute/common-arcade/releases/download/v0.1.0
 
 ```ts
 import { ControlClient } from '@common-arcade/sdk'
-
 const arcade = new ControlClient({
   baseUrl: process.env.ARCADE_API_URL!,
   bearerToken: process.env.ARCADE_TOKEN!,
 })
 const project = await arcade.createProject({
-  title: 'Four together',
-  description: 'Four in a row on a five-by-five board.',
-  boardSize: 5,
-  winLength: 4,
-  marks: ['X', 'O'],
-  accent: '#64748b',
-  background: '#fafaf9',
+  kind: 'browser',
+  title: 'My web game',
+  description: 'Built with my own agent.',
+  entryFile: 'index.html',
+  files: [
+    { path: 'index.html', content: '<!doctype html><button>Play</button>' },
+  ],
 })
-const run = await arcade.createProjectRun(project.id, { seed: 'trial-42' })
-const firstDecision = await arcade.stepProjectRun(run.runId, run.steps)
 const release = await arcade.publishProject(project.id, project.revision)
-const match = await arcade.createMatch({ releaseId: release.id })
+const run = await arcade.createBrowserRun(project.id)
 ```
 
-For online play, claim a seat and obtain a one-time session ticket with
-`claimSeat` and `createSession`. Connect `RealtimeClient` to the returned WSS
-endpoint, then submit a legal action with its active control lease. The CLI's
-`play <match-id> --seat <seat-id>` command runs a first-legal policy until the
-match completes or its ten-minute session limit expires.
+Use `decideBrowserAction` with a current observation and action ID for your own
+agent, or an owned Commons agent ID when creating the run. Execute the selected
+action in your browser and submit the next observation. For grid online play,
+`claimSeat` and `createSession` return the credentials needed by `RealtimeClient`.
 
-## MCP
+## Hosting and current boundaries
 
-Build and run `apps/mcp-server/dist/index.js` as a stdio MCP server with the same
-`ARCADE_API_URL` and `ARCADE_TOKEN` environment variables. It exposes discovery,
-project read/create/update, revision publishing, test execution, match creation,
-seat joining and replay tools. Any compatible client can use this interface.
-The MCP server controls lifecycle operations; WebSockets carry online play.
+Projects, revisions, annotations and grants persist in DynamoDB. Lambda handles
+the control plane; ECS handles authoritative grid matches. Replays use S3 and
+can use a self-hosted S3-compatible endpoint. See the
+[operator guide](https://github.com/Arttribute/common-arcade/blob/main/docs/operations/creator-alpha.md)
+for configuration.
 
-## Current boundaries
-
-This is a hosted creator alpha. Arbitrary code builds, Wasm, native containers,
-realtime physics games, team policies, learning and batch comparisons remain
-future work. Source documents, revisions, annotations, key grants, published
-releases and test scenarios persist independently of the process in DynamoDB.
-The single ECS match worker persists accepted actions before acknowledgement
-and reconstructs matches from verified replays after restart. Clients reconnect
-with a new ticket after worker replacement. Recovery fences the former owner
-through a conditional durable version before it can acknowledge another action.
-
-The current Test Arena is explicitly turn based: only a requested step advances
-a run. Reads never advance it. Its logs describe observable decisions, not private
-model reasoning. The full system blueprint remains the roadmap, including an
-independent relational control store, dedicated replay storage, stronger runtime
-isolation and multi-worker placement.
+This is an alpha protocol. Browser projects run in isolated client-side frames;
+server containers, authoritative arbitrary-code multiplayer, multi-worker
+placement and unrestricted package builds remain roadmap work. Projects are
+limited to 60 files and 120 KB of source; dependencies use exact versions.

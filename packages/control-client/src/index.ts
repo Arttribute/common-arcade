@@ -360,6 +360,40 @@ export class ControlClient {
     }) as Promise<TestRun>
   }
 
+  async createBrowserRun(
+    projectId: string,
+    agentId?: string,
+  ): Promise<{ id: string; step: number; revision: number }> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/browser-runs`,
+      { method: 'POST', body: { agentId } },
+    ) as Promise<{ id: string; step: number; revision: number }>
+  }
+  async decideBrowserAction(
+    runId: string,
+    input: {
+      step: number
+      observation: { state: unknown; actions: { id: string; label: string }[] }
+      actionId?: string
+    },
+  ): Promise<{ step: number; decision: { actionId: string; reason: string } }> {
+    return this.request(
+      `/v1/studio/browser-runs/${encodeURIComponent(runId)}/decide`,
+      { method: 'POST', body: input },
+    ) as Promise<{
+      step: number
+      decision: { actionId: string; reason: string }
+    }>
+  }
+  async getBrowserRun(runId: string): Promise<unknown> {
+    return this.request(`/v1/studio/browser-runs/${encodeURIComponent(runId)}`)
+  }
+  async listRecordings(projectId: string): Promise<unknown> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/recordings`,
+    )
+  }
+
   private async request(
     path: string,
     options: {

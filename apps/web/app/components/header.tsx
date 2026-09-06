@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { AccountMenu } from './account-menu'
 
 export function Header() {
   return (
@@ -13,6 +14,7 @@ export function Header() {
         <Link href="/studio">Studio</Link>
         <Link href="/agents">Agents</Link>
         <Link href="/docs">Docs</Link>
+        <AccountMenu />
       </div>
     </nav>
   )

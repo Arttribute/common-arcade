@@ -39,7 +39,7 @@ async function proxy(
   const body = ['GET', 'HEAD'].includes(request.method)
     ? undefined
     : await request.text()
-  if (body && Buffer.byteLength(body) > 65536)
+  if (body && Buffer.byteLength(body) > 262144)
     return NextResponse.json(
       { detail: 'Request is too large.' },
       { status: 413 },

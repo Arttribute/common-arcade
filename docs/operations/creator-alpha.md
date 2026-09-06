@@ -66,3 +66,21 @@ Restore the previous Vercel deployment if the web layer fails. ECS has deploymen
 circuit-breaker rollback. Do not roll the worker back to the unauthenticated
 scaffold; pause public access if a rollback predates the identity boundary.
 DynamoDB is retained and PITR enabled. No destructive data migration is included.
+
+## Browser projects and recordings
+
+The browser compiler supports HTML/CSS/JS/TS/JSX/TSX, local imports and declared
+exact-version npm packages. Runtime dependency downloads use esm.sh. This does
+not grant generated code access to the application origin: previews run in
+opaque sandboxed frames. Recordings play in a separate data-URL origin.
+
+Set `ARCADE_RECORDINGS_BUCKET` on the control API. For self-hosted storage,
+also set `ARCADE_OBJECT_STORE_ENDPOINT`, `AWS_REGION`, and the standard AWS
+credential variables for your S3-compatible provider. Allow GET and POST CORS
+from your frontend origin; signed POST policies constrain key, size and type.
+The deployed AWS bucket has encryption, retention, blocked public access and
+an incomplete-multipart cleanup rule. Spectator access is mediated by short-lived
+signed downloads, and new recordings are private unless explicitly shared.
+
+Downloads use the portable `commons.recording.v1` JSON format, optionally gzip
+compressed. No storage subscription is required for local recording playback.

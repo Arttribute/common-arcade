@@ -55,6 +55,17 @@ export async function GET(request: NextRequest) {
       }),
       { ...cookieOptions, maxAge: 7 * 86400 },
     )
+    // Provision the account's shared Commons copilot; a transient failure is retried in Studio.
+    if (process.env.ARCADE_API_URL)
+      await fetch(`${process.env.ARCADE_API_URL}/v1/commons/copilot`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+        signal: AbortSignal.timeout(10000),
+      }).catch(() => undefined)
     response.cookies.delete('arcade-oauth-state')
     return response
   } catch {

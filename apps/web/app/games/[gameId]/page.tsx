@@ -1,7 +1,9 @@
+import { RecordingShelf } from '../../components/recording-shelf'
 import { CompiledArtifactFrame } from '@agent-commons/ui'
 import {
   compilePresentation,
   starterDocument,
+  isBrowserGame,
   type StudioRelease,
 } from '@common-arcade/studio'
 import type { GameManifest } from '@common-arcade/protocol'
@@ -57,7 +59,7 @@ export default async function GamePage({
             ))}
           </div>
         </div>
-        <MatchLauncher releaseId={releaseId} />
+        {!isBrowserGame(document) && <MatchLauncher releaseId={releaseId} />}
       </section>
       <section
         className="shell"
@@ -75,6 +77,9 @@ export default async function GamePage({
           title={`${game.metadata.title} — local practice`}
         />
       </section>
+      <div className="shell">
+        <RecordingShelf gameId={gameId} />
+      </div>
       <section className="contract-grid shell">
         <article>
           <span>MODE</span>
@@ -87,7 +92,11 @@ export default async function GamePage({
         <article>
           <span>RUNTIME</span>
           <strong>{game.spec.runtime.type}</strong>
-          <p>Content-addressed and replayable under the declared profile.</p>
+          <p>
+            {isBrowserGame(document)
+              ? 'Runs in your browser. Record a play session to share a replay.'
+              : 'Content-addressed and replayable under the declared profile.'}
+          </p>
         </article>
         <article>
           <span>AGENT CONTRACT</span>

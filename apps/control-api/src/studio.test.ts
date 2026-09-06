@@ -185,3 +185,67 @@ describe('hosted Studio boundary', () => {
     ).toBe(401)
   })
 })
+
+describe('portable browser playtests', () => {
+  it('persists external-agent decisions and scopes runs to their creator', async () => {
+    const { emptyBrowserDocument } = await import('@common-arcade/protocol')
+    const store = new MemoryDocumentStore(),
+      app = createApp({ store, allowLocalAuth: true, logRequests: false })
+    const headers = {
+      Authorization: 'Bearer local:browser_creator',
+      'Content-Type': 'application/json',
+    }
+    const project = await (
+      await app.request('/v1/projects', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ document: emptyBrowserDocument }),
+      })
+    ).json()
+    const run = await (
+      await app.request(`/v1/projects/${project.id}/browser-runs`, {
+        method: 'POST',
+        headers,
+        body: '{}',
+      })
+    ).json()
+    const decision = {
+      step: 0,
+      observation: {
+        state: { score: 0 },
+        actions: [{ id: 'jump', label: 'Jump' }],
+      },
+      actionId: 'jump',
+    }
+    expect(
+      (
+        await app.request(`/v1/studio/browser-runs/${run.id}/decide`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(decision),
+        })
+      ).status,
+    ).toBe(200)
+    expect(
+      (
+        await app.request(`/v1/studio/browser-runs/${run.id}/decide`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(decision),
+        })
+      ).status,
+    ).toBe(200)
+    const result = await (
+      await app.request(`/v1/studio/browser-runs/${run.id}`, { headers })
+    ).json()
+    expect(result.events).toHaveLength(1)
+    expect(result.events[0].decision.actionId).toBe('jump')
+    expect(
+      (
+        await app.request(`/v1/studio/browser-runs/${run.id}`, {
+          headers: { Authorization: 'Bearer local:someone_else' },
+        })
+      ).status,
+    ).toBe(403)
+  })
+})

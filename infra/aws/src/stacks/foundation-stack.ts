@@ -1,4 +1,10 @@
-import { CfnOutput, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib'
+import {
+  CfnOutput,
+  Duration,
+  RemovalPolicy,
+  Stack,
+  type StackProps,
+} from 'aws-cdk-lib'
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb'
 import * as ecr from 'aws-cdk-lib/aws-ecr'
 import * as events from 'aws-cdk-lib/aws-events'
@@ -32,6 +38,17 @@ export class FoundationStack extends Stack {
     })
 
     this.replaysBucket = new s3.Bucket(this, 'ReplayArtifacts', {
+      cors: [
+        {
+          allowedOrigins: ['*'],
+          allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.POST],
+          allowedHeaders: ['*'],
+          maxAge: 300,
+        },
+      ],
+      lifecycleRules: [
+        { abortIncompleteMultipartUploadAfter: Duration.days(1) },
+      ],
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
