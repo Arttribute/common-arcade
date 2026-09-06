@@ -98,6 +98,9 @@ export class RealtimePilotStack extends Stack {
         },
       },
     )
+    // The L3 pattern does not expose this ECS setting. Keep a single match owner.
+    const cfnService = service.service.node.defaultChild as ecs.CfnService
+    cfnService.availabilityZoneRebalancing = 'DISABLED'
     props.table.grantReadWriteData(service.taskDefinition.taskRole)
     service.targetGroup.configureHealthCheck({
       healthyHttpCodes: '200',
