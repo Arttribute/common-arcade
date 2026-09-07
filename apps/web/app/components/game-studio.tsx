@@ -437,7 +437,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
       throw new Error('Browser playtests require a browser game.')
     if (!compiledRef.current)
       throw new Error('Open Preview before starting a playtest.')
-    const initialObservation = await compiledRef.current.observe()
+    const initialObservation = await waitForPreview(compiledRef)
     const declaredSeats = seatsFromObservation(initialObservation)
     if (declaredSeats.length < browserControllers.length)
       throw new Error(
@@ -2022,16 +2022,18 @@ function stateForSeat(state: unknown, seatId: string): unknown {
 
 async function waitForPreview(
   ref: React.RefObject<CompiledFrameHandle | null>,
-) {
+): Promise<CanvasObservation> {
   let lastError: unknown
   for (let attempt = 0; attempt < 40; attempt++) {
     try {
-      await ref.current?.observe()
-      return
+      if (!ref.current) throw new Error('The compiled preview is not mounted.')
+      const observation = await ref.current.observe()
+      if (seatsFromObservation(observation).length) return observation
+      lastError = new Error('The game runtime is still loading.')
     } catch (error) {
       lastError = error
-      await new Promise((resolve) => setTimeout(resolve, 100))
     }
+    await new Promise((resolve) => setTimeout(resolve, 100))
   }
   throw lastError instanceof Error
     ? lastError

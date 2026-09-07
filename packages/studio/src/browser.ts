@@ -16,8 +16,16 @@ function createStorage(){let values=new Map;return{get length(){return values.si
 for(const name of ['localStorage','sessionStorage']){try{const storage=window[name],probe='__arcade_storage_probe__';storage.setItem(probe,'1');storage.removeItem(probe)}catch{Object.defineProperty(window,name,{configurable:true,value:createStorage()})}}
 const projectFiles=__ARCADE_FILES__,entryFile=__ARCADE_ENTRY__,nativeFetch=window.fetch.bind(window);window.fetch=(input,init)=>{const value=typeof input==='string'?input:input instanceof URL?input.href:input?.url;if(typeof value==='string'&&!/^[a-z]+:/i.test(value)&&!value.startsWith('//')){const base='https://arcade.invalid/'+entryFile,path=new URL(value,base).pathname.slice(1);if(Object.hasOwn(projectFiles,path)){const extension=path.split('.').pop()?.toLowerCase(),type=extension==='json'?'application/json':extension==='css'?'text/css':extension==='svg'?'image/svg+xml':'text/plain';return Promise.resolve(new Response(projectFiles[path],{status:200,headers:{'Content-Type':type}}))}}return nativeFetch(input,init)};
 function installArcadeSeats(){
-  const api=window.arcade;
-  if(!api||api.__multiSeatBridge)return;
+  let api=window.arcade;
+  if(api?.__multiSeatBridge)return;
+  if(!api){
+    api={
+      observe:()=>({text:document.body.innerText.slice(0,8000)}),
+      actions:()=>Array.from(document.querySelectorAll('button,[role="button"],input[type="button"]')).filter(element=>!element.hasAttribute('disabled')).slice(0,80).map((element,index)=>({id:'click:'+index,label:(element.getAttribute('aria-label')||element.textContent||'Button').trim().slice(0,200)})),
+      step:(id)=>{const index=Number(String(id).slice(6)),element=Array.from(document.querySelectorAll('button,[role="button"],input[type="button"]')).filter(candidate=>!candidate.hasAttribute('disabled'))[index];if(!element)return false;element.click();return true;},
+    };
+    window.arcade=api;
+  }
   const configured=__ARCADE_PLAY__;
   const declared=typeof api.seats==='function'?api.seats():api.seats;
   const count=configured?.seats?.default??2;
