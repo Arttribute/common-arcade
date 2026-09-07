@@ -185,6 +185,20 @@ describe('building a game in a native Commons agent session', () => {
         .filter((call) => call.url.endsWith('/v1/agents/run/stream'))
         .map((call) => call.body.messages[0].content),
     ).toEqual([rawPrompt, secondPrompt])
+    const conversation = await (
+      await app.request(
+        `/v1/projects/${project.id}/copilot-session?agentId=agt_copilot`,
+        { headers },
+      )
+    ).json()
+    expect(conversation.sessionId).toBe('ses_arcade_project')
+    expect(conversation.messages.map((message: any) => message.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+    ])
+    expect(conversation.messages[2].text).toBe(secondPrompt)
   })
 
   it('queues hosted work and completes it only through the private worker', async () => {

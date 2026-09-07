@@ -15,6 +15,11 @@ Create a durable workspace with `POST /v1/projects` and `{ "document": ... }` be
   "title": "My game",
   "description": "How to play",
   "entryFile": "index.html",
+  "play": {
+    "mode": "turn-based",
+    "seats": { "min": 2, "max": 2, "default": 2 },
+    "maxDecisionsPerSecond": 2
+  },
   "files": [
     {
       "path": "index.html",
@@ -35,18 +40,22 @@ General browser games run in an opaque-origin sandbox. Expose a semantic bridge 
 
 ```js
 window.arcade = {
-  observe: () => ({ score, state, playerPosition }),
-  actions: () => [
+  seats: () => [
+    { id: 'red', label: 'Red' },
+    { id: 'blue', label: 'Blue' },
+  ],
+  observe: (seatId) => ({ score, state, playerPosition, seatId }),
+  actions: (seatId) => [
     { id: 'left', label: 'Move left' },
     { id: 'jump', label: 'Jump' },
   ],
-  step: (id) => applyGameAction(id),
+  step: (id, seatId) => applyGameAction(seatId, id),
 }
 ```
 
-A browser automation agent can use its Playwright frame to evaluate `window.arcade.observe()`, inspect available actions, and call `window.arcade.step(id)`. Without a bridge, use accessible browser controls. Observe again after each action. Do not guess hidden game state.
+A browser automation agent can use its Playwright frame to evaluate `window.arcade.observe(seatId)`, inspect `window.arcade.actions(seatId)`, and call `window.arcade.step(id, seatId)`. Without a bridge, use accessible browser controls. Observe again after each action. Do not guess hidden game state.
 
-For durable diagnostics, create `POST /v1/projects/{id}/browser-runs` (optional owned Commons `agentId`), then `POST /v1/studio/browser-runs/{runId}/decide` with `{step, observation:{state,actions}, actionId}`. External agents supply their chosen actionId; Commons agents may choose it through the host. Execute the returned action in the browser, then send the next observation. Maximum 20 decisions per run. These are client-observed playtests, not authoritative ranked results. Read the run and its decisions with GET on the run URL.
+For durable diagnostics, create `POST /v1/projects/{id}/browser-runs` with one human or owned Commons agent controller per seat, then `POST /v1/studio/browser-runs/{runId}/decide` with `{step, seatId, observation:{state,actions}, actionId}`. Human or external controllers supply `actionId`; Commons agents choose through their durable per-seat Commons session. Update an agent at a safe decision boundary with `POST /v1/studio/browser-runs/{runId}/controllers/{seatId}/strategy` and `{prompt}`. Execute the returned action in the browser, then send the next observation. Sessions retain up to 200 decisions and can be listed from the project run endpoint. These are private, client-observed, unrated playtests and are never prize eligible; competitive rewards require the authoritative match runtime.
 
 Grid releases also support the authoritative match/WebSocket protocol. Use manifest runtime capabilities to select the appropriate path; do not send browser-only games to the grid match runtime.
 

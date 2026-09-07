@@ -34,6 +34,32 @@ export const browserGameDocumentSchema = z
       )
       .refine((d) => Object.keys(d).length <= 20)
       .optional(),
+    play: z
+      .object({
+        mode: z.enum(['turn-based', 'realtime']).default('turn-based'),
+        seats: z
+          .object({
+            min: z.number().int().min(1).max(16),
+            max: z.number().int().min(1).max(16),
+            default: z.number().int().min(1).max(16),
+          })
+          .strict()
+          .superRefine((seats, context) => {
+            if (seats.min > seats.max)
+              context.addIssue({
+                code: 'custom',
+                message: 'Minimum seats cannot exceed maximum seats.',
+              })
+            if (seats.default < seats.min || seats.default > seats.max)
+              context.addIssue({
+                code: 'custom',
+                message: 'Default seats must be within the supported range.',
+              })
+          }),
+        maxDecisionsPerSecond: z.number().int().min(1).max(20).default(2),
+      })
+      .strict()
+      .optional(),
     files: z
       .array(
         z
@@ -92,6 +118,11 @@ export const emptyBrowserDocument: BrowserGameDocument = {
   title: 'Untitled game',
   description: '',
   entryFile: 'index.html',
+  play: {
+    mode: 'turn-based',
+    seats: { min: 1, max: 8, default: 2 },
+    maxDecisionsPerSecond: 2,
+  },
   files: [
     {
       path: 'index.html',
@@ -112,6 +143,11 @@ export const exampleDocument: BrowserGameDocument = {
   description:
     'A finished example you can play, read, change and publish. Ask your copilot for a twist to see how a change lands.',
   entryFile: 'index.html',
+  play: {
+    mode: 'turn-based',
+    seats: { min: 2, max: 2, default: 2 },
+    maxDecisionsPerSecond: 2,
+  },
   files: [
     {
       path: 'index.html',
@@ -126,7 +162,7 @@ export const exampleDocument: BrowserGameDocument = {
     {
       path: 'main.js',
       content:
-        "const LINES = [\n  [0, 1, 2], [3, 4, 5], [6, 7, 8],\n  [0, 3, 6], [1, 4, 7], [2, 5, 8],\n  [0, 4, 8], [2, 4, 6],\n];\nconst board = document.getElementById('board');\nconst status = document.getElementById('status');\nconst cells = Array.from({ length: 9 }, (_, index) => {\n  const cell = document.createElement('button');\n  cell.type = 'button';\n  cell.className = 'cell';\n  cell.dataset.arcadeNode = `cell:${index}`;\n  cell.addEventListener('click', () => play(index));\n  board.append(cell);\n  return cell;\n});\n\nlet squares = Array(9).fill(null);\nlet turn = 0;\nlet winner = null;\nlet winningLine = null;\n\nfunction findWinner() {\n  for (const line of LINES) {\n    const [a, b, c] = line;\n    if (squares[a] && squares[a] === squares[b] && squares[a] === squares[c])\n      return { mark: squares[a], line };\n  }\n  return null;\n}\n\nfunction isOver() {\n  return Boolean(winner) || squares.every(Boolean);\n}\n\nfunction play(index) {\n  if (isOver() || squares[index]) return false;\n  squares[index] = turn % 2 === 0 ? 'X' : 'O';\n  turn += 1;\n  const result = findWinner();\n  winner = result?.mark ?? null;\n  winningLine = result?.line ?? null;\n  render();\n  return true;\n}\n\nfunction reset() {\n  squares = Array(9).fill(null);\n  turn = 0;\n  winner = null;\n  winningLine = null;\n  render();\n}\n\nfunction render() {\n  cells.forEach((cell, index) => {\n    cell.textContent = squares[index] ?? '';\n    cell.disabled = isOver() || Boolean(squares[index]);\n    cell.classList.toggle('win', Boolean(winningLine?.includes(index)));\n    cell.setAttribute(\n      'aria-label',\n      `Square ${index + 1}, ${squares[index] ?? 'empty'}`,\n    );\n  });\n  status.textContent = winner\n    ? `${winner} wins`\n    : isOver()\n      ? 'A draw'\n      : `${turn % 2 === 0 ? 'X' : 'O'} to play`;\n}\n\ndocument.getElementById('reset').addEventListener('click', reset);\nrender();\n\n// Agent play bridge. Studio playtests and Arcade policies read `observe`,\n// choose from `actions`, and submit through `step` — the same legal moves a\n// person has, never a privileged one.\nwindow.arcade = {\n  observe: () => ({\n    squares: [...squares],\n    turnMark: turn % 2 === 0 ? 'X' : 'O',\n    winner,\n    over: isOver(),\n  }),\n  actions: () =>\n    isOver()\n      ? [{ id: 'reset', label: 'Start a new game' }]\n      : squares.flatMap((mark, index) =>\n          mark ? [] : [{ id: `place:${index}`, label: `Play square ${index + 1}` }],\n        ),\n  step: (id) => {\n    if (id === 'reset') {\n      reset();\n      return true;\n    }\n    const index = Number(String(id).split(':')[1]);\n    return Number.isInteger(index) ? play(index) : false;\n  },\n};\n",
+        "const LINES = [\n  [0, 1, 2], [3, 4, 5], [6, 7, 8],\n  [0, 3, 6], [1, 4, 7], [2, 5, 8],\n  [0, 4, 8], [2, 4, 6],\n];\nconst board = document.getElementById('board');\nconst status = document.getElementById('status');\nconst cells = Array.from({ length: 9 }, (_, index) => {\n  const cell = document.createElement('button');\n  cell.type = 'button';\n  cell.className = 'cell';\n  cell.dataset.arcadeNode = `cell:${index}`;\n  cell.addEventListener('click', () => play(index));\n  board.append(cell);\n  return cell;\n});\n\nlet squares = Array(9).fill(null);\nlet turn = 0;\nlet winner = null;\nlet winningLine = null;\n\nfunction findWinner() {\n  for (const line of LINES) {\n    const [a, b, c] = line;\n    if (squares[a] && squares[a] === squares[b] && squares[a] === squares[c])\n      return { mark: squares[a], line };\n  }\n  return null;\n}\n\nfunction isOver() {\n  return Boolean(winner) || squares.every(Boolean);\n}\n\nfunction play(index) {\n  if (isOver() || squares[index]) return false;\n  squares[index] = turn % 2 === 0 ? 'X' : 'O';\n  turn += 1;\n  const result = findWinner();\n  winner = result?.mark ?? null;\n  winningLine = result?.line ?? null;\n  render();\n  return true;\n}\n\nfunction reset() {\n  squares = Array(9).fill(null);\n  turn = 0;\n  winner = null;\n  winningLine = null;\n  render();\n}\n\nfunction render() {\n  cells.forEach((cell, index) => {\n    cell.textContent = squares[index] ?? '';\n    cell.disabled = isOver() || Boolean(squares[index]);\n    cell.classList.toggle('win', Boolean(winningLine?.includes(index)));\n    cell.setAttribute(\n      'aria-label',\n      `Square ${index + 1}, ${squares[index] ?? 'empty'}`,\n    );\n  });\n  status.textContent = winner\n    ? `${winner} wins`\n    : isOver()\n      ? 'A draw'\n      : `${turn % 2 === 0 ? 'X' : 'O'} to play`;\n}\n\ndocument.getElementById('reset').addEventListener('click', reset);\nrender();\n\n// Agent play bridge. Every seat receives the same public board but only the\n// current seat receives placement actions. Humans and agents use `play`.\nwindow.arcade = {\n  seats: () => [\n    { id: 'seat-1', label: 'Player 1 · X' },\n    { id: 'seat-2', label: 'Player 2 · O' },\n  ],\n  observe: (seatId) => ({\n    squares: [...squares],\n    seatId,\n    currentSeatId: `seat-${(turn % 2) + 1}`,\n    turnMark: turn % 2 === 0 ? 'X' : 'O',\n    winner,\n    over: isOver(),\n  }),\n  actions: (seatId) => {\n    if (isOver()) return [{ id: 'reset', label: 'Start a new game' }];\n    if (seatId !== `seat-${(turn % 2) + 1}`) return [];\n    return squares.flatMap((mark, index) =>\n      mark ? [] : [{ id: `place:${index}`, label: `Play square ${index + 1}` }],\n    );\n  },\n  step: (id, seatId) => {\n    if (id === 'reset') {\n      reset();\n      return true;\n    }\n    if (seatId !== `seat-${(turn % 2) + 1}`) return false;\n    const index = Number(String(id).split(':')[1]);\n    return Number.isInteger(index) ? play(index) : false;\n  },\n};\n",
     },
   ],
 }

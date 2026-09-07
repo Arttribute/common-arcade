@@ -720,6 +720,9 @@ function openApiDocument(serverUrl: string) {
       '/v1/projects/{id}/copilot': {
         post: { summary: 'Request a validated proposal from a Commons agent' },
       },
+      '/v1/projects/{id}/copilot-session': {
+        get: { summary: 'Resume the durable Studio copilot conversation' },
+      },
       '/v1/studio/runs/{id}': {
         get: {
           summary:
@@ -740,6 +743,7 @@ function openApiDocument(serverUrl: string) {
         get: { summary: 'List available Commons models' },
       },
       '/v1/projects/{id}/browser-runs': {
+        get: { summary: 'List resumable browser playtests for a project' },
         post: { summary: 'Create a pinned browser playtest' },
       },
       '/v1/studio/browser-runs/{id}': {
@@ -748,6 +752,11 @@ function openApiDocument(serverUrl: string) {
       '/v1/studio/browser-runs/{id}/decide': {
         post: {
           summary: 'Choose a legal action for the expected browser test step',
+        },
+      },
+      '/v1/studio/browser-runs/{id}/controllers/{seatId}/strategy': {
+        post: {
+          summary: 'Schedule a human-authored agent strategy update',
         },
       },
       '/v1/projects/{id}/recordings': {

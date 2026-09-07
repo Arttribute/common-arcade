@@ -68,6 +68,13 @@ type CommonsProjectSession = StoredDocument & {
   agentId: string
   sessionId: string
   createdAt: string
+  messages: StudioConversationMessage[]
+}
+type StudioConversationMessage = {
+  role: 'user' | 'assistant'
+  text: string
+  createdAt: string
+  jobId?: string
 }
 type ReleaseRecord = StoredDocument & { release: StudioRelease }
 type RunRecord = StoredDocument & {
@@ -110,6 +117,31 @@ const ARCADE_COPILOT_TOOLS = [
           description:
             'Optional npm packages mapped to exact semantic versions.',
           additionalProperties: { type: 'string' },
+        },
+        play: {
+          type: 'object',
+          description:
+            'Playable seat and cadence contract used by Studio and release manifests.',
+          properties: {
+            mode: { type: 'string', enum: ['turn-based', 'realtime'] },
+            seats: {
+              type: 'object',
+              properties: {
+                min: { type: 'integer', minimum: 1, maximum: 16 },
+                max: { type: 'integer', minimum: 1, maximum: 16 },
+                default: { type: 'integer', minimum: 1, maximum: 16 },
+              },
+              required: ['min', 'max', 'default'],
+              additionalProperties: false,
+            },
+            maxDecisionsPerSecond: {
+              type: 'integer',
+              minimum: 1,
+              maximum: 20,
+            },
+          },
+          required: ['mode', 'seats', 'maxDecisionsPerSecond'],
+          additionalProperties: false,
         },
         files: {
           type: 'array',
@@ -797,6 +829,22 @@ export function createStudioApi(
       throw error
     }
   })
+  app.get('/v1/projects/:id/copilot-session', async (c) => {
+    const p = await authenticate(c.req.header('Authorization'), 'projects:read')
+    const { project } = await owned(p.id, c.req.param('id'))
+    const agentId = z.string().min(1).max(200).parse(c.req.query('agentId'))
+    const current = await store.get<CommonsProjectSession>(
+      `commons-project-sessions:${p.id}`,
+      commonsProjectSessionKey(project.id, agentId),
+    )
+    return c.json(
+      current ?? {
+        projectId: project.id,
+        agentId,
+        messages: [],
+      },
+    )
+  })
   app.post('/v1/projects/:id/copilot', async (c) => {
     const p = await authenticate(
         c.req.header('Authorization'),
@@ -846,6 +894,12 @@ export function createStudioApi(
       events: [],
     }
     await store.put(`copilot:${p.id}`, jobId, job)
+    await appendCommonsProjectHistory(p, project, body.agentId, {
+      role: 'user',
+      text: body.message,
+      createdAt: job.startedAt,
+      jobId,
+    })
     const invocation: CopilotJobInvocation = {
       jobId,
       authorization: `Bearer ${p.token}`,
@@ -1063,6 +1117,12 @@ export function createStudioApi(
         },
         true,
       )
+      await appendCommonsProjectHistory(p, latest, job.agentId, {
+        role: 'assistant',
+        text: response.trim() || 'Done.',
+        createdAt: new Date().toISOString(),
+        jobId: job.id,
+      })
     } catch (error) {
       await persist(
         {
@@ -1187,7 +1247,7 @@ export function createStudioApi(
     // JSON proposal sessions contain the retired response contract in their
     // history. A versioned key gives the native tool runtime a clean first turn
     // while preserving every prior Commons session for audit and review.
-    const key = `${project.id}:${agentId}:native-v1`
+    const key = commonsProjectSessionKey(project.id, agentId)
     const current = await store.get<CommonsProjectSession>(partition, key)
     if (current?.sessionId) return current.sessionId
     const created = (await commonsRequest(p, '/v1/sessions', {
@@ -1207,6 +1267,7 @@ export function createStudioApi(
       agentId,
       sessionId: created.sessionId,
       createdAt: new Date().toISOString(),
+      messages: [],
     }
     try {
       await store.put(partition, key, record)
@@ -1218,8 +1279,50 @@ export function createStudioApi(
       return winner.sessionId
     }
   }
+  async function appendCommonsProjectHistory(
+    p: Principal,
+    project: StudioProject,
+    agentId: string,
+    message: StudioConversationMessage,
+  ) {
+    const partition = `commons-project-sessions:${p.id}`
+    const key = commonsProjectSessionKey(project.id, agentId)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const current = await store.get<CommonsProjectSession>(partition, key)
+      if (!current) {
+        await ensureCommonsProjectSession(p, project, agentId)
+        continue
+      }
+      if (
+        current.messages?.some(
+          (candidate) =>
+            candidate.jobId === message.jobId &&
+            candidate.role === message.role,
+        )
+      )
+        return
+      try {
+        await store.put(
+          partition,
+          key,
+          {
+            ...current,
+            version: current.version + 1,
+            messages: [...(current.messages ?? []), message].slice(-100),
+          },
+          current.version,
+        )
+        return
+      } catch (error) {
+        if (!(error instanceof StoreConflict) || attempt === 2) throw error
+      }
+    }
+  }
   return app
 }
+
+const commonsProjectSessionKey = (projectId: string, agentId: string) =>
+  `${projectId}:${agentId}:native-v1`
 
 /** Flattens the content shapes a Commons run can return into plain text. */
 function agentText(content: unknown): string | undefined {

@@ -11,6 +11,53 @@ const attribute = (attrs: string, name: string) => {
   return match?.[1] ?? match?.[2] ?? match?.[3]
 }
 const scriptSafe = (s: string) => s.replace(/<\/script/gi, '<\\/script')
+const browserCompatibilityRuntime = `
+function createStorage(){let values=new Map;return{get length(){return values.size},clear(){values.clear()},getItem(key){key=String(key);return values.has(key)?values.get(key):null},key(index){return [...values.keys()][Number(index)]??null},removeItem(key){values.delete(String(key))},setItem(key,value){values.set(String(key),String(value))}}}
+for(const name of ['localStorage','sessionStorage']){try{const storage=window[name],probe='__arcade_storage_probe__';storage.setItem(probe,'1');storage.removeItem(probe)}catch{Object.defineProperty(window,name,{configurable:true,value:createStorage()})}}
+const projectFiles=__ARCADE_FILES__,entryFile=__ARCADE_ENTRY__,nativeFetch=window.fetch.bind(window);window.fetch=(input,init)=>{const value=typeof input==='string'?input:input instanceof URL?input.href:input?.url;if(typeof value==='string'&&!/^[a-z]+:/i.test(value)&&!value.startsWith('//')){const base='https://arcade.invalid/'+entryFile,path=new URL(value,base).pathname.slice(1);if(Object.hasOwn(projectFiles,path)){const extension=path.split('.').pop()?.toLowerCase(),type=extension==='json'?'application/json':extension==='css'?'text/css':extension==='svg'?'image/svg+xml':'text/plain';return Promise.resolve(new Response(projectFiles[path],{status:200,headers:{'Content-Type':type}}))}}return nativeFetch(input,init)};
+function installArcadeSeats(){
+  const api=window.arcade;
+  if(!api||api.__multiSeatBridge)return;
+  const configured=__ARCADE_PLAY__;
+  const declared=typeof api.seats==='function'?api.seats():api.seats;
+  const count=configured?.seats?.default??2;
+  const rawSeats=Array.isArray(declared)&&declared.length?declared.slice(0,16):Array.from({length:count},(_,index)=>({id:'seat-'+(index+1),label:'Player '+(index+1)}));
+  const seats=rawSeats.map((seat,index)=>{
+    const sourceId=String(typeof seat==='string'?seat:(seat.id??('seat-'+(index+1))));
+    const safe=(sourceId.replace(/[^A-Za-z0-9_-]/g,'_').slice(0,40)||'seat')+'-'+(index+1);
+    return{id:safe,label:String(typeof seat==='string'?('Player '+(index+1)):(seat.label??('Player '+(index+1)))),sourceId};
+  });
+  const publicSeats=seats.map(({id,label})=>({id,label}));
+  const observe=typeof api.observe==='function'?api.observe.bind(api):()=>({text:document.body.innerText.slice(0,8000)});
+  const actions=typeof api.actions==='function'?api.actions.bind(api):()=>[];
+  const step=typeof api.step==='function'?api.step.bind(api):undefined;
+  const actionLookup=new Map;
+  api.seats=()=>publicSeats;
+  api.observe=()=>{
+    const observations=Object.fromEntries(seats.map(seat=>[seat.id,observe(seat.sourceId)]));
+    return{game:observations[seats[0]?.id],arcade:{seats:publicSeats,mode:configured?.mode??'turn-based',observations}};
+  };
+  api.actions=()=>{
+    actionLookup.clear();
+    return seats.flatMap(seat=>{
+      const available=actions(seat.sourceId);
+      return Array.isArray(available)?available.map((action,index)=>{
+        const full='seat:'+encodeURIComponent(seat.id)+':'+encodeURIComponent(String(action.id));
+        const id=full.length<=100?full:'seat:'+encodeURIComponent(seat.id)+':action-'+index;
+        actionLookup.set(id,{actionId:String(action.id),seatId:seat.sourceId});
+        return{id,label:seat.label+' · '+String(action.label??action.id)};
+      }):[];
+    });
+  };
+  if(step)api.step=(encoded)=>{
+    const selected=actionLookup.get(String(encoded));
+    if(selected)return step(selected.actionId,selected.seatId);
+    const match=/^seat:([^:]+):(.*)$/.exec(String(encoded));
+    return match?step(decodeURIComponent(match[2]),decodeURIComponent(match[1])):step(encoded);
+  };
+  api.__multiSeatBridge=true;
+}
+`
 /** Compilation only: user source never executes in the host process. */
 export function compileBrowserPresentation(
   document: BrowserGameDocument,
@@ -124,10 +171,23 @@ export function compileBrowserPresentation(
   const factories = Object.entries(modules)
     .map(
       ([path, code]) =>
-        `${JSON.stringify(path)}:function(module,exports,require){\n${code}\n}`,
+        `${JSON.stringify(path)}:async function(module,exports,require){\n${code}\n}`,
     )
     .join(',\n')
-  const runtime = `<script>(async()=>{const external=Object.fromEntries(await Promise.all(${JSON.stringify([...externals])}.map(async([id,url])=>[id,await import(url)])));const modules={${scriptSafe(factories)}},imports=${JSON.stringify(imports).replace(/</g, '\\u003c')},cache={};function load(id){if(external[id])return external[id];if(cache[id])return cache[id].exports;if(!modules[id])throw Error('Unknown source module: '+id);const m=cache[id]={exports:{}};modules[id](m,m.exports,name=>load(imports[id][name]));return m.exports}try{${entries.map((p) => `load(${JSON.stringify(p)});`).join('')}}catch(e){const pre=document.createElement('pre');pre.textContent='Preview error: '+e.message;pre.setAttribute('role','alert');document.body.append(pre);console.error(e)}})();</script>`
+  const compatibility = browserCompatibilityRuntime
+    .replace(
+      '__ARCADE_ENTRY__',
+      JSON.stringify(document.entryFile).replace(/</g, '\\u003c'),
+    )
+    .replace(
+      '__ARCADE_PLAY__',
+      JSON.stringify(document.play ?? null).replace(/</g, '\\u003c'),
+    )
+    .replace(
+      '__ARCADE_FILES__',
+      JSON.stringify(Object.fromEntries(files)).replace(/</g, '\\u003c'),
+    )
+  const runtime = `<script>(async()=>{try{${compatibility}const external=Object.fromEntries(await Promise.all(${JSON.stringify([...externals])}.map(async([id,url])=>[id,await import(url)])));const modules={${scriptSafe(factories)}},imports=${JSON.stringify(imports).replace(/</g, '\\u003c')},cache={},started=new Set;function load(id){if(external[id])return external[id];if(cache[id])return cache[id].exports;throw Error('Source module was not initialized: '+id)}async function start(id){if(external[id])return external[id];if(started.has(id))return cache[id].exports;if(!modules[id])throw Error('Unknown source module: '+id);started.add(id);const m=cache[id]={exports:{}};for(const dependency of Object.values(imports[id]))await start(dependency);await modules[id](m,m.exports,name=>load(imports[id][name]));return m.exports}${entries.map((p) => `await start(${JSON.stringify(p)});`).join('')}installArcadeSeats()}catch(e){const pre=document.createElement('pre');pre.style.cssText='position:fixed;inset:16px;z-index:2147483647;overflow:auto;padding:16px;border-radius:12px;background:#fff7ed;color:#9a3412;font:13px/1.5 ui-monospace,monospace';pre.textContent='Preview error: '+(e?.message??e);pre.setAttribute('role','alert');document.body.append(pre);console.error(e)}})();</script>`
   const policy = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; connect-src https://esm.sh; style-src 'unsafe-inline'; img-src data: blob: https:; media-src data: blob: https:; font-src data:; worker-src blob:; form-action 'none'; base-uri 'none'">`
   html = /<head\b[^>]*>/i.test(html)
     ? html.replace(/<head\b[^>]*>/i, (m) => m + policy)

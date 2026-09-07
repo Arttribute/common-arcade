@@ -6,6 +6,7 @@ import {
   gameDocumentSchema,
   rulesFor,
   starterDocument,
+  emptyBrowserDocument,
 } from './index.js'
 describe('bounded game authoring', () => {
   it('compiles complete horizontal, vertical and diagonal winning lines', () => {
@@ -88,5 +89,16 @@ describe('bounded game authoring', () => {
         authoritativeTime: '',
       }).legalActions,
     ).toHaveLength(0)
+  })
+  it('gives browser games bounded seats and an opaque-origin storage fallback', () => {
+    const parsed = gameDocumentSchema.parse(emptyBrowserDocument)
+    expect('play' in parsed && parsed.play?.seats.default).toBe(2)
+    const html = compilePresentation(emptyBrowserDocument)
+    expect(html).toContain('Object.defineProperty(window,name')
+    expect(html).toContain('installArcadeSeats()')
+    expect(html).toContain('Object.hasOwn(projectFiles,path)')
+    expect(html).toContain('async function start(id)')
+    expect(html).toContain("default-src 'none'")
+    expect(html).not.toContain('__ARCADE_PLAY__')
   })
 })

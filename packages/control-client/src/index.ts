@@ -362,17 +362,36 @@ export class ControlClient {
 
   async createBrowserRun(
     projectId: string,
-    agentId?: string,
+    input?:
+      | string
+      | {
+          controllers: Array<{
+            seatId: string
+            label: string
+            kind: 'human' | 'agent'
+            agentId?: string
+            strategy?: string
+          }>
+        },
   ): Promise<{ id: string; step: number; revision: number }> {
     return this.request(
       `/v1/projects/${encodeURIComponent(projectId)}/browser-runs`,
-      { method: 'POST', body: { agentId } },
+      {
+        method: 'POST',
+        body:
+          input === undefined
+            ? {}
+            : typeof input === 'string'
+              ? { agentId: input }
+              : input,
+      },
     ) as Promise<{ id: string; step: number; revision: number }>
   }
   async decideBrowserAction(
     runId: string,
     input: {
       step: number
+      seatId?: string
       observation: { state: unknown; actions: { id: string; label: string }[] }
       actionId?: string
     },
@@ -387,6 +406,21 @@ export class ControlClient {
   }
   async getBrowserRun(runId: string): Promise<unknown> {
     return this.request(`/v1/studio/browser-runs/${encodeURIComponent(runId)}`)
+  }
+  async listBrowserRuns(projectId: string): Promise<unknown> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(projectId)}/browser-runs`,
+    )
+  }
+  async updateBrowserStrategy(
+    runId: string,
+    seatId: string,
+    prompt: string,
+  ): Promise<unknown> {
+    return this.request(
+      `/v1/studio/browser-runs/${encodeURIComponent(runId)}/controllers/${encodeURIComponent(seatId)}/strategy`,
+      { method: 'POST', body: { prompt } },
+    )
   }
   async listRecordings(projectId: string): Promise<unknown> {
     return this.request(

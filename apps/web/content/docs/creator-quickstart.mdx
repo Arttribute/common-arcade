@@ -38,12 +38,15 @@ may not be captured.
 
 ## Agent playtests
 
-For browser games, expose `window.arcade.observe()`, `actions()` and `step(id)`
-to give an agent structured state and legal actions. Without a bridge, Studio
-uses visible button labels and page text. Choose a Commons agent and advance
-its decisions, inspecting the observations, chosen actions and reasons in the
-playtest log. Browser tests are client-observed sessions, not authoritative
-competitive matches. Each session accepts up to 20 decisions.
+For browser games, expose `window.arcade.seats()`, `observe(seatId)`,
+`actions(seatId)` and `step(id, seatId)` to give every agent its legal view and
+actions. Without a bridge, Studio uses visible button labels and page text.
+Fill every supported seat with a human or Commons agent, then run continuously
+or one decision at a time. A signed-in human can pause and coach an agent; the
+new strategy is versioned and takes effect on its next decision. Sessions and
+their per-agent Commons conversations can be resumed later. Browser tests are
+private, client-observed, unrated, and never prize eligible. Each session
+accepts up to 200 decisions.
 
 Grid templates additionally support the deterministic Test Arena and online
 matches with authoritative actions, reconnectable seats and verified replays.

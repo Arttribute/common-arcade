@@ -18,7 +18,9 @@ import {
   History,
   Loader2,
   MapPin,
+  Maximize2,
   MessageSquare,
+  Minimize2,
   MousePointer2,
   PanelLeftClose,
   PanelRightClose,
@@ -61,6 +63,33 @@ import { arcade, arcadeCopilot, type CopilotActivity } from '../../lib/api'
 import { RecordingShelf, storeRecording } from './recording-shelf'
 
 type Agent = { agentId: string; name: string }
+type BrowserController = {
+  seatId: string
+  label: string
+  kind: 'human' | 'agent'
+  agentId?: string
+  sessionId?: string
+  strategy: string
+  strategyEpoch?: number
+}
+type BrowserEvent = {
+  step: number
+  seatId?: string
+  observation: CanvasObservation
+  decision: { actionId: string; reason: string }
+  controller?: Pick<
+    BrowserController,
+    'kind' | 'agentId' | 'strategy' | 'strategyEpoch'
+  >
+}
+type BrowserRun = {
+  id: string
+  step: number
+  revision: number
+  createdAt: string
+  controllers: BrowserController[]
+  events?: BrowserEvent[]
+}
 type Run = TestRun & {
   document: GameDocument
   revision: number
@@ -78,46 +107,113 @@ type Log = {
 export function GameStudio({ projectId }: { projectId: string }) {
   const router = useRouter()
   const compiledRef = useRef<CompiledFrameHandle>(null)
+  const previewStageRef = useRef<HTMLDivElement>(null)
   const annotationContext = useRef<Promise<unknown> | undefined>(undefined)
   const [shareRecordings, setShareRecordings] = useState(false),
     [recordingsRefresh, setRecordingsRefresh] = useState(0)
-  const [browserRun, setBrowserRun] = useState<{
-    id: string
-    step: number
-    revision: number
-  }>()
-  const [browserEvents, setBrowserEvents] = useState<
-    {
-      step: number
-      observation: CanvasObservation
-      decision: { actionId: string; reason: string }
-    }[]
-  >([])
+  const [browserRun, setBrowserRun] = useState<BrowserRun>()
+  const [browserRuns, setBrowserRuns] = useState<BrowserRun[]>([])
+  const [browserEvents, setBrowserEvents] = useState<BrowserEvent[]>([])
+  const [browserObservation, setBrowserObservation] =
+    useState<CanvasObservation>()
+  const [browserPlaying, setBrowserPlaying] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
+  const defaultBrowserControllers = useCallback((game: GameDocument) => {
+    const count = isBrowserGame(game) ? (game.play?.seats.default ?? 2) : 2
+    return Array.from({ length: count }, (_, index): BrowserController => ({
+      seatId: `seat-${index + 1}`,
+      label: `Player ${index + 1}`,
+      kind: index === 0 ? 'human' : 'agent',
+      strategy:
+        index === 0
+          ? 'Human controlled.'
+          : 'Play to win, adapt to the opponent, and use only legal actions.',
+    }))
+  }, [])
+  const [browserControllers, setBrowserControllers] = useState<
+    BrowserController[]
+  >(() => defaultBrowserControllers(emptyBrowserDocument))
   async function browserDecision() {
     if (!project || dirty)
       throw new Error('Save the project before running a browser playtest.')
     if (!compiledRef.current)
       throw new Error('Open Preview to playtest the game.')
-    const current =
-      browserRun ??
-      (await arcade<{ id: string; step: number; revision: number }>(
-        `projects/${project.id}/browser-runs`,
-        { agentId: selectedAgents[0] || copilotId },
-      ))
+    const current = browserRun ?? (await startBrowserRun())
     if (current.revision !== project.revision)
       throw new Error('Start a new playtest for this revision.')
     const observation = await compiledRef.current.observe()
-    const event = await arcade<{
-      step: number
-      observation: CanvasObservation
-      decision: { actionId: string; reason: string }
-    }>(`studio/browser-runs/${current.id}/decide`, {
-      step: current.step,
-      observation,
-    })
-    await compiledRef.current.act(event.decision.actionId)
+    const agents = current.controllers.filter(
+      (controller) => controller.kind === 'agent',
+    )
+    if (!agents.length) throw new Error('Add an agent-controlled seat first.')
+    const ordered = agents.map(
+      (_, index) => agents[(current.step + index) % agents.length]!,
+    )
+    const selected = ordered.find(
+      (controller) =>
+        actionsForSeat(observation.actions, controller.seatId).length,
+    )
+    if (!selected) {
+      setBrowserPlaying(false)
+      throw new Error(
+        'No agent-controlled seat has a legal action. Make a human move or restart the session.',
+      )
+    }
+    const seatObservation = {
+      state: stateForSeat(observation.state, selected.seatId),
+      actions: actionsForSeat(observation.actions, selected.seatId),
+    }
+    const event = await arcade<BrowserEvent>(
+      `studio/browser-runs/${current.id}/decide`,
+      {
+        step: current.step,
+        seatId: selected.seatId,
+        observation: seatObservation,
+      },
+    )
+    const nextObservation = await compiledRef.current.act(
+      event.decision.actionId,
+    )
+    setBrowserObservation(nextObservation)
     setBrowserRun({ ...current, step: current.step + 1 })
     setBrowserEvents((all) => [...all, event])
+  }
+  async function browserHumanDecision(
+    controller: BrowserController,
+    actionId: string,
+  ) {
+    if (!browserRun || !compiledRef.current)
+      throw new Error('Start or resume a session first.')
+    const observation = await compiledRef.current.observe()
+    const actions = actionsForSeat(observation.actions, controller.seatId)
+    if (!actions.some((action) => action.id === actionId))
+      throw new Error('That action is no longer available. Choose again.')
+    const event = await arcade<BrowserEvent>(
+      `studio/browser-runs/${browserRun.id}/decide`,
+      {
+        step: browserRun.step,
+        seatId: controller.seatId,
+        observation: {
+          state: stateForSeat(observation.state, controller.seatId),
+          actions,
+        },
+        actionId,
+      },
+    )
+    const nextObservation = await compiledRef.current.act(
+      event.decision.actionId,
+    )
+    const nextRun = { ...browserRun, step: browserRun.step + 1 }
+    setBrowserObservation(nextObservation)
+    setBrowserRun(nextRun)
+    setBrowserEvents((all) => [...all, event])
+    setBrowserPlaying(
+      nextRun.controllers.some(
+        (candidate) =>
+          candidate.kind === 'agent' &&
+          actionsForSeat(nextObservation.actions, candidate.seatId).length > 0,
+      ),
+    )
   }
   async function saveInteractionRecording(recording: CanvasRecording) {
     if (!project || dirty) {
@@ -199,19 +295,26 @@ export function GameStudio({ projectId }: { projectId: string }) {
         view === 'code' &&
         source !== JSON.stringify(document, null, 2))
     : false
-  const load = useCallback((p: StudioProject) => {
-    setProject(p)
-    setDocument(p.document)
-    setSource(JSON.stringify(p.document, null, 2))
-    setRun(undefined)
-    setBrowserRun(undefined)
-    setBrowserEvents([])
-    setPlaying(false)
-    setMessages([])
-    setCopilotActivity([])
-    setDraft(undefined)
-    window.history.replaceState(null, '', `/studio/${p.id}`)
-  }, [])
+  const load = useCallback(
+    (p: StudioProject) => {
+      setProject(p)
+      setDocument(p.document)
+      setSource(JSON.stringify(p.document, null, 2))
+      setRun(undefined)
+      setBrowserRun(undefined)
+      setBrowserRuns([])
+      setBrowserEvents([])
+      setBrowserObservation(undefined)
+      setBrowserControllers(defaultBrowserControllers(p.document))
+      setBrowserPlaying(false)
+      setPlaying(false)
+      setMessages([])
+      setCopilotActivity([])
+      setDraft(undefined)
+      window.history.replaceState(null, '', `/studio/${p.id}`)
+    },
+    [defaultBrowserControllers],
+  )
   useEffect(() => {
     let active = true
     void fetch('/api/auth/session')
@@ -227,6 +330,12 @@ export function GameStudio({ projectId }: { projectId: string }) {
         if (!active) return
         setProjects(result.projects)
         load(p)
+        if (isBrowserGame(p.document))
+          void arcade<{ runs: BrowserRun[] }>(
+            `projects/${projectId}/browser-runs`,
+          ).then(({ runs }) => {
+            if (active) setBrowserRuns(runs)
+          })
         const initial = sessionStorage.getItem(`arcade-prompt:${projectId}`)
         if (initial) {
           sessionStorage.removeItem(`arcade-prompt:${projectId}`)
@@ -247,6 +356,29 @@ export function GameStudio({ projectId }: { projectId: string }) {
     if (identity.copilotId) setCopilotId(identity.copilotId)
   }, [identity.agents, identity.copilotId])
   useEffect(() => {
+    if (!project || !copilotId) return
+    let active = true
+    void arcade<{
+      messages?: { role: 'user' | 'assistant'; text: string }[]
+    }>(
+      `projects/${project.id}/copilot-session?agentId=${encodeURIComponent(copilotId)}`,
+    )
+      .then((session) => {
+        if (active) setMessages(session.messages ?? [])
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [project?.id, copilotId])
+  useEffect(() => {
+    const changed = () =>
+      setFullscreen(globalThis.document.fullscreenElement !== null)
+    globalThis.document.addEventListener('fullscreenchange', changed)
+    return () =>
+      globalThis.document.removeEventListener('fullscreenchange', changed)
+  }, [])
+  useEffect(() => {
     if (!dirty) return
     const warn = (e: BeforeUnloadEvent) => {
       e.preventDefault()
@@ -263,6 +395,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setPlaying(false)
+      setBrowserPlaying(false)
     } finally {
       setBusy('')
     }
@@ -298,6 +431,117 @@ export function GameStudio({ projectId }: { projectId: string }) {
     setAgents((all) => [...all, a])
     return a.agentId
   }
+  async function startBrowserRun(): Promise<BrowserRun> {
+    const p = !project || dirty ? await save() : project
+    if (!isBrowserGame(p.document))
+      throw new Error('Browser playtests require a browser game.')
+    if (!compiledRef.current)
+      throw new Error('Open Preview before starting a playtest.')
+    const initialObservation = await compiledRef.current.observe()
+    const declaredSeats = seatsFromObservation(initialObservation)
+    if (declaredSeats.length < browserControllers.length)
+      throw new Error(
+        `The game bridge exposes ${declaredSeats.length} seats, but ${browserControllers.length} players are configured.`,
+      )
+    const configuredControllers = browserControllers.map((controller, index) =>
+      declaredSeats[index]
+        ? {
+            ...controller,
+            seatId: declaredSeats[index]!.id,
+            label: declaredSeats[index]!.label,
+          }
+        : controller,
+    )
+    const controllers = await Promise.all(
+      configuredControllers.map(async (controller) =>
+        controller.kind === 'agent' && !controller.agentId
+          ? {
+              ...controller,
+              agentId: await ensureAgent(
+                'player',
+                `${p.document.title} · ${controller.label}`,
+              ),
+            }
+          : controller,
+      ),
+    )
+    setBrowserControllers(controllers)
+    const created = await arcade<BrowserRun>(`projects/${p.id}/browser-runs`, {
+      controllers,
+    })
+    setBrowserRun(created)
+    setBrowserRuns((runs) => [created, ...runs])
+    setBrowserEvents([])
+    setBrowserObservation(initialObservation)
+    setBrowserPlaying(
+      Boolean(
+        created.controllers.some(
+          (controller) =>
+            controller.kind === 'agent' &&
+            actionsForSeat(initialObservation.actions, controller.seatId)
+              .length > 0,
+        ),
+      ),
+    )
+    setNotice(
+      'Private Test Arena session started. Human moves use the legal-action controls so the session stays resumable.',
+    )
+    return created
+  }
+  async function resumeBrowserRun(summary: BrowserRun) {
+    const saved = await arcade<BrowserRun & { events: BrowserEvent[] }>(
+      `studio/browser-runs/${summary.id}`,
+    )
+    if (!project || saved.revision !== project.revision)
+      throw new Error(
+        `This session belongs to revision ${saved.revision}. Restore that revision before resuming it.`,
+      )
+    setBrowserRun(saved)
+    setBrowserControllers(saved.controllers)
+    setBrowserEvents(saved.events ?? [])
+    setBrowserPlaying(false)
+    setPreviewKey((key) => key + 1)
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+    await waitForPreview(compiledRef)
+    for (const event of [...(saved.events ?? [])].sort(
+      (a, b) => a.step - b.step,
+    ))
+      await compiledRef.current?.act(event.decision.actionId)
+    setBrowserObservation(await compiledRef.current?.observe())
+    setNotice(`Resumed session ${saved.id.slice(-8)} at action ${saved.step}.`)
+  }
+  async function updateBrowserStrategy(
+    controller: BrowserController,
+    strategy: string,
+  ) {
+    if (!browserRun) throw new Error('Start or resume a session first.')
+    const result = await arcade<{ controller: BrowserController }>(
+      `studio/browser-runs/${browserRun.id}/controllers/${encodeURIComponent(controller.seatId)}/strategy`,
+      { prompt: strategy },
+    )
+    setBrowserRun((run) =>
+      run
+        ? {
+            ...run,
+            controllers: run.controllers.map((candidate) =>
+              candidate.seatId === controller.seatId
+                ? result.controller
+                : candidate,
+            ),
+          }
+        : run,
+    )
+    setBrowserControllers((controllers) =>
+      controllers.map((candidate) =>
+        candidate.seatId === controller.seatId ? result.controller : candidate,
+      ),
+    )
+    setNotice(
+      `${controller.label} will use strategy epoch ${result.controller.strategyEpoch} on its next decision.`,
+    )
+  }
   async function startRun() {
     const p = !project || dirty ? await save() : project
     const ids: [string, string] = [...selectedAgents]
@@ -327,18 +571,38 @@ export function GameStudio({ projectId }: { projectId: string }) {
     }, 750)
     return () => clearTimeout(timer)
   }, [playing, busy, run])
+  useEffect(() => {
+    if (!browserPlaying || busy || !browserRun || browserRun.step >= 200) return
+    const decisionsPerSecond = isBrowserGame(document)
+      ? (document.play?.maxDecisionsPerSecond ?? 2)
+      : 2
+    const timer = setTimeout(
+      () => {
+        void task('agent move', browserDecision)
+      },
+      Math.max(250, Math.ceil(1000 / decisionsPerSecond)),
+    )
+    return () => clearTimeout(timer)
+  }, [browserPlaying, busy, browserRun?.step, document])
   const board = run?.replay.checkpoints.at(-1)?.state as
     { board?: (string | null)[] } | undefined
   const previewDocument = view === 'test' && run ? run.document : document
-  const html = useMemo(() => {
+  const compiled = useMemo(() => {
     try {
-      return compilePresentation(
-        previewDocument,
-        view === 'test' ? board : undefined,
-        view !== 'test',
-      )
-    } catch {
-      return null
+      return {
+        html: compilePresentation(
+          previewDocument,
+          view === 'test' ? board : undefined,
+          view !== 'test',
+        ),
+      }
+    } catch (error) {
+      return {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'The source could not compile.',
+      }
     }
   }, [previewDocument, view, board])
   const logs = (run?.diagnostics ?? []) as unknown as Log[]
@@ -711,51 +975,260 @@ export function GameStudio({ projectId }: { projectId: string }) {
               <div className="studio-section">
                 <div className="studio-section-label">
                   <Bot size={13} />
-                  Browser playtest
+                  Test Arena seats
                 </div>
                 <label>
-                  Player
+                  Players
                   <select
-                    value={selectedAgents[0]}
-                    onChange={(e) =>
-                      setSelectedAgents([e.target.value, selectedAgents[1]])
-                    }
+                    value={browserControllers.length}
+                    disabled={!!browserRun}
+                    onChange={(event) => {
+                      const count = Number(event.target.value)
+                      setBrowserControllers((current) =>
+                        Array.from(
+                          { length: count },
+                          (_, index) =>
+                            current[index] ?? {
+                              seatId: `seat-${index + 1}`,
+                              label: `Player ${index + 1}`,
+                              kind: 'agent',
+                              strategy:
+                                'Play to win, adapt to the opponent, and use only legal actions.',
+                            },
+                        ),
+                      )
+                    }}
                   >
-                    <option value="">Arcade Copilot</option>
-                    {agents.map((a) => (
-                      <option value={a.agentId} key={a.agentId}>
-                        {a.name}
+                    {Array.from(
+                      {
+                        length:
+                          (document.play?.seats.max ?? 8) -
+                          (document.play?.seats.min ?? 1) +
+                          1,
+                      },
+                      (_, index) => (document.play?.seats.min ?? 1) + index,
+                    ).map((count) => (
+                      <option value={count} key={count}>
+                        {count}
                       </option>
                     ))}
                   </select>
                 </label>
-                <Button
-                  disabled={
-                    !!busy ||
-                    !user ||
-                    dirty ||
-                    view !== 'preview' ||
-                    (browserRun?.step ?? 0) >= 20
-                  }
-                  onClick={() => void task('agent playtest', browserDecision)}
-                >
-                  Run one agent action
-                </Button>
+                <div className="studio-controller-list">
+                  {browserControllers.map((controller, index) => (
+                    <div className="studio-controller" key={controller.seatId}>
+                      <div>
+                        <strong>{controller.label}</strong>
+                        {controller.strategyEpoch ? (
+                          <small>Strategy {controller.strategyEpoch}</small>
+                        ) : null}
+                      </div>
+                      <select
+                        aria-label={`${controller.label} controller`}
+                        value={controller.kind}
+                        disabled={!!browserRun}
+                        onChange={(event) =>
+                          setBrowserControllers((current) =>
+                            current.map((candidate, candidateIndex) =>
+                              candidateIndex === index
+                                ? {
+                                    ...candidate,
+                                    kind: event.target.value as
+                                      'human' | 'agent',
+                                    agentId: undefined,
+                                    strategy:
+                                      event.target.value === 'human'
+                                        ? 'Human controlled.'
+                                        : 'Play to win, adapt to the opponent, and use only legal actions.',
+                                  }
+                                : candidate,
+                            ),
+                          )
+                        }
+                      >
+                        <option value="human">Human</option>
+                        <option value="agent">Agent</option>
+                      </select>
+                      {controller.kind === 'agent' ? (
+                        <>
+                          <select
+                            aria-label={`${controller.label} agent`}
+                            value={controller.agentId ?? ''}
+                            disabled={!!browserRun}
+                            onChange={(event) =>
+                              setBrowserControllers((current) =>
+                                current.map((candidate, candidateIndex) =>
+                                  candidateIndex === index
+                                    ? {
+                                        ...candidate,
+                                        agentId:
+                                          event.target.value || undefined,
+                                      }
+                                    : candidate,
+                                ),
+                              )
+                            }
+                          >
+                            <option value="">Create a player agent</option>
+                            {agents.map((agent) => (
+                              <option value={agent.agentId} key={agent.agentId}>
+                                {agent.name}
+                              </option>
+                            ))}
+                          </select>
+                          <textarea
+                            rows={2}
+                            aria-label={`${controller.label} strategy`}
+                            value={controller.strategy}
+                            onChange={(event) =>
+                              setBrowserControllers((current) =>
+                                current.map((candidate, candidateIndex) =>
+                                  candidateIndex === index
+                                    ? {
+                                        ...candidate,
+                                        strategy: event.target.value,
+                                      }
+                                    : candidate,
+                                ),
+                              )
+                            }
+                          />
+                          {browserRun ? (
+                            <Button
+                              variant="ghost"
+                              disabled={!!busy || !controller.strategy.trim()}
+                              onClick={() =>
+                                void task('strategy update', () =>
+                                  updateBrowserStrategy(
+                                    controller,
+                                    controller.strategy,
+                                  ),
+                                )
+                              }
+                            >
+                              Coach next move
+                            </Button>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+                {browserRun && browserObservation
+                  ? browserRun.controllers.map((controller) => {
+                      if (controller.kind !== 'human') return null
+                      const actions = actionsForSeat(
+                        browserObservation.actions,
+                        controller.seatId,
+                      )
+                      if (!actions.length) return null
+                      return (
+                        <div
+                          className="studio-human-actions"
+                          key={`actions:${controller.seatId}`}
+                        >
+                          <strong>{controller.label}&apos;s turn</strong>
+                          <div>
+                            {actions.map((action) => (
+                              <Button
+                                key={action.id}
+                                variant="ghost"
+                                disabled={!!busy || browserPlaying}
+                                onClick={() =>
+                                  void task('human move', () =>
+                                    browserHumanDecision(controller, action.id),
+                                  )
+                                }
+                              >
+                                {action.label}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })
+                  : null}
+                {!browserRun ? (
+                  <Button
+                    disabled={!!busy || !user || dirty || view !== 'preview'}
+                    onClick={() =>
+                      void task('start playtest', async () => {
+                        await startBrowserRun()
+                      })
+                    }
+                  >
+                    <Play size={13} /> Start session
+                  </Button>
+                ) : (
+                  <div className="studio-controller-actions">
+                    <Button
+                      disabled={!!busy || browserRun.step >= 200}
+                      onClick={() => setBrowserPlaying(!browserPlaying)}
+                    >
+                      {browserPlaying ? (
+                        <Pause size={13} />
+                      ) : (
+                        <Play size={13} />
+                      )}
+                      {browserPlaying ? 'Pause agents' : 'Run agents'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      disabled={
+                        !!busy || browserPlaying || browserRun.step >= 200
+                      }
+                      onClick={() => void task('agent move', browserDecision)}
+                    >
+                      <SkipForward size={13} /> One decision
+                    </Button>
+                  </div>
+                )}
                 {browserRun && (
                   <Button
                     variant="ghost"
                     onClick={() => {
+                      setBrowserPlaying(false)
                       setBrowserRun(undefined)
                       setBrowserEvents([])
+                      setBrowserObservation(undefined)
+                      setBrowserControllers(defaultBrowserControllers(document))
                     }}
                   >
-                    New playtest
+                    New session
                   </Button>
                 )}
                 <p className="studio-help">
-                  Agent decisions use the current browser observation.{' '}
-                  {browserRun?.step ?? 0} / 20 actions.
+                  Private, unrated and not prize eligible. Human controls stay
+                  in this panel so every move can be resumed; agents act
+                  autonomously from the same legal browser observations.{' '}
+                  {browserRun?.step ?? 0} / 200 decisions.
                 </p>
+                {browserRuns.length ? (
+                  <label>
+                    Resume session
+                    <select
+                      value={browserRun?.id ?? ''}
+                      disabled={!!busy}
+                      onChange={(event) => {
+                        const selected = browserRuns.find(
+                          (run) => run.id === event.target.value,
+                        )
+                        if (selected)
+                          void task('resume playtest', () =>
+                            resumeBrowserRun(selected),
+                          )
+                      }}
+                    >
+                      <option value="">Choose a prior session</option>
+                      {browserRuns.map((run) => (
+                        <option key={run.id} value={run.id}>
+                          {new Date(run.createdAt).toLocaleString()} ·{' '}
+                          {run.step} moves
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
               </div>
             )}
             {project && (
@@ -1100,14 +1573,26 @@ export function GameStudio({ projectId }: { projectId: string }) {
       bottom={
         isBrowserGame(document) && browserEvents.length > 0 ? (
           <div className="studio-browser-events">
-            <strong>Browser playtest · client observations</strong>
+            <strong>
+              Browser Test Arena · {browserRun?.controllers.length ?? 0} seats ·
+              private / unrated
+            </strong>
             {browserEvents.map((event) => (
               <details key={event.step}>
                 <summary>
-                  {event.step + 1}. {event.decision.actionId} ·{' '}
-                  {event.decision.reason}
+                  {event.step + 1}. {event.seatId ?? 'seat'} ·{' '}
+                  {event.decision.actionId} · {event.decision.reason}
                 </summary>
-                <pre>{JSON.stringify(event.observation, null, 2)}</pre>
+                <pre>
+                  {JSON.stringify(
+                    {
+                      controller: event.controller,
+                      observation: event.observation,
+                    },
+                    null,
+                    2,
+                  )}
+                </pre>
               </details>
             ))}
           </div>
@@ -1313,6 +1798,16 @@ export function GameStudio({ projectId }: { projectId: string }) {
               {icon(<RotateCcw size={14} />, 'Restart preview', () =>
                 setPreviewKey((k) => k + 1),
               )}
+              {icon(
+                fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />,
+                fullscreen ? 'Exit fullscreen preview' : 'Fullscreen preview',
+                () => {
+                  if (globalThis.document.fullscreenElement)
+                    void globalThis.document.exitFullscreen()
+                  else void previewStageRef.current?.requestFullscreen()
+                },
+                fullscreen,
+              )}
             </>
           )}
         </div>
@@ -1364,7 +1859,15 @@ export function GameStudio({ projectId }: { projectId: string }) {
           </div>
         )
       ) : (
-        <div className="studio-preview-stage">
+        <div className="studio-preview-stage" ref={previewStageRef}>
+          {fullscreen ? (
+            <button
+              className="studio-fullscreen-exit"
+              onClick={() => void globalThis.document.exitFullscreen()}
+            >
+              <Minimize2 size={15} /> Exit fullscreen
+            </button>
+          ) : null}
           <div className="studio-preview-meta">
             <span>
               {view === 'test'
@@ -1390,15 +1893,14 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 void saveInteractionRecording(recording)
               }
               preview={
-                html
-                  ? { type: 'html', html }
+                compiled.html
+                  ? { type: 'html', html: compiled.html }
                   : {
                       type: 'unavailable',
-                      error:
-                        'The source could not compile. Check the entry file and local imports, or ask your copilot to fix the project.',
+                      error: `The source could not compile: ${compiled.error} Check the entry file and local imports, or ask your copilot to fix the project.`,
                     }
               }
-              interactive={tool === 'select'}
+              interactive={tool === 'select' && !browserRun}
               title={`${document.title} compiled game`}
               revision={`${previewKey}:${view}:${run?.steps ?? 0}`}
             />
@@ -1465,7 +1967,11 @@ export function GameStudio({ projectId }: { projectId: string }) {
                   : 'Test paused'
               : tool !== 'select'
                 ? `Click${tool === 'region' ? ' and drag' : ''} to annotate`
-                : 'Play directly in the preview'}
+                : isBrowserGame(document) && browserRun
+                  ? browserPlaying
+                    ? `${browserRun.controllers.filter((controller) => controller.kind === 'agent').length} agents are playing · human turns use the legal-action panel`
+                    : `Session paused at decision ${browserRun.step}`
+                  : 'Play directly in the preview'}
             <span className="studio-preview-trust">
               {view === 'test'
                 ? 'Authoritative test state'
@@ -1476,4 +1982,58 @@ export function GameStudio({ projectId }: { projectId: string }) {
       )}
     </CanvasShell>
   )
+}
+
+function actionsForSeat(
+  actions: CanvasObservation['actions'],
+  seatId: string,
+): CanvasObservation['actions'] {
+  const prefix = `seat:${encodeURIComponent(seatId)}:`
+  const scoped = actions.filter((action) => action.id.startsWith(prefix))
+  const seatAware = actions.some((action) => action.id.startsWith('seat:'))
+  return scoped.length || seatAware ? scoped : actions
+}
+
+function seatsFromObservation(
+  observation: CanvasObservation,
+): { id: string; label: string }[] {
+  if (!observation.state || typeof observation.state !== 'object') return []
+  const arcade = (observation.state as Record<string, unknown>).arcade
+  if (!arcade || typeof arcade !== 'object') return []
+  const seats = (arcade as Record<string, unknown>).seats
+  if (!Array.isArray(seats)) return []
+  return seats.flatMap((seat) => {
+    if (!seat || typeof seat !== 'object') return []
+    const { id, label } = seat as Record<string, unknown>
+    return typeof id === 'string' && typeof label === 'string'
+      ? [{ id, label }]
+      : []
+  })
+}
+
+function stateForSeat(state: unknown, seatId: string): unknown {
+  if (!state || typeof state !== 'object') return state
+  const arcade = (state as Record<string, unknown>).arcade
+  if (!arcade || typeof arcade !== 'object') return state
+  const observations = (arcade as Record<string, unknown>).observations
+  if (!observations || typeof observations !== 'object') return state
+  return (observations as Record<string, unknown>)[seatId] ?? state
+}
+
+async function waitForPreview(
+  ref: React.RefObject<CompiledFrameHandle | null>,
+) {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 40; attempt++) {
+    try {
+      await ref.current?.observe()
+      return
+    } catch (error) {
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('The compiled preview did not become ready.')
 }

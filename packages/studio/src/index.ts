@@ -105,7 +105,9 @@ export async function releaseManifest(
         : ['grid', 'turn-based', 'agents'],
     },
     spec: {
-      mode: isBrowserGame(project.document) ? 'hybrid' : 'turn-based',
+      mode: isBrowserGame(project.document)
+        ? (project.document.play?.mode ?? 'turn-based')
+        : 'turn-based',
       profiles: isBrowserGame(project.document)
         ? ['base-v1']
         : [
@@ -117,13 +119,19 @@ export async function releaseManifest(
           ],
       extensions: [],
       seats: {
-        min: isBrowserGame(project.document) ? 1 : 2,
-        max: isBrowserGame(project.document) ? 1 : 2,
+        min: isBrowserGame(project.document)
+          ? (project.document.play?.seats.min ?? 1)
+          : 2,
+        max: isBrowserGame(project.document)
+          ? (project.document.play?.seats.max ?? 2)
+          : 2,
         roles: [
           {
             id: 'player',
             title: 'Player',
-            count: isBrowserGame(project.document) ? 1 : 2,
+            count: isBrowserGame(project.document)
+              ? (project.document.play?.seats.default ?? 2)
+              : 2,
           },
         ],
         spectators: true,
@@ -153,7 +161,9 @@ export async function releaseManifest(
       presentation: { generic: true, bridge: 'semantic-v1' },
       policy: {
         tiers: ['declarative'],
-        maxDecisionsPerSecond: 2,
+        maxDecisionsPerSecond: isBrowserGame(project.document)
+          ? (project.document.play?.maxDecisionsPerSecond ?? 2)
+          : 2,
         memoryKiB: 16,
       },
     },
