@@ -94,6 +94,7 @@ describe('bounded game authoring', () => {
     const parsed = gameDocumentSchema.parse(emptyBrowserDocument)
     expect('play' in parsed && parsed.play?.seats.default).toBe(2)
     const html = compilePresentation(emptyBrowserDocument)
+    expect(html).toContain("if(location.origin==='null')return createStorage()")
     expect(html).toContain('Object.defineProperty(window,name')
     expect(html).toContain('installArcadeSeats()')
     expect(html).toContain('Object.hasOwn(projectFiles,path)')

@@ -53,6 +53,28 @@ window.arcade = {
 }
 ```
 
+The Studio copilot contract requires this bridge for every game it creates.
+Create it synchronously before the entry module finishes. Seat IDs and action
+IDs must be stable, unique strings; `observe` must return only JSON-serializable
+public state for the requested seat; `actions` must return only actions legal
+for that seat at that moment; and `step` must reject an illegal or out-of-turn
+action instead of applying it. Keep `play.seats.default` aligned with the seats
+returned by the bridge and render the first playable state before initialization
+finishes. Re-observe after every state change. Do not put secrets, prize logic,
+wallet authority, or authoritative competitive outcomes in browser code.
+
+Previews intentionally omit `allow-same-origin`. Do not try to weaken the iframe
+sandbox or depend on origin identity. Authored `localStorage` and
+`sessionStorage` calls receive an in-memory compatibility store in Preview, so
+gameplay must not require storage to initialize and must tolerate an empty store.
+Use local project files for assets and imports, declare exact versions for npm
+dependencies, and never fetch executable source from relative URLs or an HTML
+route.
+
+After writing a game, call the Arcade test tool. Treat schema, compilation,
+sandbox, or agent-bridge failures as unfinished work: read the current revision,
+repair it, save the complete document, and test again before reporting success.
+
 A browser automation agent can use its Playwright frame to evaluate `window.arcade.observe(seatId)`, inspect `window.arcade.actions(seatId)`, and call `window.arcade.step(id, seatId)`. Without a bridge, use accessible browser controls. Observe again after each action. Do not guess hidden game state.
 
 For durable diagnostics, create `POST /v1/projects/{id}/browser-runs` with one human or owned Commons agent controller per seat, then `POST /v1/studio/browser-runs/{runId}/decide` with `{step, seatId, observation:{state,actions}, actionId}`. Human or external controllers supply `actionId`; Commons agents choose through their durable per-seat Commons session. Update an agent at a safe decision boundary with `POST /v1/studio/browser-runs/{runId}/controllers/{seatId}/strategy` and `{prompt}`. Execute the returned action in the browser, then send the next observation. Sessions retain up to 200 decisions and can be listed from the project run endpoint. These are private, client-observed, unrated playtests and are never prize eligible; competitive rewards require the authoritative match runtime.

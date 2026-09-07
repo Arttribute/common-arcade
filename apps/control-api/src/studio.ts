@@ -86,6 +86,8 @@ type RunRecord = StoredDocument & {
   preferences: number[][]
   createdAt: string
 }
+const COPILOT_INSTRUCTIONS =
+  'You are a Common Arcade copilot. Use the assigned build-common-arcade-games skill and the supplied Arcade tools. Read the current project before editing. Every browser game must declare its play mode and seat bounds and synchronously expose window.arcade.seats(), observe(seatId), actions(seatId), and step(actionId, seatId) with stable IDs and JSON-serializable observations. Save with arcade_write_game, then run arcade_test_game and repair any failure before reporting completion. Report only actions that tools confirm.'
 const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_read_project',
@@ -96,7 +98,7 @@ const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_write_game',
     description:
-      'Validate and save a complete browser game into the current Common Arcade Studio project. Supply every authoritative source file. Replaces the prior game and creates a revision.',
+      'Validate and save a complete, agent-playable browser game into the current Common Arcade Studio project. Supply every authoritative source file, the play contract, and a synchronous window.arcade bridge with seats, observe, actions, and step. Replaces the prior game and creates a revision.',
     parameters: {
       type: 'object',
       properties: {
@@ -157,7 +159,7 @@ const ARCADE_COPILOT_TOOLS = [
           },
         },
       },
-      required: ['title', 'description', 'entryFile', 'files'],
+      required: ['title', 'description', 'entryFile', 'play', 'files'],
       additionalProperties: false,
     },
   },
@@ -707,7 +709,9 @@ export function createStudioApi(
       modelId: process.env.ARCADE_AGENT_MODEL_ID ?? 'gpt-5.4-mini',
       temperature: 0.3,
       instructions:
-        'You are a Common Arcade agent. Follow the user’s request directly, use your assigned skills and available tools to do the work, and report only actions that tools confirm.',
+        role === 'copilot'
+          ? COPILOT_INSTRUCTIONS
+          : 'You are a Common Arcade player agent. Follow the configured strategy, choose only legal actions exposed for your seat, and report only actions that tools confirm.',
       commonTools: [
         'invoke_skill',
         'startAgentComputer',
@@ -752,8 +756,7 @@ export function createStudioApi(
         `/v1/agents/${encodeURIComponent(current.agentId)}`,
         'PUT',
         {
-          instructions:
-            'You are a Common Arcade copilot. Follow the user’s request directly, use your assigned skills and available tools to do the work, and report only actions that tools confirm.',
+          instructions: COPILOT_INSTRUCTIONS,
           commonTools: [
             'invoke_skill',
             'startAgentComputer',
@@ -797,8 +800,7 @@ export function createStudioApi(
           `/v1/agents/${encodeURIComponent(agent.agentId)}`,
           'PUT',
           {
-            instructions:
-              'You are a Common Arcade copilot. Follow the user’s request directly, use your assigned skills and available tools to do the work, and report only actions that tools confirm.',
+            instructions: COPILOT_INSTRUCTIONS,
             commonTools: [
               'invoke_skill',
               'startAgentComputer',
@@ -1049,7 +1051,7 @@ export function createStudioApi(
         attachments: input.attachments,
         model: input.model,
         computerRequest: { enabled: true },
-        cliContext: `Common Arcade Studio project ${job.projectId} is connected through the supplied arcade_* tools.`,
+        cliContext: `Common Arcade Studio project ${job.projectId} is connected through the supplied arcade_* tools. Read it first. A completed browser game must include the play contract and a synchronous, per-seat window.arcade bridge, then pass arcade_test_game.`,
         cliTools: ARCADE_COPILOT_TOOLS,
       })) {
         if (
@@ -1160,6 +1162,7 @@ export function createStudioApi(
       if (tool === 'arcade_write_game') {
         const record = await owned(p.id, projectId)
         const document = gameDocumentSchema.parse({ kind: 'browser', ...args })
+        assertAgentPlayable(document)
         compilePresentation(document)
         const project = {
           ...record.project,
@@ -1180,12 +1183,18 @@ export function createStudioApi(
       }
       if (tool === 'arcade_test_game') {
         const { project } = await owned(p.id, projectId)
+        assertAgentPlayable(project.document)
         const compiled = compilePresentation(project.document)
         return JSON.stringify({
           ok: true,
           projectId,
           revision: project.revision,
-          checks: ['schema', 'source compilation', 'sandbox presentation'],
+          checks: [
+            'schema',
+            'agent play bridge',
+            'source compilation',
+            'sandbox presentation',
+          ],
           compiledBytes: new TextEncoder().encode(compiled).length,
         })
       }
@@ -1618,6 +1627,31 @@ function copilotToolLabel(tool: string) {
       .replaceAll('_', ' ')
       .replace(/^./, (letter) => letter.toUpperCase())
   )
+}
+
+function assertAgentPlayable(document: StudioProject['document']) {
+  if (!isBrowserGame(document)) return
+  if (!document.play)
+    throw new Error(
+      'Agent-playable browser games must declare play.mode, play.seats, and play.maxDecisionsPerSecond.',
+    )
+  const source = document.files.map((file) => file.content).join('\n')
+  const missing = [
+    [
+      'window.arcade',
+      /\b(?:window|globalThis)\s*(?:\.\s*arcade|\[\s*['"]arcade['"]\s*\])/,
+    ],
+    ['seats', /\bseats\b/],
+    ['observe', /\bobserve\b/],
+    ['actions', /\bactions\b/],
+    ['step', /\bstep\b/],
+  ].flatMap(([name, pattern]) =>
+    (pattern as RegExp).test(source) ? [] : [name as string],
+  )
+  if (missing.length)
+    throw new Error(
+      `Agent play bridge is incomplete. Add ${missing.join(', ')} synchronously before the entry module finishes.`,
+    )
 }
 
 export class CommonsServiceError extends Error {

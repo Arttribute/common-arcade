@@ -11,9 +11,52 @@ const attribute = (attrs: string, name: string) => {
   return match?.[1] ?? match?.[2] ?? match?.[3]
 }
 const scriptSafe = (s: string) => s.replace(/<\/script/gi, '<\\/script')
+const sandboxStoragePlugin = ({ types }: { types: any }) => ({
+  visitor: {
+    ReferencedIdentifier(path: any) {
+      const name = path.node.name
+      if (
+        (name === 'localStorage' || name === 'sessionStorage') &&
+        !path.scope.hasBinding(name)
+      )
+        path.replaceWith(
+          types.identifier(
+            name === 'localStorage'
+              ? '__arcadeLocalStorage'
+              : '__arcadeSessionStorage',
+          ),
+        )
+    },
+    MemberExpression(path: any) {
+      const object = path.node.object
+      const property = path.node.property
+      const global =
+        types.isIdentifier(object, { name: 'window' }) ||
+        types.isIdentifier(object, { name: 'globalThis' })
+      const name = path.node.computed
+        ? types.isStringLiteral(property)
+          ? property.value
+          : undefined
+        : types.isIdentifier(property)
+          ? property.name
+          : undefined
+      if (!global || (name !== 'localStorage' && name !== 'sessionStorage'))
+        return
+      path.replaceWith(
+        types.identifier(
+          name === 'localStorage'
+            ? '__arcadeLocalStorage'
+            : '__arcadeSessionStorage',
+        ),
+      )
+    },
+  },
+})
 const browserCompatibilityRuntime = `
 function createStorage(){let values=new Map;return{get length(){return values.size},clear(){values.clear()},getItem(key){key=String(key);return values.has(key)?values.get(key):null},key(index){return [...values.keys()][Number(index)]??null},removeItem(key){values.delete(String(key))},setItem(key,value){values.set(String(key),String(value))}}}
-for(const name of ['localStorage','sessionStorage']){try{const storage=window[name],probe='__arcade_storage_probe__';storage.setItem(probe,'1');storage.removeItem(probe)}catch{Object.defineProperty(window,name,{configurable:true,value:createStorage()})}}
+function safeStorage(name){if(location.origin==='null')return createStorage();try{const storage=window[name],probe='__arcade_storage_probe__';storage.setItem(probe,'1');storage.removeItem(probe);return storage}catch{return createStorage()}}
+const __arcadeLocalStorage=safeStorage('localStorage'),__arcadeSessionStorage=safeStorage('sessionStorage');
+for(const [name,storage] of [['localStorage',__arcadeLocalStorage],['sessionStorage',__arcadeSessionStorage]]){try{Object.defineProperty(window,name,{configurable:true,value:storage})}catch{}}
 const projectFiles=__ARCADE_FILES__,entryFile=__ARCADE_ENTRY__,nativeFetch=window.fetch.bind(window);window.fetch=(input,init)=>{const value=typeof input==='string'?input:input instanceof URL?input.href:input?.url;if(typeof value==='string'&&!/^[a-z]+:/i.test(value)&&!value.startsWith('//')){const base='https://arcade.invalid/'+entryFile,path=new URL(value,base).pathname.slice(1);if(Object.hasOwn(projectFiles,path)){const extension=path.split('.').pop()?.toLowerCase(),type=extension==='json'?'application/json':extension==='css'?'text/css':extension==='svg'?'image/svg+xml':'text/plain';return Promise.resolve(new Response(projectFiles[path],{status:200,headers:{'Content-Type':type}}))}}return nativeFetch(input,init)};
 function installArcadeSeats(){
   let api=window.arcade;
@@ -27,7 +70,7 @@ function installArcadeSeats(){
     window.arcade=api;
   }
   const configured=__ARCADE_PLAY__;
-  const declared=typeof api.seats==='function'?api.seats():api.seats;
+  let declared;try{declared=typeof api.seats==='function'?api.seats():api.seats}catch{declared=[]}
   const count=configured?.seats?.default??2;
   const rawSeats=Array.isArray(declared)&&declared.length?declared.slice(0,16):Array.from({length:count},(_,index)=>({id:'seat-'+(index+1),label:'Player '+(index+1)}));
   const seats=rawSeats.map((seat,index)=>{
@@ -43,7 +86,7 @@ function installArcadeSeats(){
   api.seats=()=>publicSeats;
   api.observe=()=>{
     const observations=Object.fromEntries(seats.map(seat=>[seat.id,observe(seat.sourceId)]));
-    return{game:observations[seats[0]?.id],arcade:{seats:publicSeats,mode:configured?.mode??'turn-based',observations}};
+    return{game:observations[seats[0]?.id],arcade:{seats:publicSeats,mode:configured?.mode??'turn-based',observations,runtime:window.__arcadeRuntime}};
   };
   api.actions=()=>{
     actionLookup.clear();
@@ -136,7 +179,7 @@ export function compileBrowserPresentation(
           /\.tsx?$/.test(path) ? 'typescript' : null,
           /\.[jt]sx$/.test(path) ? ['react', { runtime: 'automatic' }] : null,
         ].filter(Boolean) as any,
-        plugins: ['transform-modules-commonjs'],
+        plugins: [sandboxStoragePlugin, 'transform-modules-commonjs'],
         sourceType: 'unambiguous',
       }).code ?? ''
     // Babel has already normalized static imports to require calls.
@@ -179,7 +222,7 @@ export function compileBrowserPresentation(
   const factories = Object.entries(modules)
     .map(
       ([path, code]) =>
-        `${JSON.stringify(path)}:async function(module,exports,require){\n${code}\n}`,
+        `${JSON.stringify(path)}:async function(module,exports,require,__arcadeLocalStorage,__arcadeSessionStorage){\n${code}\n}`,
     )
     .join(',\n')
   const compatibility = browserCompatibilityRuntime
@@ -195,7 +238,7 @@ export function compileBrowserPresentation(
       '__ARCADE_FILES__',
       JSON.stringify(Object.fromEntries(files)).replace(/</g, '\\u003c'),
     )
-  const runtime = `<script>(async()=>{try{${compatibility}const external=Object.fromEntries(await Promise.all(${JSON.stringify([...externals])}.map(async([id,url])=>[id,await import(url)])));const modules={${scriptSafe(factories)}},imports=${JSON.stringify(imports).replace(/</g, '\\u003c')},cache={},started=new Set;function load(id){if(external[id])return external[id];if(cache[id])return cache[id].exports;throw Error('Source module was not initialized: '+id)}async function start(id){if(external[id])return external[id];if(started.has(id))return cache[id].exports;if(!modules[id])throw Error('Unknown source module: '+id);started.add(id);const m=cache[id]={exports:{}};for(const dependency of Object.values(imports[id]))await start(dependency);await modules[id](m,m.exports,name=>load(imports[id][name]));return m.exports}${entries.map((p) => `await start(${JSON.stringify(p)});`).join('')}installArcadeSeats()}catch(e){const pre=document.createElement('pre');pre.style.cssText='position:fixed;inset:16px;z-index:2147483647;overflow:auto;padding:16px;border-radius:12px;background:#fff7ed;color:#9a3412;font:13px/1.5 ui-monospace,monospace';pre.textContent='Preview error: '+(e?.message??e);pre.setAttribute('role','alert');document.body.append(pre);console.error(e)}})();</script>`
+  const runtime = `<script>(async()=>{window.__arcadeRuntime={status:'loading'};${compatibility}try{const external=Object.fromEntries(await Promise.all(${JSON.stringify([...externals])}.map(async([id,url])=>[id,await import(url)])));const modules={${scriptSafe(factories)}},imports=${JSON.stringify(imports).replace(/</g, '\\u003c')},cache={},started=new Set;function load(id){if(external[id])return external[id];if(cache[id])return cache[id].exports;throw Error('Source module was not initialized: '+id)}async function start(id){if(external[id])return external[id];if(started.has(id))return cache[id].exports;if(!modules[id])throw Error('Unknown source module: '+id);started.add(id);const m=cache[id]={exports:{}};for(const dependency of Object.values(imports[id]))await start(dependency);await modules[id](m,m.exports,name=>load(imports[id][name]),__arcadeLocalStorage,__arcadeSessionStorage);return m.exports}${entries.map((p) => `await start(${JSON.stringify(p)});`).join('')}window.__arcadeRuntime={status:'ready'}}catch(e){const message=String(e?.message??e);window.__arcadeRuntime={status:'error',message};const pre=document.createElement('pre');pre.style.cssText='position:fixed;inset:16px;z-index:2147483647;overflow:auto;padding:16px;border-radius:12px;background:#fff7ed;color:#9a3412;font:13px/1.5 ui-monospace,monospace';pre.textContent='Preview error: '+message;pre.setAttribute('role','alert');document.body.append(pre);console.error(e)}finally{try{installArcadeSeats()}catch(e){window.__arcadeRuntime={status:'error',message:'Agent play bridge: '+String(e?.message??e)};console.error(e)}}})();</script>`
   const policy = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; connect-src https://esm.sh; style-src 'unsafe-inline'; img-src data: blob: https:; media-src data: blob: https:; font-src data:; worker-src blob:; form-action 'none'; base-uri 'none'">`
   html = /<head\b[^>]*>/i.test(html)
     ? html.replace(/<head\b[^>]*>/i, (m) => m + policy)

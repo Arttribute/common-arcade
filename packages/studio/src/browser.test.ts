@@ -84,4 +84,25 @@ describe('browser game projects', () => {
       'Source file not found',
     )
   })
+  it('shadows sandboxed storage globals and always settles the seat bridge', () => {
+    const html = compilePresentation({
+      ...emptyBrowserDocument,
+      files: [
+        {
+          path: 'index.html',
+          content: '<body><script src="main.js"></script></body>',
+        },
+        {
+          path: 'main.js',
+          content:
+            "localStorage.setItem('score','1'); window.localStorage.getItem('score'); globalThis['sessionStorage'].clear();",
+        },
+      ],
+    })
+    expect(html).toContain('__arcadeLocalStorage.setItem')
+    expect(html).toContain('__arcadeLocalStorage.getItem')
+    expect(html).toContain('__arcadeSessionStorage.clear')
+    expect(html).toContain("window.__arcadeRuntime={status:'ready'}")
+    expect(html).toContain('finally{try{installArcadeSeats()}')
+  })
 })

@@ -439,7 +439,10 @@ export function GameStudio({ projectId }: { projectId: string }) {
       throw new Error('Open Preview before starting a playtest.')
     const initialObservation = await waitForPreview(compiledRef)
     const declaredSeats = seatsFromObservation(initialObservation)
-    if (declaredSeats.length < browserControllers.length)
+    if (
+      declaredSeats.length > 0 &&
+      declaredSeats.length < browserControllers.length
+    )
       throw new Error(
         `The game bridge exposes ${declaredSeats.length} seats, but ${browserControllers.length} players are configured.`,
       )
@@ -2024,18 +2027,55 @@ async function waitForPreview(
   ref: React.RefObject<CompiledFrameHandle | null>,
 ): Promise<CanvasObservation> {
   let lastError: unknown
+  let lastObservation: CanvasObservation | undefined
   for (let attempt = 0; attempt < 40; attempt++) {
     try {
       if (!ref.current) throw new Error('The compiled preview is not mounted.')
       const observation = await ref.current.observe()
-      if (seatsFromObservation(observation).length) return observation
+      lastObservation = observation
+      const runtime = runtimeFromObservation(observation)
+      if (runtime?.status === 'error')
+        throw new Error(
+          `The game could not start: ${runtime.message ?? 'unknown preview error'}`,
+        )
+      if (
+        seatsFromObservation(observation).length &&
+        runtime?.status !== 'loading'
+      )
+        return observation
+      // Older compiled projects do not expose runtime status. Once their
+      // semantic actions respond, they are safe to start through the legacy
+      // bridge instead of being rejected by the newer seat handshake.
+      if (!runtime && observation.actions.length > 0 && attempt >= 4)
+        return observation
       lastError = new Error('The game runtime is still loading.')
     } catch (error) {
       lastError = error
+      if (
+        error instanceof Error &&
+        error.message.startsWith('The game could not start:')
+      )
+        break
     }
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
+  if (lastObservation?.actions.length) return lastObservation
   throw lastError instanceof Error
     ? lastError
     : new Error('The compiled preview did not become ready.')
+}
+
+function runtimeFromObservation(
+  observation: CanvasObservation,
+): { status?: string; message?: string } | undefined {
+  if (!observation.state || typeof observation.state !== 'object') return
+  const arcade = (observation.state as Record<string, unknown>).arcade
+  if (!arcade || typeof arcade !== 'object') return
+  const runtime = (arcade as Record<string, unknown>).runtime
+  if (!runtime || typeof runtime !== 'object') return
+  const { status, message } = runtime as Record<string, unknown>
+  return {
+    ...(typeof status === 'string' ? { status } : {}),
+    ...(typeof message === 'string' ? { message } : {}),
+  }
 }

@@ -26,7 +26,7 @@ const duel = {
     {
       path: 'main.js',
       content:
-        'window.arcade={observe:()=>({lives:[3,3]}),actions:()=>[{id:"jump",label:"Jump"}],step:()=>true}',
+        'window.arcade={seats:()=>[{id:"left",label:"Left"},{id:"right",label:"Right"}],observe:(seatId)=>({lives:[3,3],seatId}),actions:()=>[{id:"jump",label:"Jump"}],step:()=>true}',
     },
   ],
 }
