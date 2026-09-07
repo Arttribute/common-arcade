@@ -1,5 +1,11 @@
 import type { IBucket } from 'aws-cdk-lib/aws-s3'
-import { CfnOutput, Duration, Stack, type StackProps } from 'aws-cdk-lib'
+import {
+  ArnFormat,
+  CfnOutput,
+  Duration,
+  Stack,
+  type StackProps,
+} from 'aws-cdk-lib'
 import * as apigateway from 'aws-cdk-lib/aws-apigatewayv2'
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations'
 import type { ITable } from 'aws-cdk-lib/aws-dynamodb'
@@ -58,6 +64,7 @@ export class ControlPlaneStack extends Stack {
         actions: ['lambda:InvokeFunction'],
         resources: [
           this.formatArn({
+            arnFormat: ArnFormat.COLON_RESOURCE_NAME,
             service: 'lambda',
             resource: 'function',
             resourceName: `${this.stackName.slice(0, 31)}-*`,
