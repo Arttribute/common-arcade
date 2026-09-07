@@ -169,6 +169,11 @@ export function GameStudio({ projectId }: { projectId: string }) {
       state: stateForSeat(observation.state, selected.seatId),
       actions: actionsForSeat(observation.actions, selected.seatId),
     }
+    setBrowserAction({
+      seat: selected.label,
+      action: 'Choosing a move…',
+      fallback: false,
+    })
     const event = await arcade<BrowserEvent>(
       `studio/browser-runs/${current.id}/decide`,
       {
@@ -1932,6 +1937,9 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 ) : null}
               </div>
             ) : null}
+            {/* A live browser run must keep the shared frame interactive so
+                its animation clocks run. The sibling shield blocks unlogged
+                pointer input without enabling the frame's freeze mode. */}
             <CompiledArtifactFrame
               ref={compiledRef}
               onRecording={(recording) =>
@@ -1945,10 +1953,17 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       error: `The source could not compile: ${compiled.error} Check the entry file and local imports, or ask your copilot to fix the project.`,
                     }
               }
-              interactive={tool === 'select' && !browserRun}
+              interactive={tool === 'select'}
               title={`${document.title} compiled game`}
               revision={`${previewKey}:${view}:${run?.steps ?? 0}`}
             />
+            {browserRun ? (
+              <div
+                className="studio-agent-input-shield"
+                aria-hidden="true"
+                title="Use the Test Arena controls while this session is running"
+              />
+            ) : null}
             <AnnotationLayer
               tool={view === 'test' ? 'select' : tool}
               notes={visibleNotes}

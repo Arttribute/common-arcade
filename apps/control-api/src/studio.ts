@@ -1533,20 +1533,28 @@ async function* commonsAgentStream(
       403,
       'Sign in with Commons to use your Commons agents.',
     )
-  const response = await fetch(
-    `${process.env.AGENT_COMMONS_API_URL ?? 'https://api.agentcommons.io'}/v1/agents/run/stream`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${p.token}`,
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-        'x-initiator': p.id,
+  let response: Response
+  try {
+    response = await fetch(
+      `${process.env.AGENT_COMMONS_API_URL ?? 'https://api.agentcommons.io'}/v1/agents/run/stream`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${p.token}`,
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          'x-initiator': p.id,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(570_000),
       },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(570_000),
-    },
-  )
+    )
+  } catch (error) {
+    throw new CommonsServiceError(
+      502,
+      `Commons agent stream could not be reached: ${error instanceof Error ? error.message : 'network error'}`,
+    )
+  }
   if (!response.ok) {
     const raw = await response.text()
     let message = raw.replace(/\s+/g, ' ').slice(0, 240)
@@ -1575,25 +1583,56 @@ async function* commonsAgentStream(
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  for (;;) {
-    const { done, value } = await reader.read()
-    buffer += decoder.decode(value, { stream: !done })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() ?? ''
-    for (const line of lines) {
-      if (!line.startsWith('data:')) continue
-      const raw = line.slice(5).trim()
-      if (!raw || raw === '[DONE]') return
-      try {
-        const event = JSON.parse(raw) as CommonsStreamEvent
-        if (event.type !== 'keepalive') yield event
-        if (event.type === 'final' || event.type === 'completed') return
-      } catch {
-        // Ignore malformed keepalive/proxy fragments without losing the run.
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue
+        const raw = line.slice(5).trim()
+        if (!raw || raw === '[DONE]') return
+        try {
+          const event = JSON.parse(raw) as CommonsStreamEvent
+          if (event.type !== 'keepalive') yield event
+          if (event.type === 'final' || event.type === 'completed') return
+        } catch {
+          // Ignore malformed keepalive/proxy fragments without losing the run.
+        }
       }
+      if (done) break
     }
-    if (done) break
+  } catch (error) {
+    throw new CommonsServiceError(
+      502,
+      `Commons agent stream ended unexpectedly: ${error instanceof Error ? error.message : 'connection error'}`,
+    )
   }
+}
+
+/**
+ * Return the final text from the keepalive-capable Commons agent stream.
+ * Short browser decisions use the stream too: the synchronous agent endpoint
+ * can be terminated by an upstream proxy before a model finishes thinking.
+ */
+export async function commonsAgentText(p: Principal, body: unknown) {
+  let text = ''
+  for await (const event of commonsAgentStream(p, body)) {
+    if (
+      event.type === 'token' &&
+      typeof event.content === 'string' &&
+      (!event.phase || event.phase === 'final_answer')
+    )
+      text += event.content
+    else if (event.type === 'final') text = text.trim() || agentEventText(event)
+  }
+  if (!text.trim())
+    throw new CommonsServiceError(
+      502,
+      'Commons finished the agent decision without returning an action.',
+    )
+  return text.trim()
 }
 
 function agentEventText(event: CommonsStreamEvent) {

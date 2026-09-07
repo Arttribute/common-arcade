@@ -6,6 +6,7 @@ import {
   type StudioProject,
 } from '@common-arcade/protocol'
 import {
+  commonsAgentText,
   CommonsServiceError,
   commonsRequest,
   extractAgentJson,
@@ -365,8 +366,8 @@ export function createBrowserTestApi(
             })
             .strict()
             .parse(
-              extractAgentJson(
-                await commonsRequest(p, '/v1/agents/run', {
+              extractAgentJson({
+                content: await commonsAgentText(p, {
                   agentId: controller.agentId,
                   sessionId: controller.sessionId,
                   initiatorId: p.id,
@@ -377,13 +378,30 @@ export function createBrowserTestApi(
                     },
                   ],
                 }),
-              ),
+              }),
             )
         } catch (error) {
           if (!(error instanceof CommonsServiceError) || error.status !== 502)
             throw error
           const available = body.observation.actions
-          const selected = available[run.step % available.length]!
+          const safe = available.filter(
+            (action) =>
+              !/\b(?:restart|reset|new game|quit|exit)\b/i.test(
+                `${action.id} ${action.label}`,
+              ),
+          )
+          const active = safe.filter(
+            (action) =>
+              !/\b(?:idle|wait|pass|noop|no-op|do nothing)\b/i.test(
+                `${action.id} ${action.label}`,
+              ),
+          )
+          const fallback = active.length
+            ? active
+            : safe.length
+              ? safe
+              : available
+          const selected = fallback[run.step % fallback.length]!
           decision = {
             actionId: selected.id,
             reason:

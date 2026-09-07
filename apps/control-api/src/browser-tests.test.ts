@@ -82,17 +82,20 @@ describe('browser playtest decisions', () => {
       calls.push({ url, body })
       if (url.endsWith('/v1/sessions'))
         return Response.json({ data: { sessionId: `ses_${++sessions}` } })
-      if (url.endsWith('/v1/agents/run'))
-        return Response.json({
-          data: {
+      if (url.endsWith('/v1/agents/run/stream'))
+        return new Response(
+          `data: ${JSON.stringify({
+            type: 'token',
+            phase: 'final_answer',
             content: JSON.stringify({
               actionId: body.messages[0].content.includes('seat-2')
                 ? 'seat:seat-2:jump'
                 : 'seat:seat-1:jump',
               reason: 'legal test action',
             }),
-          },
-        })
+          })}\n\ndata: ${JSON.stringify({ type: 'final' })}\n\n`,
+          { headers: { 'Content-Type': 'text/event-stream' } },
+        )
       return Response.json({ data: { agentId: url.split('/').at(-1) } })
     })
     const app = createBrowserTestApi(store, async () => ({
@@ -157,7 +160,9 @@ describe('browser playtest decisions', () => {
       },
     )
     expect(decision.status).toBe(200)
-    const runCall = calls.find((call) => call.url.endsWith('/v1/agents/run'))
+    const runCall = calls.find((call) =>
+      call.url.endsWith('/v1/agents/run/stream'),
+    )
     expect(runCall.body.sessionId).toBe('ses_2')
     expect(runCall.body.messages[0].content).toContain(
       'Counterattack after dodging.',
@@ -186,7 +191,7 @@ describe('browser playtest decisions', () => {
       const url = String(input)
       if (url.endsWith('/v1/sessions'))
         return Response.json({ data: { sessionId: 'ses_resilient' } })
-      if (url.endsWith('/v1/agents/run'))
+      if (url.endsWith('/v1/agents/run/stream'))
         return new Response('<html><h1>502 Bad Gateway</h1></html>', {
           status: 502,
         })
@@ -226,6 +231,8 @@ describe('browser playtest decisions', () => {
           observation: {
             state: { lives: [3, 3] },
             actions: [
+              { id: 'idle', label: 'Idle' },
+              { id: 'restart', label: 'Restart duel' },
               { id: 'fire', label: 'Fire' },
               { id: 'duck', label: 'Duck' },
             ],

@@ -1601,6 +1601,13 @@ h3 {
   border-color: #fcd34d;
   color: #92400e;
 }
+.studio-agent-input-shield {
+  position: absolute;
+  z-index: 10;
+  inset: 0;
+  background: transparent;
+  cursor: default;
+}
 
 .arcade-sign-in,
 .arcade-account summary {
