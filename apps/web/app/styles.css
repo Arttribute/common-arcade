@@ -1566,6 +1566,41 @@ h3 {
     0 0 0 1px #d6d3d1,
     0 12px 35px #2925240a;
 }
+.studio-live-action {
+  position: absolute;
+  z-index: 12;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(360px, calc(100% - 24px));
+  padding: 8px 11px;
+  border: 1px solid #c7d2fe;
+  border-radius: 9px;
+  background: #fffffff2;
+  color: #3730a3;
+  font-size: 10px;
+  box-shadow: 0 5px 20px #1e1b4b24;
+  pointer-events: none;
+}
+.studio-live-action span {
+  display: grid;
+  min-width: 0;
+}
+.studio-live-action strong {
+  color: #1e1b4b;
+  font-size: 11px;
+}
+.studio-live-action small {
+  margin-left: auto;
+  color: #92400e;
+  white-space: nowrap;
+}
+.studio-live-action.is-fallback {
+  border-color: #fcd34d;
+  color: #92400e;
+}
 
 .arcade-sign-in,
 .arcade-account summary {

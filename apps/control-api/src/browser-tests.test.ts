@@ -168,4 +168,80 @@ describe('browser playtest decisions', () => {
     expect(resumed.events).toHaveLength(1)
     expect(resumed.strategyEvents).toHaveLength(1)
   })
+  it('keeps a live run moving with a legal action during a transient Commons 502', async () => {
+    const store = new MemoryDocumentStore()
+    const local = createApp({ store, allowLocalAuth: true, logRequests: false })
+    const headers = {
+      Authorization: 'Bearer local:browser_creator',
+      'Content-Type': 'application/json',
+    }
+    const project = await (
+      await local.request('/v1/projects', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ document: emptyBrowserDocument }),
+      })
+    ).json()
+    vi.stubGlobal('fetch', async (input: unknown) => {
+      const url = String(input)
+      if (url.endsWith('/v1/sessions'))
+        return Response.json({ data: { sessionId: 'ses_resilient' } })
+      if (url.endsWith('/v1/agents/run'))
+        return new Response('<html><h1>502 Bad Gateway</h1></html>', {
+          status: 502,
+        })
+      return Response.json({ data: { agentId: 'agt_resilient' } })
+    })
+    const app = createBrowserTestApi(store, async () => ({
+      id: 'browser_creator',
+      scopes: ['projects:read', 'projects:write'],
+      token: 'commons-token',
+      provider: 'commons',
+    }))
+    const run = await (
+      await app.request(`/v1/projects/${project.id}/browser-runs`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          controllers: [
+            {
+              seatId: 'seat-1',
+              label: 'Red',
+              kind: 'agent',
+              agentId: 'agt_resilient',
+              strategy: 'Keep attacking.',
+            },
+          ],
+        }),
+      })
+    ).json()
+    const response = await app.request(
+      `/v1/studio/browser-runs/${run.id}/decide`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          step: 0,
+          seatId: 'seat-1',
+          observation: {
+            state: { lives: [3, 3] },
+            actions: [
+              { id: 'fire', label: 'Fire' },
+              { id: 'duck', label: 'Duck' },
+            ],
+          },
+        }),
+      },
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      decision: { actionId: 'fire' },
+      decisionSource: 'arcade-fallback',
+    })
+    expect(
+      await (
+        await app.request(`/v1/studio/browser-runs/${run.id}`, { headers })
+      ).json(),
+    ).toMatchObject({ step: 1 })
+  })
 })

@@ -77,6 +77,7 @@ type BrowserEvent = {
   seatId?: string
   observation: CanvasObservation
   decision: { actionId: string; reason: string }
+  decisionSource?: 'commons' | 'arcade-fallback' | 'human' | 'external'
   controller?: Pick<
     BrowserController,
     'kind' | 'agentId' | 'strategy' | 'strategyEpoch'
@@ -117,6 +118,11 @@ export function GameStudio({ projectId }: { projectId: string }) {
   const [browserObservation, setBrowserObservation] =
     useState<CanvasObservation>()
   const [browserPlaying, setBrowserPlaying] = useState(false)
+  const [browserAction, setBrowserAction] = useState<{
+    seat: string
+    action: string
+    fallback: boolean
+  }>()
   const [fullscreen, setFullscreen] = useState(false)
   const defaultBrowserControllers = useCallback((game: GameDocument) => {
     const count = isBrowserGame(game) ? (game.play?.seats.default ?? 2) : 2
@@ -171,12 +177,24 @@ export function GameStudio({ projectId }: { projectId: string }) {
         observation: seatObservation,
       },
     )
+    const chosen = seatObservation.actions.find(
+      (action) => action.id === event.decision.actionId,
+    )
+    setBrowserAction({
+      seat: selected.label,
+      action: chosen?.label ?? event.decision.actionId,
+      fallback: event.decisionSource === 'arcade-fallback',
+    })
     const nextObservation = await compiledRef.current.act(
       event.decision.actionId,
     )
     setBrowserObservation(nextObservation)
     setBrowserRun({ ...current, step: current.step + 1 })
     setBrowserEvents((all) => [...all, event])
+    if (event.decisionSource === 'arcade-fallback')
+      setNotice(
+        'Commons was temporarily unavailable for that move. Arcade applied a legal fallback and kept the agents playing.',
+      )
   }
   async function browserHumanDecision(
     controller: BrowserController,
@@ -200,6 +218,12 @@ export function GameStudio({ projectId }: { projectId: string }) {
         actionId,
       },
     )
+    const chosen = actions.find((action) => action.id === actionId)
+    setBrowserAction({
+      seat: controller.label,
+      action: chosen?.label ?? actionId,
+      fallback: false,
+    })
     const nextObservation = await compiledRef.current.act(
       event.decision.actionId,
     )
@@ -487,7 +511,9 @@ export function GameStudio({ projectId }: { projectId: string }) {
       ),
     )
     setNotice(
-      'Private Test Arena session started. Human moves use the legal-action controls so the session stays resumable.',
+      bridgeFromObservation(initialObservation) === 'dom-fallback'
+        ? 'Session started in compatibility mode. Arcade assigned visible control groups to each seat; ask the copilot to add a semantic agent bridge for richer strategy.'
+        : 'Private Test Arena session started. Human moves use the legal-action controls so the session stays resumable.',
     )
     return created
   }
@@ -1194,6 +1220,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       setBrowserRun(undefined)
                       setBrowserEvents([])
                       setBrowserObservation(undefined)
+                      setBrowserAction(undefined)
                       setBrowserControllers(defaultBrowserControllers(document))
                     }}
                   >
@@ -1890,6 +1917,21 @@ export function GameStudio({ projectId }: { projectId: string }) {
               transformOrigin: 'top center',
             }}
           >
+            {browserRun && browserAction ? (
+              <div
+                className={`studio-live-action${browserAction.fallback ? ' is-fallback' : ''}`}
+                aria-live="polite"
+              >
+                <Bot size={14} />
+                <span>
+                  <strong>{browserAction.seat}</strong>
+                  {browserAction.action}
+                </span>
+                {browserAction.fallback ? (
+                  <small>service fallback</small>
+                ) : null}
+              </div>
+            ) : null}
             <CompiledArtifactFrame
               ref={compiledRef}
               onRecording={(recording) =>
@@ -2012,6 +2054,14 @@ function seatsFromObservation(
       ? [{ id, label }]
       : []
   })
+}
+
+function bridgeFromObservation(observation: CanvasObservation) {
+  if (!observation.state || typeof observation.state !== 'object') return
+  const arcade = (observation.state as Record<string, unknown>).arcade
+  if (!arcade || typeof arcade !== 'object') return
+  const bridge = (arcade as Record<string, unknown>).bridge
+  return typeof bridge === 'string' ? bridge : undefined
 }
 
 function stateForSeat(state: unknown, seatId: string): unknown {

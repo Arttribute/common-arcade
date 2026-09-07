@@ -60,16 +60,24 @@ for(const [name,storage] of [['localStorage',__arcadeLocalStorage],['sessionStor
 const projectFiles=__ARCADE_FILES__,entryFile=__ARCADE_ENTRY__,nativeFetch=window.fetch.bind(window);window.fetch=(input,init)=>{const value=typeof input==='string'?input:input instanceof URL?input.href:input?.url;if(typeof value==='string'&&!/^[a-z]+:/i.test(value)&&!value.startsWith('//')){const base='https://arcade.invalid/'+entryFile,path=new URL(value,base).pathname.slice(1);if(Object.hasOwn(projectFiles,path)){const extension=path.split('.').pop()?.toLowerCase(),type=extension==='json'?'application/json':extension==='css'?'text/css':extension==='svg'?'image/svg+xml':'text/plain';return Promise.resolve(new Response(projectFiles[path],{status:200,headers:{'Content-Type':type}}))}}return nativeFetch(input,init)};
 function installArcadeSeats(){
   let api=window.arcade;
+  const configured=__ARCADE_PLAY__;
+  let bridge='semantic';
   if(api?.__multiSeatBridge)return;
   if(!api){
+    bridge='dom-fallback';
+    const elements=()=>Array.from(document.querySelectorAll('button,[role="button"],input[type="button"]')).filter(element=>!element.hasAttribute('disabled'));
+    const controlsFor=(seatId)=>{
+      const all=elements(),playable=all.filter(element=>!/restart|reset|new game/i.test((element.getAttribute('aria-label')||element.textContent||'').trim()));
+      const count=configured?.seats?.default??2,index=Math.max(0,Number(String(seatId).match(/(\\d+)$/)?.[1]??1)-1);
+      return count>1&&playable.length>=count*2&&playable.length%count===0?playable.slice(index*(playable.length/count),(index+1)*(playable.length/count)):playable;
+    };
     api={
       observe:()=>({text:document.body.innerText.slice(0,8000)}),
-      actions:()=>Array.from(document.querySelectorAll('button,[role="button"],input[type="button"]')).filter(element=>!element.hasAttribute('disabled')).slice(0,80).map((element,index)=>({id:'click:'+index,label:(element.getAttribute('aria-label')||element.textContent||'Button').trim().slice(0,200)})),
-      step:(id)=>{const index=Number(String(id).slice(6)),element=Array.from(document.querySelectorAll('button,[role="button"],input[type="button"]')).filter(candidate=>!candidate.hasAttribute('disabled'))[index];if(!element)return false;element.click();return true;},
+      actions:(seatId)=>controlsFor(seatId).slice(0,80).map(element=>({id:'click:'+elements().indexOf(element),label:(element.getAttribute('aria-label')||element.textContent||'Button').trim().slice(0,200)})),
+      step:async(id,seatId)=>{const element=elements()[Number(String(id).slice(6))];if(!element||!controlsFor(seatId).includes(element))return false;const pointer=type=>element.dispatchEvent(new PointerEvent(type,{bubbles:true,pointerId:1,pointerType:'mouse',isPrimary:true,button:0,buttons:type.endsWith('down')?1:0})),mouse=type=>element.dispatchEvent(new MouseEvent(type,{bubbles:true,button:0,buttons:type.endsWith('down')?1:0}));pointer('pointerdown');mouse('mousedown');await new Promise(resolve=>setTimeout(resolve,120));pointer('pointerup');mouse('mouseup');element.click();return true;},
     };
     window.arcade=api;
   }
-  const configured=__ARCADE_PLAY__;
   let declared;try{declared=typeof api.seats==='function'?api.seats():api.seats}catch{declared=[]}
   const count=configured?.seats?.default??2;
   const rawSeats=Array.isArray(declared)&&declared.length?declared.slice(0,16):Array.from({length:count},(_,index)=>({id:'seat-'+(index+1),label:'Player '+(index+1)}));
@@ -86,7 +94,7 @@ function installArcadeSeats(){
   api.seats=()=>publicSeats;
   api.observe=()=>{
     const observations=Object.fromEntries(seats.map(seat=>[seat.id,observe(seat.sourceId)]));
-    return{game:observations[seats[0]?.id],arcade:{seats:publicSeats,mode:configured?.mode??'turn-based',observations,runtime:window.__arcadeRuntime}};
+    return{game:observations[seats[0]?.id],arcade:{seats:publicSeats,mode:configured?.mode??'turn-based',bridge,observations,runtime:window.__arcadeRuntime}};
   };
   api.actions=()=>{
     actionLookup.clear();

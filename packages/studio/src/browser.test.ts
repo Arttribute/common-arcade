@@ -104,5 +104,7 @@ describe('browser game projects', () => {
     expect(html).toContain('__arcadeSessionStorage.clear')
     expect(html).toContain("window.__arcadeRuntime={status:'ready'}")
     expect(html).toContain('finally{try{installArcadeSeats()}')
+    expect(html).toContain("bridge='dom-fallback'")
+    expect(html).toContain("pointer('pointerdown')")
   })
 })
