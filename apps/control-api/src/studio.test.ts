@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createApp } from './app.js'
 import { extractAgentJson } from './studio.js'
 import { MemoryDocumentStore } from './store.js'
-import { exampleDocument, starterDocument } from '@common-arcade/studio'
+import { starterDocument } from '@common-arcade/studio'
 
 describe('hosted Studio boundary', () => {
   const headers = {
@@ -29,6 +29,7 @@ describe('hosted Studio boundary', () => {
     })
     expect(created.status).toBe(201)
     const p = await created.json()
+    expect(p.document).toEqual(starterDocument)
     const other = createApp({ store, allowLocalAuth: true, logRequests: false })
     expect(
       (await other.request(`/v1/projects/${p.id}`, { headers })).status,
@@ -452,10 +453,7 @@ describe('worked example project', () => {
     const first = await (await app.request('/v1/projects', { headers })).json()
     expect(first.projects).toHaveLength(1)
     const example = first.projects[0]
-    expect(example.document).toMatchObject({
-      kind: 'browser',
-      title: exampleDocument.title,
-    })
+    expect(example.document).toEqual(starterDocument)
     // Listing again must not accumulate copies, including from a second instance.
     const other = createApp({ store, allowLocalAuth: true, logRequests: false })
     expect(
@@ -474,7 +472,7 @@ describe('worked example project', () => {
     const html = await (
       await app.request(`/v1/studio/releases/${release.id}/preview`)
     ).text()
-    expect(html).toContain('window.arcade')
+    expect(html).toContain('data-arcade-node="cell:0"')
   })
   it('leaves an account that already has projects untouched', async () => {
     const { app } = setup()
@@ -485,10 +483,7 @@ describe('worked example project', () => {
     })
     const listed = await (await app.request('/v1/projects', { headers })).json()
     expect(listed.projects).toHaveLength(1)
-    expect(listed.projects[0].document).toMatchObject({
-      kind: 'browser',
-      title: 'Untitled game',
-    })
+    expect(listed.projects[0].document).toEqual(starterDocument)
   })
 })
 

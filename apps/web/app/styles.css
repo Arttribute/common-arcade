@@ -902,6 +902,26 @@ h3 {
   color: #a8a29e;
   margin-left: 8px;
 }
+.studio-live-readiness {
+  border: 1px solid #d6d3d1;
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: #78716c;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.studio-live-readiness.is-ready {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+.studio-live-readiness.is-preview {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
 .studio-toolbar-end {
   margin-left: auto;
   display: flex;

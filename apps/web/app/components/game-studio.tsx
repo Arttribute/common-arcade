@@ -52,6 +52,7 @@ import {
   type CanvasRecording,
 } from '@agent-commons/ui'
 import {
+  assessLiveReadiness,
   compilePresentation,
   defaultGameDistribution,
   gameDocumentSchema,
@@ -831,6 +832,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
     void runCopilot(message)
   }, [pendingPrompt, project, copilotId, busy, runCopilot])
   const title = project?.document.title ?? 'New game'
+  const liveReadiness = useMemo(() => assessLiveReadiness(document), [document])
   const sourceSize = useMemo(() => {
     if (!isBrowserGame(document)) return ''
     const bytes = document.files.reduce(
@@ -880,6 +882,12 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 : project
                   ? `Revision ${project.revision}`
                   : 'Draft preview'}
+          </span>
+          <span
+            className={`studio-live-readiness ${liveReadiness.liveReady ? 'is-ready' : 'is-preview'}`}
+            title={liveReadiness.blockers.join(' ')}
+          >
+            {liveReadiness.liveReady ? 'Live-ready' : 'Preview only'}
           </span>
           <div className="studio-toolbar-end">
             {user ? (

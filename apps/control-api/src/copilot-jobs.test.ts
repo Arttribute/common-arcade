@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from './app.js'
 import { MemoryDocumentStore } from './store.js'
-import { emptyBrowserDocument } from '@common-arcade/studio'
+import { emptyBrowserDocument, starterDocument } from '@common-arcade/studio'
 
 process.env.COMMONS_IDENTITY_ISSUER = 'https://auth.agentcommons.io/api/auth'
 afterEach(() => vi.unstubAllGlobals())
@@ -12,23 +12,13 @@ const headers = {
   'Content-Type': 'application/json',
 }
 const rawPrompt =
-  'Let us create a simple live duel game where two players try to shoot each other down and avoid getting shot down by ducking or jumping with 3 lives'
-const duel = {
-  ...emptyBrowserDocument,
-  title: 'Live Duel',
-  description: 'Two players shoot, jump, and duck with three lives each.',
-  files: [
-    {
-      path: 'index.html',
-      content:
-        '<!doctype html><html><body><canvas id="stage"></canvas><script type="module" src="main.js"></script></body></html>',
-    },
-    {
-      path: 'main.js',
-      content:
-        'window.arcade={seats:()=>[{id:"left",label:"Left"},{id:"right",label:"Right"}],observe:(seatId)=>({lives:[3,3],seatId}),actions:()=>[{id:"jump",label:"Jump"}],step:()=>true}',
-    },
-  ],
+  'Create a live-ready four-in-a-row strategy game for two players.'
+const liveGame = {
+  ...starterDocument,
+  title: 'Live Lines',
+  description: 'Two players race to place four marks in a row.',
+  boardSize: 5,
+  winLength: 4,
 }
 
 function sse(events: unknown[]) {
@@ -69,8 +59,8 @@ function stubCommons(options: { outage?: boolean } = {}) {
         {
           type: 'cli_tool_request',
           requestId: 'req_write',
-          tool: 'arcade_write_game',
-          args: duel,
+          tool: 'arcade_write_live_game',
+          args: liveGame,
         },
         {
           type: 'cli_tool_request',
@@ -81,7 +71,7 @@ function stubCommons(options: { outage?: boolean } = {}) {
         {
           type: 'final',
           content:
-            'Built and tested Live Duel with shooting, jumping, ducking, and three lives.',
+            'Built and tested Live Lines on an authoritative live runtime.',
         },
       ])
     }
@@ -133,14 +123,14 @@ describe('building a game in a native Commons agent session', () => {
 
     expect(job).toMatchObject({
       status: 'ready',
-      response: expect.stringContaining('Built and tested Live Duel'),
+      response: expect.stringContaining('Built and tested Live Lines'),
       projectRevision: 2,
       sessionId: 'ses_arcade_project',
     })
     expect(job.events.map((event: any) => event.label)).toEqual([
       'Loaded game-building skill',
       'Read Arcade project',
-      'Write Arcade game',
+      'Write live-ready Arcade game',
       'Test Arcade game',
     ])
     const run = calls.find((call) => call.url.endsWith('/v1/agents/run/stream'))
@@ -149,7 +139,8 @@ describe('building a game in a native Commons agent session', () => {
     expect(run?.body.sessionId).toBe('ses_arcade_project')
     expect(run?.body.cliTools.map((tool: any) => tool.name)).toEqual([
       'arcade_read_project',
-      'arcade_write_game',
+      'arcade_write_live_game',
+      'arcade_write_preview_game',
       'arcade_test_game',
       'arcade_publish_game',
     ])
@@ -161,7 +152,7 @@ describe('building a game in a native Commons agent session', () => {
     const saved = await (
       await app.request(`/v1/projects/${project.id}`, { headers })
     ).json()
-    expect(saved.document.title).toBe('Live Duel')
+    expect(saved.document.title).toBe('Live Lines')
     expect(saved.revision).toBe(2)
   })
 

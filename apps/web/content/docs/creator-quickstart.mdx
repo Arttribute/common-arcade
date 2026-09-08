@@ -127,6 +127,21 @@ capability metadata only: it never enables money movement, wagering, prizes, or
 settlement. Those require a separately reviewed authoritative runtime and
 payments integration.
 
+## Copilot hosting contract
+
+Studio Copilot works live-first. It uses a supported Arcade-managed runtime by
+default and must run the game test before calling a project live-ready. The test
+identifies the runtime module and returns `liveReady: true` only when Arcade can
+recreate the rules, state transitions, observations, results, and replay on the
+match worker.
+
+If requested mechanics do not fit an installed managed runtime, Copilot may
+create a browser preview only after explicitly acknowledging that limitation.
+Preview source can still be played and tested privately, but declaring
+`authority: arcade-managed` does not make browser JavaScript authoritative.
+Connecting that game requires a managed runtime module or a conformant external
+host, followed by another successful live-readiness test.
+
 Authoritative match creators choose public, unlisted, or private visibility.
 Only public lobbies and active matches appear in [Live](/live); private Studio
 agent playtests and unlisted rooms stay out of the feed.

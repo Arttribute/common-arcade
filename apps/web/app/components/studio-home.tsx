@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, ArrowUpRight, Gamepad2, Plus } from 'lucide-react'
-import { emptyBrowserDocument, type StudioProject } from '@common-arcade/studio'
+import { starterDocument, type StudioProject } from '@common-arcade/studio'
 import { ArcadeComposer, useArcadeIdentity } from './studio-composer'
 import { arcade } from '../../lib/api'
 
@@ -38,7 +38,7 @@ export function StudioHome() {
     setError('')
     try {
       const project = await arcade<StudioProject>('projects', {
-        document: emptyBrowserDocument,
+        document: starterDocument,
       })
       // The workspace runs the build, so the creator watches their game take
       // shape in the studio instead of waiting on this page for it to appear.
@@ -81,7 +81,7 @@ export function StudioHome() {
         <p>
           Create a game or simulation with your Commons agents.
           <br />
-          Start with an idea. Shape every detail together.
+          New projects start on an authoritative, live-ready runtime.
         </p>
         <ArcadeComposer
           value={prompt}
@@ -109,9 +109,9 @@ export function StudioHome() {
         )}
         <div className="studio-home-suggestions">
           {[
-            'A relaxed falling-block puzzle',
-            'A tiny space exploration game',
-            'An interactive ecosystem simulation',
+            'A four-in-a-row strategy duel',
+            'A five-by-five line-building game',
+            'A fast competitive three-in-a-row variant',
           ].map((idea) => (
             <button key={idea} onClick={() => setPrompt(idea)} disabled={busy}>
               {idea}

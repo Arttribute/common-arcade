@@ -28,6 +28,53 @@ import {
   type StudioProject,
 } from '@common-arcade/protocol'
 
+export interface LiveReadinessReport {
+  readonly liveReady: boolean
+  readonly classification: 'arcade-managed' | 'preview-only'
+  readonly runtimeModule: 'grid-placement' | 'browser-presentation'
+  readonly checks: readonly string[]
+  readonly blockers: readonly string[]
+}
+
+/**
+ * A release is live-ready only when Arcade can recreate its authoritative
+ * runtime from the immutable document. Browser bridges are useful for private
+ * testing, but never become match authority merely by declaring a capability.
+ */
+export function assessLiveReadiness(
+  document: GameDocument,
+): LiveReadinessReport {
+  const parsed = gameDocumentSchema.parse(document)
+  if (!isBrowserGame(parsed))
+    return {
+      liveReady: true,
+      classification: 'arcade-managed',
+      runtimeModule: 'grid-placement',
+      checks: [
+        'immutable authoritative rules',
+        'server-side action validation',
+        'deterministic replay',
+        'seat observations',
+      ],
+      blockers: [],
+    }
+  const requestedAuthority = parsed.capabilities?.world.authority
+  return {
+    liveReady: false,
+    classification: 'preview-only',
+    runtimeModule: 'browser-presentation',
+    checks: ['sandbox presentation', 'agent play bridge'],
+    blockers: [
+      requestedAuthority === 'external-conformant-host'
+        ? 'The declared external host has not supplied a conformant live adapter for this release.'
+        : requestedAuthority === 'arcade-managed'
+          ? 'Arcade-managed authority was requested, but this project contains only browser presentation source.'
+          : 'Browser presentation source is not an authoritative match runtime.',
+      'Move rules, time, state transitions, results, and observations into a supported managed runtime or conformant external host.',
+    ],
+  }
+}
+
 export function rulesFor(
   document: GameDocument,
   releaseId: string,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  assessLiveReadiness,
   compileGame,
   compilePresentation,
   documentDigest,
@@ -90,6 +91,45 @@ describe('bounded game authoring', () => {
         authoritativeTime: '',
       }).legalActions,
     ).toHaveLength(0)
+  })
+  it('distinguishes managed live runtimes from browser previews', () => {
+    expect(assessLiveReadiness(starterDocument)).toMatchObject({
+      liveReady: true,
+      classification: 'arcade-managed',
+      runtimeModule: 'grid-placement',
+      blockers: [],
+    })
+    expect(assessLiveReadiness(emptyBrowserDocument)).toMatchObject({
+      liveReady: false,
+      classification: 'preview-only',
+      runtimeModule: 'browser-presentation',
+      blockers: expect.arrayContaining([
+        expect.stringContaining('not an authoritative'),
+      ]),
+    })
+    expect(
+      assessLiveReadiness({
+        ...emptyBrowserDocument,
+        capabilities: {
+          genres: [],
+          world: {
+            persistence: 'session',
+            authority: 'arcade-managed',
+            cadence: 'turn',
+            checkpointing: 'end-only',
+          },
+          presentation: { dimension: '2d', engine: 'dom' },
+          teams: {
+            enabled: false,
+            maxTeams: 1,
+            membersPerTeam: 1,
+            control: 'individual',
+            sharedStrategy: false,
+          },
+          economy: { payments: 'disabled', valueMode: 'none', hooks: [] },
+        },
+      }).blockers[0],
+    ).toContain('only browser presentation source')
   })
   it('gives browser games bounded seats and an opaque-origin storage fallback', () => {
     const parsed = gameDocumentSchema.parse(emptyBrowserDocument)
