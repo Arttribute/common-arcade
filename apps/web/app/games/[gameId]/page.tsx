@@ -47,6 +47,10 @@ export default async function GamePage({
     ...starterDocument,
     title: game.metadata.title,
   }
+  const browserGame =
+    (game.spec.runtime.type === 'declarative' &&
+      game.spec.runtime.module === 'browser-presentation') ||
+    isBrowserGame(document)
   return (
     <main>
       <Header />
@@ -58,6 +62,9 @@ export default async function GamePage({
           <h1>{game.metadata.title}</h1>
           <p>{game.metadata.summary}</p>
           <div className="profile-list">
+            <span className={browserGame ? 'is-preview' : 'is-live-ready'}>
+              {browserGame ? 'Preview only · no live lobby' : 'Live-ready'}
+            </span>
             {game.spec.profiles.map((profile) => (
               <span key={profile}>{profile}</span>
             ))}
@@ -66,7 +73,7 @@ export default async function GamePage({
         <MatchLauncher
           releaseId={releaseId}
           gameId={gameId}
-          browserGame={isBrowserGame(document)}
+          browserGame={browserGame}
           remixing={customRelease?.distribution?.remixing}
           license={customRelease?.distribution?.license}
         />
@@ -80,7 +87,9 @@ export default async function GamePage({
           overflow: 'hidden',
           marginBottom: 40,
         }}
-        aria-label="Try this game locally"
+        aria-label={
+          browserGame ? 'Local preview, not a live session' : 'Try this game'
+        }
       >
         <CompiledArtifactFrame
           preview={{ type: 'html', html: compilePresentation(document) }}
@@ -103,8 +112,8 @@ export default async function GamePage({
           <span>RUNTIME</span>
           <strong>{game.spec.runtime.type}</strong>
           <p>
-            {isBrowserGame(document)
-              ? 'Runs in your browser. Record a play session to share a replay.'
+            {browserGame
+              ? 'Browser preview only. It cannot create a synchronized live lobby.'
               : 'Content-addressed and replayable under the declared profile.'}
           </p>
         </article>
@@ -117,7 +126,7 @@ export default async function GamePage({
           </p>
         </article>
       </section>
-      {isBrowserGame(document) && document.capabilities ? (
+      {browserGame && isBrowserGame(document) && document.capabilities ? (
         <section className="capability-contract shell">
           <div>
             <span className="panel-label">WORLD</span>

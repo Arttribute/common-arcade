@@ -609,6 +609,67 @@ h3 {
   font-size: 9px;
   line-height: 1.5;
 }
+.preview-hosting-card {
+  gap: 16px;
+  border-color: #fed7aa;
+  background: #fffaf5;
+}
+.preview-hosting-status {
+  display: block;
+  width: fit-content;
+  margin-bottom: 7px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #ffedd5;
+  color: #9a3412;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.preview-hosting-path {
+  padding: 13px;
+  border: 1px solid #fed7aa;
+  border-radius: 9px;
+  background: #fff;
+}
+.preview-hosting-path strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #7c2d12;
+  font-size: 11px;
+}
+.preview-hosting-path ol {
+  margin: 9px 0 0;
+  padding-left: 20px;
+  color: #57534e;
+  font-size: 10px;
+  line-height: 1.55;
+}
+.preview-hosting-path p {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid #ffedd5;
+  color: #9a3412;
+  font-size: 9px;
+  line-height: 1.5;
+}
+.preview-hosting-card > small {
+  color: #9a8f87;
+  font-size: 9px;
+  line-height: 1.5;
+}
+.profile-list .is-preview {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+}
+.profile-list .is-live-ready {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
 .copy-contract {
   display: flex;
   align-items: center;

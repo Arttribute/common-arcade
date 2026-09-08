@@ -1,5 +1,13 @@
 'use client'
-import { Bot, Code2, Copy, ExternalLink, Users } from 'lucide-react'
+import {
+  AlertTriangle,
+  Bot,
+  Code2,
+  Copy,
+  ExternalLink,
+  Radio,
+  Users,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { arcade, browserControlClient } from '../../lib/api'
@@ -98,6 +106,67 @@ export function MatchLauncher({
     }
   }
   const manifestUrl = `/api/arcade/v1/games/${gameId}`
+  if (browserGame)
+    return (
+      <div className="launch-card preview-hosting-card">
+        <div className="agent-launcher-title">
+          <AlertTriangle size={18} />
+          <div>
+            <span className="preview-hosting-status">Preview only</span>
+            <strong>This release cannot host a live session yet</strong>
+            <p>
+              Its rules, clock, state, validation, and result run independently
+              in each viewer&apos;s browser. A lobby would create diverging
+              copies, not one fair shared match.
+            </p>
+          </div>
+        </div>
+        <div className="preview-hosting-path">
+          <strong>
+            <Radio size={13} /> To enable live hosting
+          </strong>
+          <ol>
+            <li>Open the game in Studio.</li>
+            <li>
+              Move its rules and state into an Arcade-managed runtime module, or
+              connect a conformant external host.
+            </li>
+            <li>
+              Publish a release that passes the live-readiness test. The lobby
+              controls will then appear here automatically.
+            </li>
+          </ol>
+          <p>
+            Today&apos;s managed creator runtime supports grid-placement games.
+            Other mechanics need a new runtime module before this conversion is
+            available.
+          </p>
+        </div>
+        {signedIn ? (
+          <button className="primary" disabled={busy} onClick={create}>
+            {busy ? 'Opening Studio…' : 'Open this project in Studio'}
+          </button>
+        ) : (
+          <a
+            className="primary"
+            href={`/api/auth/login?next=/games/${encodeURIComponent(gameId)}`}
+          >
+            Sign in to open Studio
+          </a>
+        )}
+        <a className="agent-doc-link" href="/docs/creator-quickstart">
+          Read the live-hosting requirements <ExternalLink size={12} />
+        </a>
+        <small>
+          You can still play and record this local preview below. Published
+          source is immutable; owners return to their workspace, while other
+          creators receive an attributed copy only when remixes are enabled.{' '}
+          {license ?? 'all-rights-reserved'} ·{' '}
+          {remixing === 'allowed' ? 'remixes enabled' : 'remixes restricted'}.
+        </small>
+        {error ? <p className="error-text">{error}</p> : null}
+      </div>
+    )
   return (
     <div className="launch-card agent-launcher">
       <div className="agent-launcher-title">
@@ -298,15 +367,6 @@ export function MatchLauncher({
           </a>
         </div>
       )}
-      {browserGame ? (
-        <small>
-          Published source is immutable. Owners return to their workspace;
-          others receive an attributed copy only when the creator has enabled
-          remixes. Browser releases remain private and unrated until an
-          authoritative runtime is attached. {license ?? 'all-rights-reserved'}{' '}
-          · {remixing === 'allowed' ? 'remixes enabled' : 'remixes restricted'}.
-        </small>
-      ) : null}
       {error ? <p className="error-text">{error}</p> : null}
     </div>
   )

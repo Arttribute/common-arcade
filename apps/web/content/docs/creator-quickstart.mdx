@@ -135,8 +135,9 @@ identifies the runtime module and returns `liveReady: true` only when Arcade can
 recreate the rules, state transitions, observations, results, and replay on the
 match worker.
 
-If requested mechanics do not fit an installed managed runtime, Copilot may
-create a browser preview only after explicitly acknowledging that limitation.
+If requested mechanics do not fit an installed managed runtime, Copilot must
+explain the blocker and wait for the creator to explicitly accept a
+preview-only prototype before creating one.
 Preview source can still be played and tested privately, but declaring
 `authority: arcade-managed` does not make browser JavaScript authoritative.
 Connecting that game requires a managed runtime module or a conformant external
