@@ -1,6 +1,8 @@
 import { compileBrowserPresentation } from './browser.js'
 import {
   createGridPlacementGame,
+  createSandboxedScriptGame,
+  type GameDefinition,
   type GridPlacementRuleSet,
 } from '@common-arcade/match-runtime'
 import { computeManifestDigest } from '@common-arcade/manifest'
@@ -13,6 +15,7 @@ export {
   emptyBrowserDocument,
   defaultGameDistribution,
   isBrowserGame,
+  isManagedBrowserGame,
 } from '@common-arcade/protocol'
 export type {
   GameDocument,
@@ -24,6 +27,7 @@ export type {
 import {
   gameDocumentSchema,
   isBrowserGame,
+  isManagedBrowserGame,
   type GameDocument,
   type StudioProject,
 } from '@common-arcade/protocol'
@@ -31,7 +35,8 @@ import {
 export interface LiveReadinessReport {
   readonly liveReady: boolean
   readonly classification: 'arcade-managed' | 'preview-only'
-  readonly runtimeModule: 'grid-placement' | 'browser-presentation'
+  readonly runtimeModule:
+    'sandboxed-script-v1' | 'grid-placement' | 'browser-presentation'
   readonly checks: readonly string[]
   readonly blockers: readonly string[]
 }
@@ -45,6 +50,23 @@ export function assessLiveReadiness(
   document: GameDocument,
 ): LiveReadinessReport {
   const parsed = gameDocumentSchema.parse(document)
+  if (isManagedBrowserGame(parsed))
+    return {
+      liveReady: true,
+      classification: 'arcade-managed',
+      runtimeModule: 'sandboxed-script-v1',
+      checks: [
+        'isolated WebAssembly sandbox',
+        'bounded memory and execution time',
+        'no ambient network, filesystem, process, clock, or randomness',
+        'server-side action validation',
+        'authoritative fixed-tick support',
+        'deterministic replay',
+        'seat observations',
+        'custom 2D/3D presentation bridge',
+      ],
+      blockers: [],
+    }
   if (!isBrowserGame(parsed))
     return {
       liveReady: true,
@@ -115,12 +137,31 @@ export function rulesFor(
     objective: `Place ${d.winLength} marks in a row.`,
   }
 }
-export function compileGame(
+export async function compileGame(
   document: GameDocument,
   releaseId: string,
   digest: string,
-) {
-  return createGridPlacementGame(rulesFor(document, releaseId, digest))
+): Promise<GameDefinition<any, any>> {
+  const parsed = gameDocumentSchema.parse(document)
+  if (isManagedBrowserGame(parsed)) {
+    const source = parsed.files.find(
+      (file) => file.path === parsed.runtime.entryFile,
+    )?.content
+    if (!source) throw new Error('Managed runtime source file is missing.')
+    return createSandboxedScriptGame({
+      releaseId,
+      releaseDigest: digest,
+      mode: parsed.play?.mode ?? 'turn-based',
+      source,
+      memoryMiB: parsed.runtime.memoryMiB,
+      timeoutMs: parsed.runtime.timeoutMs,
+    })
+  }
+  if (isBrowserGame(parsed))
+    throw new Error(
+      'Browser projects need a sandboxed authoritative runtime before they can host live matches.',
+    )
+  return createGridPlacementGame(rulesFor(parsed, releaseId, digest))
 }
 export async function documentDigest(document: GameDocument): Promise<string> {
   const data = new TextEncoder().encode(
@@ -204,15 +245,32 @@ export async function releaseManifest(
       mode: isBrowserGame(project.document)
         ? (project.document.play?.mode ?? 'turn-based')
         : 'turn-based',
-      profiles: isBrowserGame(project.document)
-        ? ['base-v1']
-        : [
+      profiles: isManagedBrowserGame(project.document)
+        ? [
             'base-v1',
-            'turn-based-v1',
+            ...(project.document.play?.mode === 'turn-based'
+              ? (['turn-based-v1'] as const)
+              : project.document.play?.mode === 'simultaneous'
+                ? (['simultaneous-v1'] as const)
+                : ['realtime', 'hybrid'].includes(
+                      project.document.play?.mode ?? '',
+                    )
+                  ? (['realtime-authoritative-v1'] as const)
+                  : []),
             'replay-v1',
             'generic-controls-v1',
             'policy-v1',
-          ],
+            'semantic-presentation-v1',
+          ]
+        : isBrowserGame(project.document)
+          ? ['base-v1']
+          : [
+              'base-v1',
+              'turn-based-v1',
+              'replay-v1',
+              'generic-controls-v1',
+              'policy-v1',
+            ],
       extensions,
       seats: {
         min: isBrowserGame(project.document)
@@ -234,9 +292,12 @@ export async function releaseManifest(
         lateJoin: false,
       },
       clock: {
-        ...(isBrowserGame(project.document) &&
-        project.document.play?.mode === 'realtime'
-          ? { simulationHz: 60, networkHz: 20 }
+        ...(isManagedBrowserGame(project.document) &&
+        ['realtime', 'hybrid'].includes(project.document.play?.mode ?? '')
+          ? {
+              simulationHz: project.document.runtime.tickRate,
+              networkHz: Math.min(20, project.document.runtime.tickRate),
+            }
           : {}),
         maxDurationSeconds: 600,
       },
@@ -255,9 +316,11 @@ export async function releaseManifest(
       ) as GameManifest['spec']['schemas'],
       runtime: {
         type: 'declarative',
-        module: isBrowserGame(project.document)
-          ? 'browser-presentation'
-          : 'grid-placement',
+        module: isManagedBrowserGame(project.document)
+          ? 'sandboxed-script-v1'
+          : isBrowserGame(project.document)
+            ? 'browser-presentation'
+            : 'grid-placement',
         digest: project.digest,
       },
       presentation: { generic: true, bridge: 'semantic-v1' },

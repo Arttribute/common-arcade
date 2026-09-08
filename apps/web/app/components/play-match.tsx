@@ -3,6 +3,7 @@
 import { browserControlClient } from '../../lib/api'
 import { RealtimeClient } from '@common-arcade/realtime-client'
 import type {
+  JsonValue,
   MatchDescriptor,
   Observation,
   RealtimeEnvelope,
@@ -19,6 +20,26 @@ interface BoardState {
   draw: boolean
 }
 
+function isBoardState(value: JsonValue | undefined): value is JsonValue & {
+  board: JsonValue[]
+} {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Array.isArray(value.board),
+  )
+}
+
+function actionLabel(action: JsonValue, index: number): string {
+  if (action && typeof action === 'object' && !Array.isArray(action)) {
+    if (typeof action.label === 'string') return action.label
+    if (typeof action.type === 'string') return action.type
+  }
+  const encoded = JSON.stringify(action)
+  return encoded.length <= 80 ? encoded : `Action ${index + 1}`
+}
+
 export function PlayMatch({
   matchId,
   initialActor,
@@ -29,13 +50,14 @@ export function PlayMatch({
   const [actorId] = useState(initialActor)
   const [match, setMatch] = useState<MatchDescriptor>()
   const [observation, setObservation] = useState<Observation>()
-  const [publicBoard, setPublicBoard] = useState<BoardState>()
+  const [publicState, setPublicState] = useState<JsonValue>()
   const [lease, setLease] = useState<string>()
   const [connection, setConnection] = useState('idle')
   const [lastResult, setLastResult] = useState<string>()
   const [error, setError] = useState<string>()
   const [copied, setCopied] = useState(false)
   const clientRef = useRef<RealtimeClient | undefined>(undefined)
+  const presentationRef = useRef<HTMLIFrameElement | null>(null)
   const actionSequence = useRef(0)
 
   useEffect(() => {
@@ -57,17 +79,14 @@ export function PlayMatch({
     }
     if (message.type === 'observation.full') {
       setObservation(message.payload as unknown as Observation)
-      setPublicBoard(
-        (message.payload as unknown as Observation)
-          .visibleState as unknown as BoardState,
-      )
+      setPublicState((message.payload as unknown as Observation).visibleState)
     }
     if (message.type === 'snapshot') {
       const payload = message.payload as unknown as {
-        publicState?: BoardState
+        publicState?: JsonValue
         match?: MatchDescriptor
       }
-      if (payload.publicState !== undefined) setPublicBoard(payload.publicState)
+      if (payload.publicState !== undefined) setPublicState(payload.publicState)
       if (payload.match !== undefined) setMatch(payload.match)
     }
     if (message.type === 'match.transition')
@@ -114,7 +133,7 @@ export function PlayMatch({
     }
   }
 
-  function play(cell: number) {
+  function submit(payload: JsonValue) {
     const seatId = observation?.seatId
     if (
       seatId === undefined ||
@@ -130,10 +149,43 @@ export function PlayMatch({
       controlLease: lease,
       clientSequence: actionSequence.current,
       basedOnStateSequence: observation.stateSequence,
-      targetTurn: observation.turn,
-      payload: { type: 'place', cell },
+      ...(observation.turn === undefined
+        ? {}
+        : { targetTurn: observation.turn }),
+      ...(observation.tick === undefined
+        ? {}
+        : { targetTick: observation.tick + 1 }),
+      payload,
     })
   }
+
+  useEffect(() => {
+    const receivePresentationAction = (event: MessageEvent) => {
+      if (
+        event.source !== presentationRef.current?.contentWindow ||
+        event.data?.type !== 'arcade.action'
+      )
+        return
+      submit(event.data.action as JsonValue)
+    }
+    window.addEventListener('message', receivePresentationAction)
+    return () =>
+      window.removeEventListener('message', receivePresentationAction)
+  })
+
+  function renderPresentation() {
+    presentationRef.current?.contentWindow?.postMessage(
+      {
+        type: 'arcade.authoritative-state',
+        state: observation?.visibleState ?? publicState ?? null,
+        observation,
+        match,
+      },
+      '*',
+    )
+  }
+
+  useEffect(renderPresentation, [match, observation, publicState])
 
   async function restart() {
     setError(undefined)
@@ -151,6 +203,9 @@ export function PlayMatch({
     window.setTimeout(() => setCopied(false), 1400)
   }
 
+  const boardState = isBoardState(observation?.visibleState ?? publicState)
+    ? ((observation?.visibleState ?? publicState) as unknown as BoardState)
+    : undefined
   const legalCells = new Set(
     (observation?.legalActions ?? []).map((action) =>
       typeof action === 'object' && action !== null && 'cell' in action
@@ -217,31 +272,54 @@ export function PlayMatch({
             {match?.series?.maximumRounds ?? 1} · {connection}
           </span>
         </div>
-        <div
-          className="tic-grid"
-          aria-label="Game board"
-          style={{
-            gridTemplateColumns: `repeat(${Math.sqrt(publicBoard?.board.length ?? 9)}, 1fr)`,
-          }}
-        >
-          {Array.from({ length: publicBoard?.board.length ?? 9 }, (_, cell) => (
-            <button
-              key={cell}
-              disabled={!legalCells.has(cell)}
-              onClick={() => play(cell)}
-              aria-label={`Cell ${cell + 1}`}
-            >
-              {publicBoard?.board[cell] ?? ''}
-            </button>
-          ))}
-        </div>
+        {match?.releaseId && !boardState ? (
+          <iframe
+            ref={presentationRef}
+            className="live-game-frame"
+            src={`/api/arcade/v1/studio/releases/${encodeURIComponent(match.releaseId)}/preview`}
+            title="Live authoritative game"
+            sandbox="allow-scripts"
+            onLoad={renderPresentation}
+          />
+        ) : (
+          <div
+            className="tic-grid"
+            aria-label="Game board"
+            style={{
+              gridTemplateColumns: `repeat(${Math.sqrt(boardState?.board.length ?? 9)}, 1fr)`,
+            }}
+          >
+            {Array.from(
+              { length: boardState?.board.length ?? 9 },
+              (_, cell) => (
+                <button
+                  key={cell}
+                  disabled={!legalCells.has(cell)}
+                  onClick={() => submit({ type: 'place', cell })}
+                  aria-label={`Cell ${cell + 1}`}
+                >
+                  {boardState?.board[cell] ?? ''}
+                </button>
+              ),
+            )}
+          </div>
+        )}
+        {!boardState && observation?.legalActions.length ? (
+          <div className="live-action-strip" aria-label="Available actions">
+            {observation.legalActions.slice(0, 12).map((action, index) => (
+              <button key={index} onClick={() => submit(action)}>
+                {actionLabel(action, index)}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <strong className="game-outcome">
-          {publicBoard?.winnerSeatId
-            ? `Winner: ${publicBoard.winnerSeatId}`
-            : publicBoard?.draw
+          {boardState?.winnerSeatId
+            ? `Winner: ${boardState.winnerSeatId}`
+            : boardState?.draw
               ? 'Draw'
-              : publicBoard?.currentSeatId
-                ? `Turn: ${publicBoard.currentSeatId}`
+              : boardState?.currentSeatId
+                ? `Turn: ${boardState.currentSeatId}`
                 : 'Connect to watch or play'}
         </strong>
         {match?.series?.status === 'awaiting-restart' ? (

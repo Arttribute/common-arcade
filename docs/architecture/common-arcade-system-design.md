@@ -1419,6 +1419,17 @@ The common substrate is legal observations/actions, feedback, boundaries, memory
 
 The MVP should implement declarative and WebAssembly tiers. Trusted containers enter private preview after threat modeling and operational controls. External hosts can be listed earlier but must display their distinct trust, data, uptime, and billing status.
 
+The creator alpha exposes the WebAssembly tier as `sandboxed-script-v1`: a
+deterministic JavaScript guest evaluated by an embedded QuickJS WebAssembly
+runtime. Each ABI call receives canonical JSON, runs with explicit memory,
+stack, and deadline limits, and has no network, filesystem, process, host
+clock, WebAssembly, or ambient-randomness capability. Realtime and hybrid
+releases declare a fixed tick rate; accepted actions and clock ticks share one
+serialized match timeline and are checkpointed for deterministic replay. This
+is a portable authoring front end to the same runtime boundary, not browser
+authority and not the future trusted-container tier. Legacy grid documents stay
+readable for migration but are not the default creator contract.
+
 ### 10.2 WebAssembly host ABI
 
 The minimum game ABI should cover:

@@ -1,3 +1,4 @@
 # Arcade Studio
 
-Bounded grid-game authoring contract and credential-free compiled presentation.
+Bounded game authoring contract, credential-free compiled presentations, and
+deterministic managed server modules for arbitrary web-game mechanics.

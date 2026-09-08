@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { AuthoritativeMatch, verifyReplay } from '@common-arcade/match-runtime'
 import {
   assessLiveReadiness,
   compileGame,
@@ -11,6 +12,46 @@ import {
   releaseManifest,
 } from './index.js'
 describe('bounded game authoring', () => {
+  const realtimeDuel = gameDocumentSchema.parse({
+    kind: 'browser',
+    title: 'Pulse duel',
+    description: 'A non-grid realtime projectile duel.',
+    entryFile: 'index.html',
+    play: {
+      mode: 'realtime',
+      seats: { min: 2, max: 2, default: 2 },
+      maxDecisionsPerSecond: 10,
+    },
+    runtime: {
+      kind: 'sandboxed-script',
+      entryFile: 'server.js',
+      tickRate: 20,
+      memoryMiB: 8,
+      timeoutMs: 20,
+    },
+    files: [
+      {
+        path: 'index.html',
+        content: '<main id="arena"></main><script src="main.js"></script>',
+      },
+      {
+        path: 'main.js',
+        content:
+          "window.arcade={seats:()=>[],observe:()=>({}),actions:()=>[],step:()=>false,render:(state)=>{document.querySelector('#arena').textContent=JSON.stringify(state)},submit:()=>false};",
+      },
+      {
+        path: 'server.js',
+        content: `globalThis.arcadeGame={
+          initialize:c=>({players:c.roster.map(p=>({seatId:p.seatId,hp:3})),shots:[]}),
+          validateAction:(s,a,c)=>s.players.some(p=>p.seatId===c.seatId&&p.hp>0)&&a&&a.type==='shoot'?null:'Cannot shoot',
+          applyAction:(s,a,c)=>({state:{...s,shots:s.shots.concat([{owner:c.seatId,target:s.players.find(p=>p.seatId!==c.seatId).seatId,impactAt:c.elapsedMs+100}])},events:[{type:'duel.shot',visibility:'public',payload:{seatId:c.seatId}}]}),
+          tick:(s,c)=>{const due=s.shots.filter(x=>x.impactAt<=c.elapsedMs+c.deltaMs),targets=new Set(due.map(x=>x.target));return {state:{players:s.players.map(p=>({...p,hp:p.hp-(targets.has(p.seatId)?1:0)})),shots:s.shots.filter(x=>x.impactAt>c.elapsedMs+c.deltaMs)},events:due.map(x=>({type:'duel.hit',visibility:'public',payload:{seatId:x.target}}))}},
+          observe:(s,id,c)=>{const impacts=s.shots.filter(x=>x.target===id).map(x=>x.impactAt-c.elapsedMs);return {visibleState:s,legalActions:[{type:'shoot'}],feedback:{elapsedMs:c.elapsedMs,timeToImpact:impacts.length?Math.min(...impacts):null}}},
+          result:s=>{const loser=s.players.find(p=>p.hp<=0);return loser?{winnerSeatId:s.players.find(p=>p.seatId!==loser.seatId).seatId}:null}
+        };`,
+      },
+    ],
+  })
   it('compiles complete horizontal, vertical and diagonal winning lines', () => {
     expect(
       rulesFor(starterDocument, 'rel_test', 'sha256:test').winningLines,
@@ -58,8 +99,8 @@ describe('bounded game authoring', () => {
     expect(html).toContain("connect-src 'none'")
     expect(html).toContain('data-arcade-node="cell:0"')
   })
-  it('compiles a larger board for the same authoritative legal-action interface', () => {
-    const game = compileGame(
+  it('compiles a larger board for the same authoritative legal-action interface', async () => {
+    const game = await compileGame(
       { ...starterDocument, boardSize: 5, winLength: 4 },
       'rel_test',
       'sha256:test',
@@ -79,6 +120,7 @@ describe('bounded game authoring', () => {
         seatId: 'sea_one',
         stateSequence: 0,
         eventSequence: 0,
+        elapsedMs: 0,
         authoritativeTime: '',
       }).legalActions,
     ).toHaveLength(25)
@@ -88,6 +130,7 @@ describe('bounded game authoring', () => {
         seatId: 'sea_two',
         stateSequence: 0,
         eventSequence: 0,
+        elapsedMs: 0,
         authoritativeTime: '',
       }).legalActions,
     ).toHaveLength(0)
@@ -130,6 +173,73 @@ describe('bounded game authoring', () => {
         },
       }).blockers[0],
     ).toContain('only browser presentation source')
+  })
+  it('runs and deterministically replays a non-grid fixed-tick duel', async () => {
+    const game = await compileGame(
+      realtimeDuel,
+      'rel_pulse_duel',
+      `sha256:${'1'.repeat(64)}`,
+    )
+    const match = await AuthoritativeMatch.create({
+      matchId: 'mat_pulse_duel',
+      game,
+      seed: 'fixed-seed',
+      configuration: {},
+      roster: [
+        { seatId: 'sea_player_one', role: 'player' },
+        { seatId: 'sea_player_two', role: 'player' },
+      ],
+    })
+    match.start()
+    expect(
+      await match.submitAction(
+        {
+          actionId: 'act_pulse_shot',
+          matchId: 'mat_pulse_duel',
+          seatId: 'sea_player_one',
+          controlLease: 'test-control-lease',
+          clientSequence: 1,
+          basedOnStateSequence: 0,
+          targetTick: 1,
+          payload: { type: 'shoot' },
+        },
+        match.getOwnershipEpoch(),
+      ),
+    ).toMatchObject({ disposition: 'accepted' })
+    await match.advanceTick(50)
+    await match.advanceTick(50)
+    expect(match.observation('sea_player_two').feedback).toMatchObject({
+      elapsedMs: 100,
+    })
+    expect(
+      await match.submitAction(
+        {
+          actionId: 'act_pulse_response',
+          matchId: 'mat_pulse_duel',
+          seatId: 'sea_player_two',
+          controlLease: 'test-control-lease',
+          clientSequence: 1,
+          basedOnStateSequence: 0,
+          targetTick: 3,
+          payload: { type: 'shoot' },
+        },
+        match.getOwnershipEpoch(),
+      ),
+    ).toMatchObject({ disposition: 'accepted', acceptedForTick: 3 })
+    const replay = match.exportReplay()
+    expect(replay.timeline?.map((step) => step.kind)).toEqual([
+      'action',
+      'tick',
+      'tick',
+      'action',
+    ])
+    expect(await verifyReplay(game, replay)).toMatchObject({ valid: true })
+  })
+  it('connects managed presentation input and authoritative state without a grid renderer', () => {
+    const html = compilePresentation(realtimeDuel)
+    expect(html).toContain('arcade.authoritative-state')
+    expect(html).toContain('arcade.action')
+    expect(html).toContain('api.submit=')
   })
   it('gives browser games bounded seats and an opaque-origin storage fallback', () => {
     const parsed = gameDocumentSchema.parse(emptyBrowserDocument)

@@ -27,7 +27,8 @@
   },
   "dependencies": {
     "@common-arcade/manifest": "workspace:^",
-    "@common-arcade/protocol": "workspace:^"
+    "@common-arcade/protocol": "workspace:^",
+    "quickjs-emscripten": "0.31.0"
   },
   "devDependencies": {
     "tsup": "catalog:",

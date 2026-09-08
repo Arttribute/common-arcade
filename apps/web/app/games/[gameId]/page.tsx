@@ -4,6 +4,7 @@ import {
   compilePresentation,
   starterDocument,
   isBrowserGame,
+  assessLiveReadiness,
   type StudioRelease,
 } from '@common-arcade/studio'
 import type { GameManifest } from '@common-arcade/protocol'
@@ -47,10 +48,7 @@ export default async function GamePage({
     ...starterDocument,
     title: game.metadata.title,
   }
-  const browserGame =
-    (game.spec.runtime.type === 'declarative' &&
-      game.spec.runtime.module === 'browser-presentation') ||
-    isBrowserGame(document)
+  const browserGame = !assessLiveReadiness(document).liveReady
   return (
     <main>
       <Header />
@@ -126,7 +124,7 @@ export default async function GamePage({
           </p>
         </article>
       </section>
-      {browserGame && isBrowserGame(document) && document.capabilities ? (
+      {isBrowserGame(document) && document.capabilities ? (
         <section className="capability-contract shell">
           <div>
             <span className="panel-label">WORLD</span>

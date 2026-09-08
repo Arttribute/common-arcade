@@ -16,16 +16,30 @@ Create a durable workspace with `POST /v1/projects` and `{ "document": ... }` be
   "description": "How to play",
   "entryFile": "index.html",
   "play": {
-    "mode": "turn-based",
+    "mode": "realtime",
     "seats": { "min": 2, "max": 2, "default": 2 },
-    "maxDecisionsPerSecond": 2
+    "maxDecisionsPerSecond": 10
+  },
+  "runtime": {
+    "kind": "sandboxed-script",
+    "entryFile": "server.js",
+    "tickRate": 30,
+    "memoryMiB": 16,
+    "timeoutMs": 20
   },
   "files": [
     {
       "path": "index.html",
       "content": "<!doctype html><html><body><canvas id=game></canvas><script type=module src=main.js></script></body></html>"
     },
-    { "path": "main.js", "content": "// Game implementation" }
+    {
+      "path": "main.js",
+      "content": "// Presentation and window.arcade bridge"
+    },
+    {
+      "path": "server.js",
+      "content": "// Authoritative globalThis.arcadeGame rules"
+    }
   ]
 }
 ```
@@ -63,6 +77,38 @@ returned by the bridge and render the first playable state before initialization
 finishes. Re-observe after every state change. Do not put secrets, prize logic,
 wallet authority, or authoritative competitive outcomes in browser code.
 
+For a live release, presentation additionally implements
+`render(authoritativeState, context)` and calls `window.arcade.submit(action)`
+from human controls. The separate server file assigns
+`globalThis.arcadeGame` with pure synchronous methods:
+
+```js
+globalThis.arcadeGame = {
+  initialize(context) {},
+  validateAction(state, action, context) {},
+  applyAction(state, action, context) {},
+  tick(state, context) {}, // required for realtime and hybrid games
+  observe(state, seatId, context) {},
+  result(state) {},
+}
+```
+
+Transitions return `{ state, events }`; observations return
+`{ visibleState, legalActions, feedback? }`; `result` returns `null` until the
+game ends. All values must be JSON-serializable. The managed module runs in a
+bounded QuickJS WebAssembly sandbox with no network, filesystem, process, host
+clock, WebAssembly, or `Math.random`. Use initialization `context.seed` and
+serialized state for deterministic randomness, and `context.elapsedMs` /
+`context.deltaMs` for timing. Include derived timing such as time-to-impact in
+realtime observations so agents act on authoritative facts rather than visual
+guesswork.
+
+Build the mechanics the creator asked for. Never replace a shooting, racing,
+sports, strategy, card, simulation, 2D, or 3D request with a grid or
+tic-tac-toe game unless the creator explicitly requested that mechanic. The
+same custom live contract supports these genres; use a browser-only preview
+only when the creator explicitly asks for a non-live prototype.
+
 Previews intentionally omit `allow-same-origin`. Do not try to weaken the iframe
 sandbox or depend on origin identity. Authored `localStorage` and
 `sessionStorage` calls receive an in-memory compatibility store in Preview, so
@@ -79,7 +125,9 @@ A browser automation agent can use its Playwright frame to evaluate `window.arca
 
 For durable diagnostics, create `POST /v1/projects/{id}/browser-runs` with one human or owned Commons agent controller per seat, then `POST /v1/studio/browser-runs/{runId}/decide` with `{step, seatId, observation:{state,actions}, actionId}`. Human or external controllers supply `actionId`; Commons agents choose through their durable per-seat Commons session. Update an agent at a safe decision boundary with `POST /v1/studio/browser-runs/{runId}/controllers/{seatId}/strategy` and `{prompt}`. Execute the returned action in the browser, then send the next observation. Sessions retain up to 200 decisions and can be listed from the project run endpoint. These are private, client-observed, unrated playtests and are never prize eligible; competitive rewards require the authoritative match runtime.
 
-Grid releases also support the authoritative match/WebSocket protocol. Use manifest runtime capabilities to select the appropriate path; do not send browser-only games to the grid match runtime.
+Managed releases support the authoritative match/WebSocket protocol regardless
+of genre. Use manifest runtime capabilities to select live play; browser-only
+releases remain private preview/test artifacts.
 
 ## Annotation context and recordings
 

@@ -6,8 +6,6 @@ import {
 import {
   getTicTacToeManifest,
   ticTacToeGame,
-  type PlaceAction,
-  type TicTacToeState,
 } from '@common-arcade/example-tic-tac-toe'
 import { AuthoritativeMatch } from '@common-arcade/match-runtime'
 import type {
@@ -22,7 +20,7 @@ import type {
   Replay,
 } from '@common-arcade/protocol'
 
-export type LocalMatchRuntime = AuthoritativeMatch<TicTacToeState, PlaceAction>
+export type LocalMatchRuntime = AuthoritativeMatch<any, any>
 
 interface MutableSeat {
   readonly id: string
@@ -237,6 +235,7 @@ export class LocalArcadePlatform {
   private readonly matches = new Map<string, MatchRecord>()
   private readonly idempotency = new Map<string, string>()
   private readonly sessions = new Map<string, SessionRecord>()
+  private readonly clocks = new Map<string, ReturnType<typeof setInterval>>()
   private readonly listeners = new Map<
     string,
     Set<(update: MatchUpdate) => void>
@@ -281,7 +280,7 @@ export class LocalArcadePlatform {
     for (const saved of options.savedMatches ?? []) {
       const release = await options.loadRelease?.(saved.replay.releaseId)
       const game = release
-        ? compileGame(release.document, release.id, release.digest)
+        ? await compileGame(release.document, release.id, release.digest)
         : ticTacToeGame
       const runtime = await AuthoritativeMatch.recover(
         game,
@@ -321,6 +320,7 @@ export class LocalArcadePlatform {
       await platform.persist(record)
       platform.matches.set(saved.replay.matchId, record)
       platform.idempotency.set(saved.idempotencyKey, saved.replay.matchId)
+      if (runtime.getStatus() === 'running') platform.startClock(record)
     }
     return platform
   }
@@ -411,11 +411,12 @@ export class LocalArcadePlatform {
       role: seat.role,
       status: 'open',
     }))
+    const game = custom
+      ? await compileGame(custom.document, custom.id, custom.digest)
+      : ticTacToeGame
     const runtime = await AuthoritativeMatch.create({
       matchId,
-      game: custom
-        ? compileGame(custom.document, custom.id, custom.digest)
-        : ticTacToeGame,
+      game,
       seed: request.seed ?? opaqueId('seed'),
       configuration: request.configuration ?? {},
       roster: seats.map((seat) => ({ seatId: seat.id, role: seat.role })),
@@ -455,14 +456,18 @@ export class LocalArcadePlatform {
       summary: string
     })[]
   > {
-    const matches = [...this.matches.values()].filter(
-      (record) =>
-        record.visibility === 'public' &&
-        record.series.status !== 'complete' &&
-        !['canceled', 'expired', 'failed', 'invalidated'].includes(
-          record.runtime.getStatus(),
-        ),
-    )
+    // Reverse insertion order first so matches created within the same
+    // millisecond still appear newest-first under the stable timestamp sort.
+    const matches = [...this.matches.values()]
+      .reverse()
+      .filter(
+        (record) =>
+          record.visibility === 'public' &&
+          record.series.status !== 'complete' &&
+          !['canceled', 'expired', 'failed', 'invalidated'].includes(
+            record.runtime.getStatus(),
+          ),
+      )
     return Promise.all(
       matches
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
@@ -594,6 +599,7 @@ export class LocalArcadePlatform {
       record.runtime.getStatus() === 'lobby'
     ) {
       record.runtime.start()
+      this.startClock(record)
     }
     record.updatedAt = this.now().toISOString()
     await this.persist(record)
@@ -934,6 +940,7 @@ export class LocalArcadePlatform {
   async pauseMatch(matchId: string): Promise<MatchDescriptor> {
     const record = this.record(matchId)
     record.runtime.pause()
+    this.stopClock(matchId)
     record.updatedAt = this.now().toISOString()
     await this.notify(matchId)
     return this.describe(record)
@@ -942,6 +949,7 @@ export class LocalArcadePlatform {
   async resumeMatch(matchId: string): Promise<MatchDescriptor> {
     const record = this.record(matchId)
     record.runtime.resume()
+    this.startClock(record)
     record.updatedAt = this.now().toISOString()
     await this.notify(matchId)
     return this.describe(record)
@@ -973,6 +981,54 @@ export class LocalArcadePlatform {
     } finally {
       if (this.operations.get(matchId) === next) this.operations.delete(matchId)
     }
+  }
+
+  private startClock(record: MatchRecord): void {
+    this.stopClock(record.runtime.matchId)
+    const hz = record.manifest.spec.clock.simulationHz
+    if (
+      !hz ||
+      !record.runtime.game.advanceTick ||
+      record.runtime.getStatus() !== 'running'
+    )
+      return
+    const deltaMs = Math.max(1, Math.round(1000 / hz))
+    const networkHz = Math.min(hz, record.manifest.spec.clock.networkHz ?? hz)
+    const broadcastEvery = Math.max(1, Math.round(hz / networkHz))
+    let ticks = 0
+    const timer = setInterval(() => {
+      void this.exclusive(record.runtime.matchId, async () => {
+        if (!(await record.runtime.advanceTick(deltaMs))) {
+          this.stopClock(record.runtime.matchId)
+          return
+        }
+        ticks += 1
+        record.updatedAt = this.now().toISOString()
+        if (record.runtime.getStatus() === 'completed') {
+          this.stopClock(record.runtime.matchId)
+          this.finishRound(record)
+          if (
+            record.series.status === 'awaiting-restart' &&
+            record.series.restartPolicy === 'automatic'
+          )
+            await this.advanceRound(record)
+          await this.persist(record)
+        } else if (ticks % hz === 0) await this.persist(record)
+        if (
+          record.runtime.getStatus() === 'completed' ||
+          ticks % broadcastEvery === 0
+        )
+          await this.notify(record.runtime.matchId)
+      }).catch(() => this.stopClock(record.runtime.matchId))
+    }, deltaMs)
+    timer.unref()
+    this.clocks.set(record.runtime.matchId, timer)
+  }
+
+  private stopClock(matchId: string): void {
+    const timer = this.clocks.get(matchId)
+    if (timer) clearInterval(timer)
+    this.clocks.delete(matchId)
   }
   private async persist(record: MatchRecord) {
     if (!this.persistMatch) return
@@ -1088,6 +1144,7 @@ export class LocalArcadePlatform {
   }
 
   private async advanceRound(record: MatchRecord): Promise<void> {
+    this.stopClock(record.runtime.matchId)
     record.completedRounds.push(record.runtime.exportReplay())
     record.series.currentRound += 1
     record.series.status = 'active'
@@ -1121,6 +1178,7 @@ export class LocalArcadePlatform {
     }
     if (record.seats.every((seat) => seat.status !== 'open'))
       record.runtime.start()
+    this.startClock(record)
   }
 
   private sessionRecord(sessionId: string): SessionRecord {

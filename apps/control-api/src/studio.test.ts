@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { createApp } from './app.js'
 import { extractAgentJson } from './studio.js'
 import { MemoryDocumentStore } from './store.js'
-import { emptyBrowserDocument, starterDocument } from '@common-arcade/studio'
+import {
+  emptyBrowserDocument,
+  exampleDocument,
+  starterDocument,
+} from '@common-arcade/studio'
 
 describe('hosted Studio boundary', () => {
   const headers = {
@@ -453,7 +457,7 @@ describe('worked example project', () => {
     const first = await (await app.request('/v1/projects', { headers })).json()
     expect(first.projects).toHaveLength(1)
     const example = first.projects[0]
-    expect(example.document).toEqual(starterDocument)
+    expect(example.document).toEqual(exampleDocument)
     // Listing again must not accumulate copies, including from a second instance.
     const other = createApp({ store, allowLocalAuth: true, logRequests: false })
     expect(
@@ -472,7 +476,8 @@ describe('worked example project', () => {
     const html = await (
       await app.request(`/v1/studio/releases/${release.id}/preview`)
     ).text()
-    expect(html).toContain('data-arcade-node="cell:0"')
+    expect(html).toContain('<title>Tic-tac-toe</title>')
+    expect(html).toContain('window.arcade')
   })
   it('leaves an account that already has projects untouched', async () => {
     const { app } = setup()

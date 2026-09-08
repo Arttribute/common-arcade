@@ -17,6 +17,10 @@ export {
   type GridPlacementRuleSet,
   type GridPlacementState,
 } from './declarative.js'
+export {
+  createSandboxedScriptGame,
+  type SandboxedScriptRuleSet,
+} from './sandboxed-script.js'
 
 export const MATCH_RUNTIME_VERSION = '0.1.0-v0alpha1' as const
 
@@ -39,6 +43,16 @@ export interface GameActionContext {
   readonly stateSequence: number
   readonly eventSequence: number
   readonly authoritativeTime: string
+  readonly elapsedMs: number
+}
+
+export interface GameTickContext {
+  readonly matchId: string
+  readonly tick: number
+  readonly stateSequence: number
+  readonly eventSequence: number
+  readonly elapsedMs: number
+  readonly deltaMs: number
 }
 
 export interface GameEventDraft {
@@ -74,6 +88,7 @@ export interface GameDefinition<State, Action> {
     action: Action,
     context: GameActionContext,
   ): GameTransition<State>
+  advanceTick?(state: State, context: GameTickContext): GameTransition<State>
   serializeState(state: State): JsonValue
   projectObservation(
     state: State,
@@ -100,6 +115,7 @@ export interface RuntimeSnapshot<State> {
   readonly ownershipEpoch: number
   readonly state: State
   readonly stateHash: string
+  readonly elapsedMs: number
   readonly result?: JsonValue
 }
 
@@ -139,6 +155,8 @@ export class AuthoritativeMatch<State, Action> {
   private ownershipEpoch: number
   private stateSequence = 0
   private eventSequence = 0
+  private tickSequence = 0
+  private elapsedMs = 0
   private state: State
   private stateHash = ''
   private result: JsonValue | undefined
@@ -146,6 +164,7 @@ export class AuthoritativeMatch<State, Action> {
   private readonly events: MatchEvent[] = []
   private readonly checkpoints: ReplayCheckpoint[] = []
   private readonly commands: Replay['commands'][number][] = []
+  private readonly timeline: NonNullable<Replay['timeline']> = []
   private readonly actionResults = new Map<string, ActionResult>()
   private operation = Promise.resolve()
 
@@ -198,11 +217,7 @@ export class AuthoritativeMatch<State, Action> {
       now,
     })
     match.start()
-    for (const command of replay.commands)
-      await match.submitAction(
-        { ...command.action, controlLease: 'recovery' },
-        ownershipEpoch,
-      )
+    await replayInto(match, replay, 'recovery')
     match.events.splice(0, match.events.length, ...replay.events)
     match.commands.splice(0, match.commands.length, ...replay.commands)
     match.checkpoints.splice(0, match.checkpoints.length, ...replay.checkpoints)
@@ -264,6 +279,7 @@ export class AuthoritativeMatch<State, Action> {
       ownershipEpoch: this.ownershipEpoch,
       state: this.state,
       stateHash: this.stateHash,
+      elapsedMs: this.elapsedMs,
       ...(this.result === undefined ? {} : { result: this.result }),
     }
   }
@@ -282,7 +298,7 @@ export class AuthoritativeMatch<State, Action> {
       schemaVersion: 'v0alpha1',
       ...(this.game.mode === 'turn-based'
         ? { turn: this.stateSequence + 1 }
-        : { tick: this.stateSequence }),
+        : { tick: this.tickSequence }),
       ...projection,
       events: [],
       stateHash: this.stateHash,
@@ -309,6 +325,52 @@ export class AuthoritativeMatch<State, Action> {
       () => undefined,
     )
     return result
+  }
+
+  async advanceTick(deltaMs: number): Promise<boolean> {
+    const result = this.operation.then(() => this.advanceTickSerially(deltaMs))
+    this.operation = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    return result
+  }
+
+  private async advanceTickSerially(deltaMs: number): Promise<boolean> {
+    if (this.status !== 'running' || !this.game.advanceTick) return false
+    if (!Number.isInteger(deltaMs) || deltaMs < 1 || deltaMs > 1000)
+      throw new RangeError('Tick delta must be an integer from 1 to 1000 ms.')
+    const transition = this.game.advanceTick(this.state, {
+      matchId: this.matchId,
+      tick: this.tickSequence + 1,
+      stateSequence: this.stateSequence,
+      eventSequence: this.eventSequence,
+      elapsedMs: this.elapsedMs,
+      deltaMs,
+    })
+    this.state = transition.state
+    this.elapsedMs += deltaMs
+    this.tickSequence += 1
+    this.stateSequence += 1
+    this.appendEvents(transition.events)
+    this.result = this.game.getResult(this.state)
+    if (this.result !== undefined) {
+      this.status = 'completed'
+      this.appendEvents([
+        {
+          type: 'match.completed',
+          visibility: 'public',
+          payload: this.result,
+        },
+      ])
+    }
+    this.timeline.push({
+      kind: 'tick',
+      sequence: this.timeline.length + 1,
+      deltaMs,
+    })
+    await this.recordCheckpoint()
+    return true
   }
 
   private async submitActionSerially(
@@ -340,11 +402,27 @@ export class AuthoritativeMatch<State, Action> {
         `Match is ${this.status}`,
       )
     }
-    if (submission.basedOnStateSequence !== this.stateSequence) {
+    if (
+      (this.game.mode === 'turn-based' &&
+        submission.basedOnStateSequence !== this.stateSequence) ||
+      (this.game.mode !== 'turn-based' &&
+        submission.basedOnStateSequence > this.stateSequence)
+    ) {
       return this.reject(
         submission.actionId,
         'STALE_OBSERVATION',
         `Expected state sequence ${this.stateSequence}`,
+      )
+    }
+    if (
+      this.game.mode !== 'turn-based' &&
+      submission.targetTick !== undefined &&
+      submission.targetTick < this.tickSequence + 1
+    ) {
+      return this.reject(
+        submission.actionId,
+        'TOO_LATE',
+        `Expected target tick ${this.tickSequence + 1} or later`,
       )
     }
     if (
@@ -418,6 +496,11 @@ export class AuthoritativeMatch<State, Action> {
       action: withoutControlLease(submission),
       result,
     })
+    this.timeline.push({
+      kind: 'action',
+      sequence: this.timeline.length + 1,
+      commandSequence: this.commands.length,
+    })
     return result
   }
 
@@ -433,6 +516,7 @@ export class AuthoritativeMatch<State, Action> {
       configuration: this.configuration,
       roster: this.roster.map((entry) => ({ ...entry })),
       commands: [...this.commands],
+      timeline: [...this.timeline],
       events: [...this.events],
       checkpoints: [...this.checkpoints],
       finalStateHash: this.stateHash,
@@ -447,6 +531,7 @@ export class AuthoritativeMatch<State, Action> {
       stateSequence: this.stateSequence,
       eventSequence: this.eventSequence,
       authoritativeTime: this.now().toISOString(),
+      elapsedMs: this.elapsedMs,
     }
   }
 
@@ -476,7 +561,7 @@ export class AuthoritativeMatch<State, Action> {
         sequence: this.eventSequence,
         ...(this.game.mode === 'turn-based'
           ? { turn: this.stateSequence }
-          : { tick: this.stateSequence }),
+          : { tick: this.tickSequence }),
         type: event.type,
         visibility: event.visibility,
         ...(event.audienceId === undefined
@@ -497,6 +582,41 @@ export class AuthoritativeMatch<State, Action> {
       state: serialized,
       stateHash: this.stateHash,
     })
+  }
+}
+
+async function replayInto<State, Action>(
+  match: AuthoritativeMatch<State, Action>,
+  replay: Replay,
+  controlLease: string,
+  afterStep?: (stateSequence: number, stateHash: string) => void,
+): Promise<void> {
+  const commands = new Map(
+    replay.commands.map((command) => [command.sequence, command]),
+  )
+  const timeline =
+    replay.timeline ??
+    replay.commands.map((command, index) => ({
+      kind: 'action' as const,
+      sequence: index + 1,
+      commandSequence: command.sequence,
+    }))
+  for (const step of timeline) {
+    if (step.kind === 'tick') {
+      if (!(await match.advanceTick(step.deltaMs))) break
+    } else {
+      const command = commands.get(step.commandSequence)
+      if (!command) throw new Error('Replay timeline references no command.')
+      const result = await match.submitAction(
+        { ...command.action, controlLease },
+        match.getOwnershipEpoch(),
+      )
+      if (result.disposition !== 'accepted') break
+    }
+    if (afterStep) {
+      const snapshot = await match.snapshot()
+      afterStep(snapshot.stateSequence, snapshot.stateHash)
+    }
   }
 }
 
@@ -534,14 +654,12 @@ export async function verifyReplay<State, Action>(
   const actualHashes = new Map<number, string>()
   actualHashes.set(0, (await match.snapshot()).stateHash)
 
-  for (const command of replay.commands) {
-    const result = await match.submitAction(
-      { ...command.action, controlLease: 'replay-verification-lease' },
-      match.getOwnershipEpoch(),
-    )
-    if (result.disposition !== 'accepted') break
-    actualHashes.set(result.stateSequence, (await match.snapshot()).stateHash)
-  }
+  await replayInto(
+    match,
+    replay,
+    'replay-verification-lease',
+    (stateSequence, stateHash) => actualHashes.set(stateSequence, stateHash),
+  )
 
   const mismatches = replay.checkpoints.flatMap((checkpoint) => {
     const actual = actualHashes.get(checkpoint.stateSequence)

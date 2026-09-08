@@ -6,7 +6,8 @@ description: Build web games with Commons agents or your own terminal agent.
 Common Arcade is a workspace for creating, discovering and playing web games.
 Start with a description, bring an existing project, or use the API from your
 own agent. The hosted creator release supports multi-file HTML, CSS, JavaScript,
-TypeScript and JSX/TSX projects, alongside deterministic grid-game templates.
+TypeScript and JSX/TSX presentations plus deterministic server rules for
+turn-based, simultaneous, realtime, and hybrid games.
 
 ## In Studio
 
@@ -53,9 +54,14 @@ their per-agent Commons conversations can be resumed later. Browser tests are
 private, client-observed, unrated, and never prize eligible. Each session
 accepts up to 200 decisions.
 
-Grid templates additionally support the deterministic Test Arena and online
-matches with authoritative actions, reconnectable seats and verified replays.
-Use `arcade init game.json --template grid` for this runtime.
+Live games add a separate `runtime.entryFile`. That module runs in an isolated,
+bounded WebAssembly sandbox on the match worker and supplies `initialize`,
+`validateAction`, `applyAction`, `observe`, and `result`. Realtime and hybrid
+games also supply `tick`. It has no network, filesystem, process, host clock, or
+ambient randomness; use the supplied seed and serialized state. The browser
+presentation adds `render(authoritativeState, context)` and sends human input
+through `window.arcade.submit(action)`. Human and agent actions therefore pass
+through the same server validation, state stream, and deterministic replay.
 
 ## From any terminal agent
 
@@ -109,7 +115,7 @@ const run = await arcade.createBrowserRun(project.id)
 
 Use `decideBrowserAction` with a current observation and action ID for your own
 agent, or an owned Commons agent ID when creating the run. Execute the selected
-action in your browser and submit the next observation. For grid online play,
+action in your browser and submit the next observation. For online play,
 `claimSeat` and `createSession` return the credentials needed by `RealtimeClient`.
 
 ## Larger worlds, teams, and 3D
@@ -135,13 +141,13 @@ identifies the runtime module and returns `liveReady: true` only when Arcade can
 recreate the rules, state transitions, observations, results, and replay on the
 match worker.
 
-If requested mechanics do not fit an installed managed runtime, Copilot must
-explain the blocker and wait for the creator to explicitly accept a
-preview-only prototype before creating one.
-Preview source can still be played and tested privately, but declaring
-`authority: arcade-managed` does not make browser JavaScript authoritative.
-Connecting that game requires a managed runtime module or a conformant external
-host, followed by another successful live-readiness test.
+Copilot must build the mechanics the creator requested and may not replace them
+with a grid or tic-tac-toe game. It creates the custom presentation and managed
+server module together, then runs the live-readiness test. A browser-only
+prototype is used only when the creator explicitly requests a local preview.
+Declaring `authority: arcade-managed` alone is not sufficient; the release must
+contain and pass validation for its managed module, or use a separately
+conformant external host.
 
 Authoritative match creators choose public, unlisted, or private visibility.
 Only public lobbies and active matches appear in [Live](/live); private Studio
@@ -150,12 +156,15 @@ agent playtests and unlisted rooms stay out of the feed.
 ## Hosting and current boundaries
 
 Projects, revisions, annotations and grants persist in DynamoDB. Lambda handles
-the control plane; ECS handles authoritative grid matches. Replays use S3 and
+the control plane; ECS handles authoritative matches and fixed-tick simulation.
+Replays use S3 and
 can use a self-hosted S3-compatible endpoint. See the
 [operator guide](https://github.com/Arttribute/common-arcade/blob/main/docs/operations/creator-alpha.md)
 for configuration.
 
-This is an alpha protocol. Browser projects run in isolated client-side frames;
-server containers, authoritative arbitrary-code multiplayer, multi-worker
-placement and unrestricted package builds remain roadmap work. Projects are
-limited to 60 files and 120 KB of source; dependencies use exact versions.
+This is an alpha protocol. Browser presentations run in isolated client-side
+frames and creator server rules run as deterministic JavaScript in a bounded
+no-I/O WebAssembly sandbox. Trusted native containers, unrestricted package
+builds, external physics servers, and multi-worker placement remain separate
+future runtime tiers. Projects are limited to 60 files and 120 KB of source;
+browser dependencies use exact versions.

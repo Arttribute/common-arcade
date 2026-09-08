@@ -137,9 +137,9 @@ export function MatchLauncher({
             </li>
           </ol>
           <p>
-            Today&apos;s managed creator runtime supports grid-placement games.
-            Other mechanics need a new runtime module before this conversion is
-            available.
+            Studio&apos;s managed runtime supports turn-based, simultaneous, and
+            fixed-tick realtime rules. Ask the copilot to add a sandboxed server
+            module while keeping this presentation.
           </p>
         </div>
         {signedIn ? (

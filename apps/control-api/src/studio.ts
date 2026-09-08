@@ -8,8 +8,9 @@ import {
   gameDocumentSchema,
   releaseManifest,
   emptyBrowserDocument,
-  starterDocument,
+  exampleDocument,
   isBrowserGame,
+  isManagedBrowserGame,
   defaultGameDistribution,
   type StudioProject,
   type StudioRelease,
@@ -94,7 +95,7 @@ type RunRecord = StoredDocument & {
   createdAt: string
 }
 const COPILOT_INSTRUCTIONS =
-  'You are a Common Arcade copilot. Use the assigned build-common-arcade-games skill and the supplied Arcade tools. Read the current project before editing. Default to an Arcade-managed, authoritative, live-ready game and use arcade_write_live_game whenever the requested mechanics fit a supported managed runtime. A game is live-ready only when Arcade—not a browser—owns rules, time, state, action validation, observations, results, and deterministic replay. Never describe a browser-only project or an arcade-managed capability declaration as live-ready. Use arcade_write_preview_game only after the user explicitly accepts a private/unrated preview. If the user asks for a live game whose mechanics are not supported by an installed managed runtime, do not silently create a browser preview: explain the hosting blocker and ask whether a preview-only prototype is acceptable. Set acceptPreviewOnly true only after that acceptance. Every browser preview must declare its play mode and seat bounds and synchronously expose window.arcade.seats(), observe(seatId), actions(seatId), and step(actionId, seatId) with stable IDs and JSON-serializable observations. Realtime observations should include actionable derived timing such as time-to-impact rather than only raw positions. Declare capabilities for persistent worlds, teams, 3D presentation, and future payment hooks when needed; declarations do not activate hosting or payments. Blender assets must be exported to a web runtime format such as glTF/GLB. After every write, run arcade_test_game. Do not report a game as ready for live sessions unless its test result says liveReady true. Use arcade_publish_game only when the user asks to publish or make the game live; it refuses preview-only projects. Report only actions that tools confirm.'
+  'You are a Common Arcade copilot. Use the assigned build-common-arcade-games skill and the supplied Arcade tools. Read the current project before editing. Build the game the creator actually requested—never substitute a grid, line-building, or tic-tac-toe game unless they explicitly asked for one. If older skill text says live-managed games are grid-only, that statement is obsolete and this contract supersedes it. arcade_write_live_game accepts any genre through a custom web presentation plus a sandboxed authoritative server module, including realtime action, racing, sports, strategy, cards, simulations, teams, and 2D/3D games. The browser files render the game and expose window.arcade.seats(), observe(seatId), actions(seatId), step(action, seatId), render(authoritativeState, context), and call window.arcade.submit(action) from human controls. The separate server module assigns globalThis.arcadeGame with pure synchronous initialize(context), validateAction(state, action, context), applyAction(state, action, context), observe(state, seatId, context), result(state), and—for realtime/hybrid games—tick(state, context). Every state, action, observation, event, and result must be JSON-serializable. Server functions receive only their arguments; use context.elapsedMs, context.deltaMs, and the initialization seed, never Date, network, filesystem, process, or Math.random. Each transition returns {state,events}; each event has a dotted type, visibility, and payload. result returns null until terminal. Realtime observations should include actionable derived timing such as time-to-impact. Use arcade_write_preview_game only when the creator explicitly asks for a local non-live prototype. Declare persistent worlds, teams, 3D presentation, and future payment hooks when relevant. Blender assets must be exported to glTF/GLB. After every write, run arcade_test_game and repair failures. Use arcade_publish_game only when asked to publish or make live. Report only actions confirmed by tools.'
 const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_read_project',
@@ -105,7 +106,7 @@ const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_write_live_game',
     description:
-      'Create or replace the project with a validated Arcade-managed authoritative game that can host public, unlisted, or private live sessions. This is the default write tool. The current managed authoring runtime is configurable grid placement; use the preview tool only when the requested mechanics cannot be represented here.',
+      'Create any genre as a live-ready Arcade game. Supply complete browser presentation files and a separate deterministic server rules file. The server file runs authoritatively in a bounded no-I/O WebAssembly sandbox and is the source of truth for every live session.',
     parameters: {
       type: 'object',
       properties: {
@@ -117,33 +118,85 @@ const ARCADE_COPILOT_TOOLS = [
           type: 'string',
           description: 'Short description of the playable game.',
         },
-        boardSize: { type: 'integer', minimum: 3, maximum: 8 },
-        winLength: { type: 'integer', minimum: 3, maximum: 8 },
-        marks: {
+        entryFile: {
+          type: 'string',
+          description: 'Browser HTML entry file, usually index.html.',
+        },
+        dependencies: {
+          type: 'object',
+          description:
+            'Optional browser packages mapped to exact semantic versions.',
+          additionalProperties: { type: 'string' },
+        },
+        capabilities: {
+          type: 'object',
+          description:
+            'Optional world, presentation, team, and future economy declarations using the Arcade browser-game capability contract.',
+        },
+        play: {
+          type: 'object',
+          properties: {
+            mode: {
+              type: 'string',
+              enum: ['turn-based', 'simultaneous', 'realtime', 'hybrid'],
+            },
+            seats: {
+              type: 'object',
+              properties: {
+                min: { type: 'integer', minimum: 1, maximum: 16 },
+                max: { type: 'integer', minimum: 1, maximum: 16 },
+                default: { type: 'integer', minimum: 1, maximum: 16 },
+              },
+              required: ['min', 'max', 'default'],
+              additionalProperties: false,
+            },
+            maxDecisionsPerSecond: {
+              type: 'integer',
+              minimum: 1,
+              maximum: 20,
+            },
+          },
+          required: ['mode', 'seats', 'maxDecisionsPerSecond'],
+          additionalProperties: false,
+        },
+        runtime: {
+          type: 'object',
+          description:
+            'Authoritative deterministic server module. entryFile must assign globalThis.arcadeGame.',
+          properties: {
+            kind: { type: 'string', enum: ['sandboxed-script'] },
+            entryFile: { type: 'string' },
+            tickRate: { type: 'integer', minimum: 1, maximum: 60 },
+            memoryMiB: { type: 'integer', minimum: 4, maximum: 32 },
+            timeoutMs: { type: 'integer', minimum: 1, maximum: 50 },
+          },
+          required: ['kind', 'entryFile', 'tickRate', 'memoryMiB', 'timeoutMs'],
+          additionalProperties: false,
+        },
+        files: {
           type: 'array',
+          description:
+            'All browser presentation files plus the authoritative runtime entry file.',
           minItems: 2,
-          maxItems: 2,
-          items: { type: 'string', minLength: 1, maxLength: 3 },
-        },
-        accent: {
-          type: 'string',
-          description: 'Six-digit hexadecimal accent color.',
-          pattern: '^#[0-9a-fA-F]{6}$',
-        },
-        background: {
-          type: 'string',
-          description: 'Six-digit hexadecimal background color.',
-          pattern: '^#[0-9a-fA-F]{6}$',
+          maxItems: 60,
+          items: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+              content: { type: 'string' },
+            },
+            required: ['path', 'content'],
+            additionalProperties: false,
+          },
         },
       },
       required: [
         'title',
         'description',
-        'boardSize',
-        'winLength',
-        'marks',
-        'accent',
-        'background',
+        'entryFile',
+        'play',
+        'runtime',
+        'files',
       ],
       additionalProperties: false,
     },
@@ -490,8 +543,8 @@ export function createStudioApi(
       id: projectId,
       ownerId: owner,
       revision: 1,
-      digest: await documentDigest(starterDocument),
-      document: starterDocument,
+      digest: await documentDigest(exampleDocument),
+      document: exampleDocument,
       annotations: [],
       createdAt: now,
       updatedAt: now,
@@ -641,6 +694,8 @@ export function createStudioApi(
     if (expected.parse(c.req.header('If-Match')) !== project.revision)
       throw new StoreConflict()
     compilePresentation(project.document)
+    if (assessLiveReadiness(project.document).liveReady)
+      await smokeTestRuntime(project.document, project.digest)
     const releaseId = `rel_${project.id.slice(4)}_${project.revision}_${project.digest.slice(7, 19)}`
     const existing = await store.get<ReleaseRecord>('releases', releaseId)
     if (existing) return c.json(existing.release)
@@ -779,7 +834,7 @@ export function createStudioApi(
       runId: r.id,
       matchId: r.id.replace('tst_', 'mat_'),
       seed: r.seed,
-      game: compileGame(r.project.document, releaseId, r.project.digest),
+      game: await compileGame(r.project.document, releaseId, r.project.digest),
       controllers: policies.map((policy, index) => ({
         seatId: `sea_${r.id}_${index}`,
         policy,
@@ -1371,7 +1426,7 @@ export function createStudioApi(
         attachments: input.attachments,
         model: input.model,
         computerRequest: { enabled: true },
-        cliContext: `Common Arcade Studio project ${job.projectId} is connected through the supplied arcade_* tools. Read it first. Build live-first: use arcade_write_live_game for the supported authoritative runtime, then require arcade_test_game to return liveReady true. A browser preview requires explicit acceptPreviewOnly acknowledgement and must never be described as live-ready.`,
+        cliContext: `Common Arcade Studio project ${job.projectId} is connected through the supplied arcade_* tools. Read it first. Build the requested mechanics with arcade_write_live_game using browser presentation files plus a sandboxed authoritative server module; never replace the request with a grid game. Require arcade_test_game to return liveReady true.`,
         cliTools: ARCADE_COPILOT_TOOLS,
       })) {
         if (
@@ -1482,17 +1537,19 @@ export function createStudioApi(
       }
       if (tool === 'arcade_write_live_game') {
         const record = await owned(p.id, projectId)
-        const document = gameDocumentSchema.parse(args)
-        if (isBrowserGame(document))
+        const document = gameDocumentSchema.parse({ kind: 'browser', ...args })
+        if (!isManagedBrowserGame(document))
           throw new Error(
-            'The live-game tool accepts only Arcade-managed authoritative documents.',
+            'A live game needs browser presentation files and a sandboxed authoritative runtime.',
           )
-        compileGame(document, 'rel_validation', await documentDigest(document))
+        assertAgentPlayable(document, true)
+        const digest = await documentDigest(document)
+        await smokeTestRuntime(document, digest)
         compilePresentation(document)
         const project = {
           ...record.project,
           document,
-          digest: await documentDigest(document),
+          digest,
           revision: record.project.revision + 1,
           updatedAt: new Date().toISOString(),
         }
@@ -1503,6 +1560,7 @@ export function createStudioApi(
           projectId,
           revision: project.revision,
           title: document.title,
+          fileCount: document.files.length,
           liveReadiness: assessLiveReadiness(document),
         })
       }
@@ -1539,11 +1597,14 @@ export function createStudioApi(
       }
       if (tool === 'arcade_test_game') {
         const { project } = await owned(p.id, projectId)
-        assertAgentPlayable(project.document)
-        const compiled = compilePresentation(project.document)
         const liveReadiness = assessLiveReadiness(project.document)
+        assertAgentPlayable(
+          project.document,
+          liveReadiness.liveReady && isManagedBrowserGame(project.document),
+        )
+        const compiled = compilePresentation(project.document)
         if (liveReadiness.liveReady)
-          compileGame(project.document, 'rel_validation', project.digest)
+          await smokeTestRuntime(project.document, project.digest)
         return JSON.stringify({
           ok: true,
           projectId,
@@ -1573,6 +1634,7 @@ export function createStudioApi(
             `This project is preview-only and cannot be made live: ${liveReadiness.blockers.join(' ')}`,
           )
         compilePresentation(project.document)
+        await smokeTestRuntime(project.document, project.digest)
         const releaseId = `rel_${project.id.slice(4)}_${project.revision}_${project.digest.slice(7, 19)}`
         const existing = await store.get<ReleaseRecord>('releases', releaseId)
         if (!existing) {
@@ -2041,7 +2103,10 @@ function copilotToolLabel(tool: string) {
   )
 }
 
-function assertAgentPlayable(document: StudioProject['document']) {
+function assertAgentPlayable(
+  document: StudioProject['document'],
+  live = false,
+) {
   if (!isBrowserGame(document)) return
   if (!document.play)
     throw new Error(
@@ -2057,6 +2122,12 @@ function assertAgentPlayable(document: StudioProject['document']) {
     ['observe', /\bobserve\b/],
     ['actions', /\bactions\b/],
     ['step', /\bstep\b/],
+    ...(live
+      ? ([
+          ['render', /\brender\b/],
+          ['submit', /\bsubmit\b/],
+        ] as const)
+      : []),
   ].flatMap(([name, pattern]) =>
     (pattern as RegExp).test(source) ? [] : [name as string],
   )
@@ -2064,6 +2135,65 @@ function assertAgentPlayable(document: StudioProject['document']) {
     throw new Error(
       `Agent play bridge is incomplete. Add ${missing.join(', ')} synchronously before the entry module finishes.`,
     )
+}
+
+async function smokeTestRuntime(
+  document: StudioProject['document'],
+  digest: string,
+) {
+  const game = await compileGame(document, 'rel_validation', digest)
+  const seatCount = isBrowserGame(document)
+    ? (document.play?.seats.default ?? 2)
+    : 2
+  const roster = Array.from({ length: seatCount }, (_, index) => ({
+    seatId: `sea_validation_${index + 1}`,
+    role: 'player',
+  }))
+  let state = game.initialize({
+    matchId: 'mat_runtime_validation',
+    seed: 'arcade-validation-seed',
+    configuration: {},
+    roster,
+  })
+  game.serializeState(state)
+  game.getResult(state)
+  let stateSequence = 0
+  for (const seat of roster) {
+    const context = {
+      matchId: 'mat_runtime_validation',
+      seatId: seat.seatId,
+      stateSequence,
+      eventSequence: 0,
+      authoritativeTime: '2026-01-01T00:00:00.000Z',
+      elapsedMs: 0,
+    }
+    const observation = game.projectObservation(state, seat.seatId, context)
+    const candidate = observation.legalActions[0]
+    if (candidate === undefined) continue
+    const action = game.parseAction(candidate)
+    if (game.validateAction(state, action, context) !== undefined) continue
+    const applied = game.applyAction(state, action, context)
+    state = applied.state
+    stateSequence += 1
+    game.serializeState(state)
+    game.getResult(state)
+    break
+  }
+  if (game.advanceTick) {
+    const tickRate = isManagedBrowserGame(document)
+      ? document.runtime.tickRate
+      : 30
+    state = game.advanceTick(state, {
+      matchId: 'mat_runtime_validation',
+      tick: 1,
+      stateSequence,
+      eventSequence: 0,
+      elapsedMs: 0,
+      deltaMs: Math.max(1, Math.round(1000 / tickRate)),
+    }).state
+    game.serializeState(state)
+    game.getResult(state)
+  }
 }
 
 export class CommonsServiceError extends Error {

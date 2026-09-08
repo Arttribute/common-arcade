@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from './app.js'
 import { MemoryDocumentStore } from './store.js'
-import { emptyBrowserDocument, starterDocument } from '@common-arcade/studio'
+import { emptyBrowserDocument } from '@common-arcade/studio'
 
 process.env.COMMONS_IDENTITY_ISSUER = 'https://auth.agentcommons.io/api/auth'
 afterEach(() => vi.unstubAllGlobals())
@@ -14,11 +14,38 @@ const headers = {
 const rawPrompt =
   'Create a live-ready four-in-a-row strategy game for two players.'
 const liveGame = {
-  ...starterDocument,
+  kind: 'browser' as const,
   title: 'Live Lines',
   description: 'Two players race to place four marks in a row.',
-  boardSize: 5,
-  winLength: 4,
+  entryFile: 'index.html',
+  play: {
+    mode: 'turn-based' as const,
+    seats: { min: 2, max: 2, default: 2 },
+    maxDecisionsPerSecond: 2,
+  },
+  runtime: {
+    kind: 'sandboxed-script' as const,
+    entryFile: 'server.js',
+    tickRate: 30,
+    memoryMiB: 8,
+    timeoutMs: 20,
+  },
+  files: [
+    {
+      path: 'index.html',
+      content: '<main id="game"></main><script src="main.js"></script>',
+    },
+    {
+      path: 'main.js',
+      content:
+        "window.arcade={seats:()=>[],observe:()=>({}),actions:()=>[],step:()=>false,render:(state)=>{document.querySelector('#game').textContent=JSON.stringify(state)},submit:(action)=>window.arcade.submit(action)};",
+    },
+    {
+      path: 'server.js',
+      content:
+        "globalThis.arcadeGame={initialize:c=>({roster:c.roster,turn:0,moves:[]}),validateAction:(s,a,c)=>s.roster[s.turn%2].seatId===c.seatId&&a&&a.type==='place'?null:'Not your turn',applyAction:(s,a)=>({state:{...s,turn:s.turn+1,moves:s.moves.concat([a.cell])},events:[{type:'game.move',visibility:'public',payload:a}]}),observe:(s,id)=>({visibleState:s,legalActions:s.roster[s.turn%2].seatId===id?[{type:'place',cell:0}]:[]}),result:s=>s.turn>=4?{winnerSeatId:s.roster[0].seatId}:null};",
+    },
+  ],
 }
 
 function sse(events: unknown[]) {
@@ -75,8 +102,9 @@ function stubCommons(options: { outage?: boolean } = {}) {
         },
       ])
     }
-    if (url.endsWith('/v1/agents/cli-tool-result'))
+    if (url.endsWith('/v1/agents/cli-tool-result')) {
       return Response.json({ ok: true })
+    }
     return Response.json({ data: { agentId: 'agt_copilot', name: 'Copilot' } })
   })
   return calls

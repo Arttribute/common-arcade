@@ -90,6 +90,7 @@ function installArcadeSeats(){
   const observe=typeof api.observe==='function'?api.observe.bind(api):()=>({text:document.body.innerText.slice(0,8000)});
   const actions=typeof api.actions==='function'?api.actions.bind(api):()=>[];
   const step=typeof api.step==='function'?api.step.bind(api):undefined;
+  const render=typeof api.render==='function'?api.render.bind(api):undefined;
   const actionLookup=new Map;
   api.seats=()=>publicSeats;
   api.observe=()=>{
@@ -113,6 +114,17 @@ function installArcadeSeats(){
     if(selected)return step(selected.actionId,selected.seatId);
     const match=/^seat:([^:]+):(.*)$/.exec(String(encoded));
     return match?step(decodeURIComponent(match[2]),decodeURIComponent(match[1])):step(encoded);
+  };
+  let authoritative=false;
+  window.addEventListener('message',event=>{
+    if(event.source!==window.parent||event.data?.type!=='arcade.authoritative-state')return;
+    authoritative=true;
+    if(render)render(event.data.state,{observation:event.data.observation,match:event.data.match});
+    window.dispatchEvent(new CustomEvent('arcade:authoritative-state',{detail:event.data}));
+  });
+  api.submit=(action)=>{
+    if(authoritative){window.parent.postMessage({type:'arcade.action',action},'*');return true}
+    return step?step(action):false;
   };
   api.__multiSeatBridge=true;
 }

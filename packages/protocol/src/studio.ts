@@ -99,6 +99,20 @@ export const browserGameDocumentSchema = z
       })
       .strict()
       .optional(),
+    runtime: z
+      .object({
+        kind: z.literal('sandboxed-script'),
+        entryFile: z
+          .string()
+          .min(1)
+          .max(160)
+          .regex(/^[a-zA-Z0-9_./-]+$/),
+        tickRate: z.number().int().min(1).max(60).default(30),
+        memoryMiB: z.number().int().min(4).max(32).default(16),
+        timeoutMs: z.number().int().min(1).max(50).default(20),
+      })
+      .strict()
+      .optional(),
     capabilities: z
       .object({
         genres: z
@@ -234,6 +248,17 @@ export const browserGameDocumentSchema = z
         code: 'custom',
         message: 'Source file paths must be unique.',
       })
+    if (
+      d.runtime &&
+      (!d.files.some((f) => f.path === d.runtime?.entryFile) ||
+        !/\.[cm]?js$/.test(d.runtime.entryFile))
+    )
+      c.addIssue({
+        code: 'custom',
+        path: ['runtime', 'entryFile'],
+        message:
+          'Managed runtime entryFile must name a JavaScript file in this project.',
+      })
     if (new TextEncoder().encode(JSON.stringify(d)).byteLength > 120000)
       c.addIssue({
         code: 'custom',
@@ -251,6 +276,13 @@ export type GameDocument = z.infer<typeof gameDocumentSchema>
 export type GameDistribution = z.infer<typeof gameDistributionSchema>
 export function isBrowserGame(d: GameDocument): d is BrowserGameDocument {
   return 'kind' in d && d.kind === 'browser'
+}
+export function isManagedBrowserGame(
+  d: GameDocument,
+): d is BrowserGameDocument & {
+  runtime: NonNullable<BrowserGameDocument['runtime']>
+} {
+  return isBrowserGame(d) && d.runtime?.kind === 'sandboxed-script'
 }
 export const emptyBrowserDocument: BrowserGameDocument = {
   kind: 'browser',

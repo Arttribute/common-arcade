@@ -399,6 +399,26 @@ export const replaySchema = z
         result: actionResultSchema,
       }),
     ),
+    timeline: z
+      .array(
+        z.discriminatedUnion('kind', [
+          z
+            .object({
+              kind: z.literal('action'),
+              sequence: z.number().int().positive(),
+              commandSequence: z.number().int().positive(),
+            })
+            .strict(),
+          z
+            .object({
+              kind: z.literal('tick'),
+              sequence: z.number().int().positive(),
+              deltaMs: z.number().int().min(1).max(1000),
+            })
+            .strict(),
+        ]),
+      )
+      .optional(),
     events: z.array(matchEventSchema),
     checkpoints: z.array(replayCheckpointSchema).min(1),
     finalStateHash: digestSchema,

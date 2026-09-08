@@ -826,6 +826,29 @@ h3 {
   padding: 30px;
   background: #f3f2ef;
 }
+.live-game-frame {
+  width: 100%;
+  min-height: 430px;
+  flex: 1;
+  border: 0;
+  border-radius: 10px;
+  background: #fff;
+}
+.live-action-strip {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 12px;
+}
+.live-action-strip button {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  padding: 7px 10px;
+  font-size: 11px;
+}
 .stage-meta {
   width: min(340px, 100%);
   display: flex;
