@@ -68,8 +68,9 @@ describe('local one-time realtime tickets', () => {
     let now = 1_800_000_000_000
     const tickets = await authority(() => now)
     const token = await tickets.mint({ ...request, ttlSeconds: 1 })
+    const tampered = `${token.slice(0, -1)}${token.endsWith('x') ? 'y' : 'x'}`
     await expect(
-      tickets.redeem(`${token.slice(0, -1)}x`, {
+      tickets.redeem(tampered, {
         audience: 'arcade-realtime',
       }),
     ).rejects.toMatchObject({
