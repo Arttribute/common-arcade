@@ -32,6 +32,134 @@ async function setup() {
 }
 
 describe('local match worker boundary', () => {
+  it('hosts many independent sessions for one release and atomically fills an open lobby', async () => {
+    const platform = await LocalArcadePlatform.create({
+      ticketSecret: new Uint8Array(32).fill(3),
+    })
+    const first = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      idempotencyKey: 'independent-session-one',
+      ownerId: 'host_one',
+      visibility: 'public',
+      series: { maximumRounds: 3, restartPolicy: 'owner' },
+    })
+    const second = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      idempotencyKey: 'independent-session-two',
+      ownerId: 'host_two',
+      visibility: 'public',
+      series: { maximumRounds: 1, restartPolicy: 'owner' },
+    })
+    expect(first.id).not.toBe(second.id)
+    expect(
+      (await platform.listPublicMatches()).map((match) => match.id),
+    ).toEqual([second.id, first.id])
+
+    const [one, two] = await Promise.all([
+      platform.findOrCreateMatch({
+        releaseId: 'rel_tictactoe1',
+        idempotencyKey: 'queue-player-one',
+        actorId: 'queued_one',
+        controllerId: 'human_one',
+        controllerKind: 'human',
+        series: { maximumRounds: 3, restartPolicy: 'owner' },
+      }),
+      platform.findOrCreateMatch({
+        releaseId: 'rel_tictactoe1',
+        idempotencyKey: 'queue-player-two',
+        actorId: 'queued_two',
+        controllerId: 'agent_two',
+        controllerKind: 'agent',
+        series: { maximumRounds: 3, restartPolicy: 'owner' },
+      }),
+    ])
+    expect(one.match.id).toBe(first.id)
+    expect(two.match.id).toBe(first.id)
+    expect(two.match.status).toBe('running')
+    expect(one.seatId).not.toBe(two.seatId)
+    expect(two.match.seats.map((seat) => seat.controllerKind)).toEqual([
+      'human',
+      'agent',
+    ])
+  })
+
+  it('archives rounds and permits only one restart transition under contention', async () => {
+    const platform = await LocalArcadePlatform.create({
+      ticketSecret: new Uint8Array(32).fill(7),
+    })
+    const match = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      idempotencyKey: 'two-round-series',
+      ownerId: 'actor_one',
+      series: { maximumRounds: 2, restartPolicy: 'owner' },
+    })
+    const [first, second] = match.seats
+    await platform.claimSeat({
+      matchId: match.id,
+      seatId: first!.id,
+      actorId: 'actor_one',
+      controllerId: 'controller_one',
+    })
+    await platform.claimSeat({
+      matchId: match.id,
+      seatId: second!.id,
+      actorId: 'actor_two',
+      controllerId: 'controller_two',
+    })
+    const sessions = await Promise.all(
+      [
+        ['actor_one', 'controller_one', first!.id],
+        ['actor_two', 'controller_two', second!.id],
+      ].map(async ([actorId, controllerId, seatId]) => {
+        const ticket = await platform.createSession({
+          matchId: match.id,
+          mode: 'control',
+          actorId: actorId!,
+          controllerId: controllerId!,
+          seatId: seatId!,
+        })
+        return platform.connectWithTicket(ticket.ticket, match.id)
+      }),
+    )
+    for (const [index, cell] of [0, 3, 1, 4, 2].entries()) {
+      const session = sessions[index % 2]!
+      await platform.submitAction(session.sessionId, {
+        actionId: `act_series_${index}`,
+        matchId: match.id,
+        seatId: session.seatId!,
+        controlLease: session.controlLease!,
+        clientSequence: Math.floor(index / 2) + 1,
+        basedOnStateSequence: index,
+        targetTurn: index + 1,
+        payload: { type: 'place', cell },
+      })
+    }
+    expect(
+      (await platform.getMatch(match.id, 'actor_one')).series,
+    ).toMatchObject({
+      currentRound: 1,
+      status: 'awaiting-restart',
+      scores: { [first!.id]: 1 },
+    })
+    const attempts = await Promise.allSettled([
+      platform.restartRound(match.id, 'actor_one'),
+      platform.restartRound(match.id, 'actor_one'),
+    ])
+    expect(
+      attempts.filter((attempt) => attempt.status === 'fulfilled'),
+    ).toHaveLength(1)
+    expect(
+      (await platform.getMatch(match.id, 'actor_one')).series,
+    ).toMatchObject({
+      currentRound: 2,
+      status: 'active',
+    })
+    expect(platform.observation(sessions[0]!.sessionId).stateSequence).toBe(0)
+    expect(
+      platform.getRoundReplay(match.id, 1, 'actor_one').commands,
+    ).toHaveLength(5)
+  })
+
   it('lists only public matches and fences private rooms to their owner', async () => {
     const platform = await LocalArcadePlatform.create({
       ticketSecret: new Uint8Array(32).fill(4),

@@ -14,7 +14,7 @@ export default async function MatchPage({
       <Header />
       <section className="match-head shell">
         <span className="eyebrow">LIVE MATCH / {matchId}</span>
-        <h1>Tic-tac-toe</h1>
+        <h1>Live game session</h1>
       </section>
       <section className="shell">
         <PlayMatch

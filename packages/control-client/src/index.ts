@@ -16,6 +16,7 @@ import {
   matchDescriptorSchema,
   problemDetailsSchema,
   replaySchema,
+  seatIdSchema,
   type GameManifest,
   type GameReleaseDescriptor,
   type JsonValue,
@@ -55,7 +56,22 @@ export interface CreateMatchInput {
   readonly configuration?: JsonValue
   readonly seed?: string
   readonly visibility?: 'public' | 'unlisted' | 'private'
+  readonly lobby?: {
+    readonly joinPolicy?: 'open' | 'invite-only'
+    readonly allowedControllers?: readonly ('human' | 'agent')[]
+    readonly invitedActorIds?: readonly string[]
+    readonly spectating?: 'enabled' | 'disabled'
+  }
+  readonly series?: {
+    readonly maximumRounds?: number
+    readonly restartPolicy?: 'automatic' | 'owner' | 'unanimous'
+  }
   readonly idempotencyKey?: string
+}
+
+export interface FindMatchInput extends Omit<CreateMatchInput, 'visibility'> {
+  readonly controllerId: string
+  readonly controllerKind: 'human' | 'agent'
 }
 
 export interface LiveMatch extends MatchDescriptor {
@@ -74,6 +90,18 @@ export interface ClaimSeatInput {
   readonly matchId: string
   readonly seatId: string
   readonly controllerId: string
+  readonly controllerKind?: 'human' | 'agent'
+}
+
+export interface JoinMatchInput {
+  readonly matchId: string
+  readonly controllerId: string
+  readonly controllerKind: 'human' | 'agent'
+}
+
+export interface JoinedMatch {
+  readonly match: MatchDescriptor
+  readonly seatId: string
 }
 
 export interface CreateSessionInput {
@@ -203,6 +231,23 @@ export class ControlClient {
     )
   }
 
+  async findMatch(
+    input: FindMatchInput,
+    signal?: AbortSignal,
+  ): Promise<JoinedMatch> {
+    const { idempotencyKey = randomIdempotencyKey(), ...body } = input
+    const result = (await this.request('/v1/matchmaking', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body,
+      signal,
+    })) as { match: unknown; seatId: unknown }
+    return {
+      match: matchDescriptorSchema.parse(result.match),
+      seatId: seatIdSchema.parse(result.seatId),
+    }
+  }
+
   async listLiveMatches(signal?: AbortSignal): Promise<readonly LiveMatch[]> {
     const body = (await this.request('/v1/matches', { signal })) as {
       matches: Array<{
@@ -251,8 +296,47 @@ export class ControlClient {
     return matchDescriptorSchema.parse(
       await this.request(
         `/v1/matches/${encodeURIComponent(input.matchId)}/seats/${encodeURIComponent(input.seatId)}/claim`,
-        { method: 'POST', body: { controllerId: input.controllerId }, signal },
+        {
+          method: 'POST',
+          body: {
+            controllerId: input.controllerId,
+            controllerKind: input.controllerKind ?? 'human',
+          },
+          signal,
+        },
       ),
+    )
+  }
+
+  async joinMatch(
+    input: JoinMatchInput,
+    signal?: AbortSignal,
+  ): Promise<JoinedMatch> {
+    const { matchId, ...body } = input
+    const result = (await this.request(
+      `/v1/matches/${encodeURIComponent(matchId)}/join`,
+      {
+        method: 'POST',
+        body,
+        signal,
+      },
+    )) as { match: unknown; seatId: unknown }
+    return {
+      match: matchDescriptorSchema.parse(result.match),
+      seatId: seatIdSchema.parse(result.seatId),
+    }
+  }
+
+  async restartRound(
+    matchId: string,
+    signal?: AbortSignal,
+  ): Promise<MatchDescriptor> {
+    return matchDescriptorSchema.parse(
+      await this.request(`/v1/matches/${encodeURIComponent(matchId)}/restart`, {
+        method: 'POST',
+        body: {},
+        signal,
+      }),
     )
   }
 
@@ -272,6 +356,19 @@ export class ControlClient {
       await this.request(`/v1/matches/${encodeURIComponent(matchId)}/replay`, {
         signal,
       }),
+    )
+  }
+
+  async getRoundReplay(
+    matchId: string,
+    round: number,
+    signal?: AbortSignal,
+  ): Promise<Replay> {
+    return replaySchema.parse(
+      await this.request(
+        `/v1/matches/${encodeURIComponent(matchId)}/rounds/${round}/replay`,
+        { signal },
+      ),
     )
   }
 

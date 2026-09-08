@@ -7,9 +7,9 @@ import {
 } from '@aws-sdk/client-s3'
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import type { StudioProject } from '@common-arcade/protocol'
 import { IdentityError, type Principal } from './identity.js'
 import type { DocumentStore, StoredDocument } from './store.js'
+import { projectAccess } from './project-access.js'
 
 type Recording = StoredDocument & {
   id: string
@@ -37,15 +37,6 @@ export function createRecordingApi(
     region: process.env.AWS_REGION ?? 'eu-west-1',
   })
   const bucket = process.env.ARCADE_RECORDINGS_BUCKET
-  const owned = async (ownerId: string, id: string) => {
-    const record = await store.get<StoredDocument & { project: StudioProject }>(
-      `owner:${ownerId}`,
-      id,
-    )
-    if (!record)
-      throw new IdentityError(403, 'Project is unavailable to this account.')
-    return record.project
-  }
   const summary = ({ objectKey, ownerId, version, ...record }: Recording) =>
     record
   app.post('/v1/projects/:id/recordings', async (c) => {
@@ -53,7 +44,9 @@ export function createRecordingApi(
       c.req.header('Authorization'),
       'projects:write',
     )
-    const project = await owned(p.id, c.req.param('id'))
+    const project = (
+      await projectAccess(store, p.id, c.req.param('id'), 'test')
+    ).project
     if (!bucket)
       return c.json(
         {
@@ -137,7 +130,9 @@ export function createRecordingApi(
   })
   app.get('/v1/projects/:id/recordings', async (c) => {
     const p = await authenticate(c.req.header('Authorization'), 'projects:read')
-    const project = await owned(p.id, c.req.param('id'))
+    const project = (
+      await projectAccess(store, p.id, c.req.param('id'), 'view')
+    ).project
     return c.json({
       recordings: (await store.list<Recording>(`recordings:${project.id}`))
         .filter((r) => r.ready)
@@ -161,8 +156,7 @@ export function createRecordingApi(
         c.req.header('Authorization'),
         'projects:read',
       )
-      if (record.ownerId !== p.id)
-        throw new IdentityError(403, 'Recording is private.')
+      await projectAccess(store, p.id, record.projectId, 'view')
     }
     if (!bucket)
       return c.json({ detail: 'Recording storage is unavailable.' }, 503)

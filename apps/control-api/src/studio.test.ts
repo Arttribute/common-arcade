@@ -83,7 +83,22 @@ describe('hosted Studio boundary', () => {
   it('forks a published release into an isolated project owned by the caller', async () => {
     const { app } = setup()
     const original = await (
-      await app.request('/v1/projects', { method: 'POST', headers, body: '{}' })
+      await app.request('/v1/projects', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          document: {
+            ...starterDocument,
+            distribution: {
+              license: 'cc-by-4.0',
+              remixing: 'allowed',
+              attributionRequired: true,
+              commercialUse: true,
+              revenueShareBps: 500,
+            },
+          },
+        }),
+      })
     ).json()
     const release = await (
       await app.request(`/v1/projects/${original.id}/publish`, {
@@ -106,8 +121,37 @@ describe('hosted Studio boundary', () => {
       revision: 1,
       document: original.document,
       annotations: [],
-      forkedFrom: { releaseId: release.id, digest: release.digest },
+      forkedFrom: {
+        releaseId: release.id,
+        digest: release.digest,
+        originalCreatorId: 'creator_one',
+      },
     })
+  })
+  it('keeps published source immutable when its creator disables remixes', async () => {
+    const { app } = setup()
+    const original = await (
+      await app.request('/v1/projects', { method: 'POST', headers, body: '{}' })
+    ).json()
+    const release = await (
+      await app.request(`/v1/projects/${original.id}/publish`, {
+        method: 'POST',
+        headers: { ...headers, 'If-Match': '1' },
+        body: '{}',
+      })
+    ).json()
+    expect(
+      (
+        await app.request(`/v1/studio/releases/${release.id}/fork`, {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer local:challenger',
+            'Content-Type': 'application/json',
+          },
+          body: '{}',
+        })
+      ).status,
+    ).toBe(403)
   })
   it('binds annotations to exact revisions and keeps them private', async () => {
     const { app } = setup()
@@ -140,6 +184,105 @@ describe('hosted Studio boundary', () => {
       revision: 1,
       digest: p.digest,
     })
+  })
+  it('enforces owner-managed edit, test, and comment project grants', async () => {
+    const { app } = setup()
+    const project = await (
+      await app.request('/v1/projects', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ document: starterDocument }),
+      })
+    ).json()
+    const collaboratorHeaders = {
+      Authorization: 'Bearer local:team_member',
+      'Content-Type': 'application/json',
+    }
+    const grant = (permissions: ('test' | 'comment' | 'edit')[]) =>
+      app.request(`/v1/projects/${project.id}/collaborators`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          collaborators: [{ actorId: 'team_member', permissions }],
+        }),
+      })
+
+    expect((await grant(['test'])).status).toBe(200)
+    expect(
+      (
+        await app.request(`/v1/projects/${project.id}`, {
+          headers: collaboratorHeaders,
+        })
+      ).status,
+    ).toBe(200)
+    expect(
+      (
+        await app.request(`/v1/projects/${project.id}`, {
+          method: 'PUT',
+          headers: { ...collaboratorHeaders, 'If-Match': '1' },
+          body: JSON.stringify({ ...starterDocument, title: 'Not allowed' }),
+        })
+      ).status,
+    ).toBe(403)
+    expect(
+      (
+        await app.request(`/v1/projects/${project.id}/runs`, {
+          method: 'POST',
+          headers: collaboratorHeaders,
+          body: '{}',
+        })
+      ).status,
+    ).toBe(201)
+    expect(
+      (
+        await app.request(`/v1/projects/${project.id}/annotations`, {
+          method: 'POST',
+          headers: collaboratorHeaders,
+          body: JSON.stringify({
+            body: 'A note',
+            revision: 1,
+            x: 0.2,
+            y: 0.3,
+          }),
+        })
+      ).status,
+    ).toBe(403)
+
+    expect((await grant(['comment'])).status).toBe(200)
+    expect(
+      (
+        await app.request(`/v1/projects/${project.id}/annotations`, {
+          method: 'POST',
+          headers: collaboratorHeaders,
+          body: JSON.stringify({
+            body: 'A permitted note',
+            revision: 1,
+            x: 0.2,
+            y: 0.3,
+          }),
+        })
+      ).status,
+    ).toBe(200)
+
+    expect((await grant(['edit'])).status).toBe(200)
+    expect(
+      (
+        await app.request(`/v1/projects/${project.id}`, {
+          method: 'PUT',
+          headers: { ...collaboratorHeaders, 'If-Match': '1' },
+          body: JSON.stringify({ ...starterDocument, title: 'Team edit' }),
+        })
+      ).status,
+    ).toBe(200)
+    expect(
+      (
+        await app.request(`/v1/projects/${project.id}/publish`, {
+          method: 'POST',
+          headers: { ...collaboratorHeaders, 'If-Match': '2' },
+          body: '{}',
+        })
+      ).status,
+    ).toBe(403)
   })
   it('steps a pinned test after process replacement and prevents duplicate advancement', async () => {
     const { app, store } = setup()

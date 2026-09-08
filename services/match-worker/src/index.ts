@@ -30,6 +30,26 @@ interface MutableSeat {
   status: 'open' | 'claimed' | 'connected' | 'disconnected'
   actorId?: string
   controllerId?: string
+  controllerKind?: 'human' | 'agent'
+}
+
+export interface MatchLobbyRules {
+  readonly joinPolicy: 'open' | 'invite-only'
+  readonly allowedControllers: ('human' | 'agent')[]
+  readonly invitedActorIds: string[]
+  readonly spectating: 'enabled' | 'disabled'
+}
+
+export interface MatchSeriesRules {
+  readonly maximumRounds: number
+  readonly restartPolicy: 'automatic' | 'owner' | 'unanimous'
+}
+
+interface MatchSeriesState extends MatchSeriesRules {
+  currentRound: number
+  status: 'active' | 'awaiting-restart' | 'complete'
+  scores: Record<string, number>
+  restartVotes: string[]
 }
 
 export interface PersistedMatch {
@@ -44,18 +64,24 @@ export interface PersistedMatch {
   updatedAt: string
   ownerId?: string
   visibility?: 'public' | 'unlisted' | 'private'
+  lobby?: MatchLobbyRules
+  series?: MatchSeriesState
+  completedRounds?: Replay[]
 }
 
 interface MatchRecord {
   version: number
   idempotencyKey: string
-  readonly runtime: LocalMatchRuntime
+  runtime: LocalMatchRuntime
   readonly manifest: GameManifest
   readonly createdAt: string
   updatedAt: string
   readonly seats: MutableSeat[]
   readonly ownerId?: string
   readonly visibility: 'public' | 'unlisted' | 'private'
+  readonly lobby: MatchLobbyRules
+  readonly series: MatchSeriesState
+  readonly completedRounds: Replay[]
 }
 
 interface SessionRecord {
@@ -66,7 +92,7 @@ interface SessionRecord {
   readonly seatId?: string
   readonly controllerId?: string
   readonly controlLease?: string
-  readonly ownershipEpoch: number
+  ownershipEpoch: number
   connected: boolean
 }
 
@@ -77,6 +103,8 @@ export interface CreateMatchRequest {
   readonly idempotencyKey: string
   readonly ownerId?: string
   readonly visibility?: 'public' | 'unlisted' | 'private'
+  readonly lobby?: Partial<MatchLobbyRules>
+  readonly series?: Partial<MatchSeriesRules>
 }
 
 export interface ClaimSeatRequest {
@@ -84,6 +112,28 @@ export interface ClaimSeatRequest {
   readonly seatId: string
   readonly actorId: string
   readonly controllerId: string
+  readonly controllerKind?: 'human' | 'agent'
+}
+
+export interface JoinMatchRequest {
+  readonly matchId: string
+  readonly actorId: string
+  readonly controllerId: string
+  readonly controllerKind: 'human' | 'agent'
+}
+
+export interface FindMatchRequest extends Omit<
+  CreateMatchRequest,
+  'visibility' | 'ownerId'
+> {
+  readonly actorId: string
+  readonly controllerId: string
+  readonly controllerKind: 'human' | 'agent'
+}
+
+export interface JoinedMatch {
+  readonly match: MatchDescriptor
+  readonly seatId: string
 }
 
 export interface CreateSessionRequest {
@@ -139,6 +189,47 @@ export class LocalPlatformError extends Error {
 
 function opaqueId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replaceAll('-', '')}`
+}
+
+function lobbyRules(request: CreateMatchRequest): MatchLobbyRules {
+  const allowedControllers = request.lobby?.allowedControllers ?? [
+    'human',
+    'agent',
+  ]
+  if (allowedControllers.length === 0)
+    throw new LocalPlatformError(
+      'INVALID_REQUEST',
+      400,
+      'At least one controller type must be allowed.',
+    )
+  return {
+    joinPolicy: request.lobby?.joinPolicy ?? 'open',
+    allowedControllers: [...new Set(allowedControllers)],
+    invitedActorIds: [...new Set(request.lobby?.invitedActorIds ?? [])],
+    spectating: request.lobby?.spectating ?? 'enabled',
+  }
+}
+
+function seriesState(request: CreateMatchRequest): MatchSeriesState {
+  const maximumRounds = request.series?.maximumRounds ?? 1
+  if (
+    !Number.isInteger(maximumRounds) ||
+    maximumRounds < 1 ||
+    maximumRounds > 99
+  )
+    throw new LocalPlatformError(
+      'INVALID_REQUEST',
+      400,
+      'A series must contain between 1 and 99 rounds.',
+    )
+  return {
+    maximumRounds,
+    restartPolicy: request.series?.restartPolicy ?? 'owner',
+    currentRound: 1,
+    status: 'active',
+    scores: {},
+    restartVotes: [],
+  }
 }
 
 export class LocalArcadePlatform {
@@ -212,6 +303,20 @@ export class LocalArcadePlatform {
         updatedAt: saved.updatedAt,
         ownerId: saved.ownerId,
         visibility: saved.visibility ?? 'unlisted',
+        lobby:
+          saved.lobby ??
+          lobbyRules({
+            releaseId: saved.replay.releaseId,
+            idempotencyKey: saved.idempotencyKey,
+          }),
+        series: saved.series ?? {
+          ...seriesState({
+            releaseId: saved.replay.releaseId,
+            idempotencyKey: saved.idempotencyKey,
+          }),
+          status: saved.status === 'completed' ? 'complete' : 'active',
+        },
+        completedRounds: saved.completedRounds ?? [],
       }
       await platform.persist(record)
       platform.matches.set(saved.replay.matchId, record)
@@ -295,10 +400,17 @@ export class LocalArcadePlatform {
       .toString('hex')
       .slice(0, 32)}`
     const suffix = matchId.slice(4)
-    const seats: MutableSeat[] = [
-      { id: `sea_${suffix}_1`, role: 'player', status: 'open' },
-      { id: `sea_${suffix}_2`, role: 'player', status: 'open' },
-    ]
+    const declaredRoles = manifest.spec.seats.roles.flatMap((role) =>
+      Array.from({ length: role.count }, () => ({
+        role: role.id,
+        ...(role.team === undefined ? {} : { team: role.team }),
+      })),
+    )
+    const seats: MutableSeat[] = declaredRoles.map((seat, index) => ({
+      id: `sea_${suffix}_${index + 1}`,
+      role: seat.role,
+      status: 'open',
+    }))
     const runtime = await AuthoritativeMatch.create({
       matchId,
       game: custom
@@ -320,6 +432,9 @@ export class LocalArcadePlatform {
       seats,
       ownerId: request.ownerId,
       visibility: request.visibility ?? 'unlisted',
+      lobby: lobbyRules(request),
+      series: seriesState(request),
+      completedRounds: [],
     }
     await this.persist(record)
     this.matches.set(matchId, record)
@@ -343,7 +458,8 @@ export class LocalArcadePlatform {
     const matches = [...this.matches.values()].filter(
       (record) =>
         record.visibility === 'public' &&
-        !['completed', 'canceled', 'expired', 'failed', 'invalidated'].includes(
+        record.series.status !== 'complete' &&
+        !['canceled', 'expired', 'failed', 'invalidated'].includes(
           record.runtime.getStatus(),
         ),
     )
@@ -359,6 +475,55 @@ export class LocalArcadePlatform {
     )
   }
 
+  async findOrCreateMatch(request: FindMatchRequest): Promise<JoinedMatch> {
+    return this.exclusive(`queue:${request.releaseId}`, async () => {
+      const candidate = [...this.matches.values()]
+        .filter(
+          (record) =>
+            record.runtime.game.releaseId === request.releaseId &&
+            record.visibility === 'public' &&
+            record.runtime.getStatus() === 'lobby' &&
+            record.lobby.joinPolicy === 'open' &&
+            record.lobby.allowedControllers.includes(request.controllerKind) &&
+            record.series.maximumRounds ===
+              (request.series?.maximumRounds ?? 1) &&
+            record.series.restartPolicy ===
+              (request.series?.restartPolicy ?? 'owner') &&
+            JSON.stringify(record.runtime.configuration) ===
+              JSON.stringify(request.configuration ?? {}) &&
+            record.seats.some((seat) => seat.status === 'open'),
+        )
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0]
+      const match =
+        candidate === undefined
+          ? await this.createMatch({
+              releaseId: request.releaseId,
+              configuration: request.configuration,
+              seed: request.seed,
+              idempotencyKey: request.idempotencyKey,
+              ownerId: request.actorId,
+              visibility: 'public',
+              lobby: {
+                joinPolicy: 'open',
+                allowedControllers: request.lobby?.allowedControllers ?? [
+                  'human',
+                  'agent',
+                ],
+                invitedActorIds: [],
+                spectating: request.lobby?.spectating ?? 'enabled',
+              },
+              series: request.series,
+            })
+          : await this.describe(candidate)
+      return this.joinMatch({
+        matchId: match.id,
+        actorId: request.actorId,
+        controllerId: request.controllerId,
+        controllerKind: request.controllerKind,
+      })
+    })
+  }
+
   async getMatchView(
     matchId: string,
     afterEventSequence = 0,
@@ -366,6 +531,7 @@ export class LocalArcadePlatform {
   ): Promise<MatchView> {
     const record = this.record(matchId)
     this.assertViewAccess(record, actorId)
+    this.assertSpectateAccess(record, actorId)
     return {
       match: await this.describe(record),
       publicState: record.runtime.publicState(),
@@ -382,16 +548,11 @@ export class LocalArcadePlatform {
     request: ClaimSeatRequest,
   ): Promise<MatchDescriptor> {
     const record = this.record(request.matchId)
-    if (
-      record.visibility === 'private' &&
-      record.ownerId !== undefined &&
-      record.ownerId !== request.actorId
+    this.assertJoinAccess(
+      record,
+      request.actorId,
+      request.controllerKind ?? 'human',
     )
-      throw new LocalPlatformError(
-        'CONTROL_REVOKED',
-        403,
-        'This private match is available only to its owner.',
-      )
     const seat = record.seats.find(
       (candidate) => candidate.id === request.seatId,
     )
@@ -402,6 +563,17 @@ export class LocalArcadePlatform {
         `Unknown seat ${request.seatId}`,
       )
     }
+    if (
+      seat.actorId === request.actorId &&
+      seat.controllerId === request.controllerId
+    )
+      return this.describe(record)
+    if (record.runtime.getStatus() !== 'lobby')
+      throw new LocalPlatformError(
+        'CONFLICT',
+        409,
+        'Seats can only be claimed while the match is in its lobby.',
+      )
     if (
       seat.status !== 'open' &&
       (seat.actorId !== request.actorId ||
@@ -415,6 +587,7 @@ export class LocalArcadePlatform {
     }
     seat.actorId = request.actorId
     seat.controllerId = request.controllerId
+    seat.controllerKind = request.controllerKind ?? 'human'
     seat.status = 'claimed'
     if (
       record.seats.every((candidate) => candidate.status !== 'open') &&
@@ -429,10 +602,37 @@ export class LocalArcadePlatform {
     return descriptor
   }
 
+  async joinMatch(request: JoinMatchRequest): Promise<JoinedMatch> {
+    return this.exclusive(request.matchId, async () => {
+      const record = this.record(request.matchId)
+      const existing = record.seats.find(
+        (seat) =>
+          seat.actorId === request.actorId &&
+          seat.controllerId === request.controllerId,
+      )
+      if (existing)
+        return { match: await this.describe(record), seatId: existing.id }
+      const seat = record.seats.find((candidate) => candidate.status === 'open')
+      if (!seat)
+        throw new LocalPlatformError('CONFLICT', 409, 'This lobby is full.')
+      const match = await this.claimSeatInternal({
+        ...request,
+        seatId: seat.id,
+      })
+      return { match, seatId: seat.id }
+    })
+  }
+
   async createSession(
     request: CreateSessionRequest,
   ): Promise<SessionTicketDescriptor> {
     const record = this.record(request.matchId)
+    if (request.mode === 'spectate' && record.lobby.spectating === 'disabled')
+      throw new LocalPlatformError(
+        'CONTROL_REVOKED',
+        403,
+        'Spectating is disabled for this session.',
+      )
     if (
       record.visibility === 'private' &&
       record.ownerId !== undefined &&
@@ -630,7 +830,17 @@ export class LocalArcadePlatform {
       session.ownershipEpoch,
     )
     record.updatedAt = this.now().toISOString()
-    if (result.disposition === 'accepted') await this.persist(record)
+    if (result.disposition === 'accepted') {
+      if (record.runtime.getStatus() === 'completed') {
+        this.finishRound(record)
+        if (
+          record.series.status === 'awaiting-restart' &&
+          record.series.restartPolicy === 'automatic'
+        )
+          await this.advanceRound(record)
+      }
+      await this.persist(record)
+    }
     await this.notify(session.matchId, result)
     return result
   }
@@ -638,7 +848,87 @@ export class LocalArcadePlatform {
   getReplay(matchId: string, actorId?: string): Replay {
     const record = this.record(matchId)
     this.assertViewAccess(record, actorId)
+    this.assertSpectateAccess(record, actorId)
     return record.runtime.exportReplay()
+  }
+
+  getRoundReplay(
+    matchId: string,
+    roundNumber: number,
+    actorId?: string,
+  ): Replay {
+    const record = this.record(matchId)
+    this.assertViewAccess(record, actorId)
+    this.assertSpectateAccess(record, actorId)
+    if (roundNumber === record.series.currentRound)
+      return record.runtime.exportReplay()
+    const replay = record.completedRounds[roundNumber - 1]
+    if (!replay)
+      throw new LocalPlatformError(
+        'NOT_FOUND',
+        404,
+        `Round ${roundNumber} does not exist.`,
+      )
+    return replay
+  }
+
+  async restartRound(
+    matchId: string,
+    actorId: string,
+  ): Promise<MatchDescriptor> {
+    return this.exclusive(matchId, async () => {
+      const record = this.record(matchId)
+      if (record.series.status === 'complete')
+        throw new LocalPlatformError('CONFLICT', 409, 'The series is complete.')
+      if (record.series.status !== 'awaiting-restart')
+        throw new LocalPlatformError(
+          'CONFLICT',
+          409,
+          'The current round has not finished.',
+        )
+      if (record.series.restartPolicy === 'automatic')
+        throw new LocalPlatformError(
+          'CONFLICT',
+          409,
+          'This series restarts automatically.',
+        )
+      if (record.series.restartPolicy === 'owner') {
+        if (record.ownerId !== actorId)
+          throw new LocalPlatformError(
+            'CONTROL_REVOKED',
+            403,
+            'Only the session owner may start the next round.',
+          )
+      } else {
+        if (!record.seats.some((seat) => seat.actorId === actorId))
+          throw new LocalPlatformError(
+            'CONTROL_REVOKED',
+            403,
+            'Only a seated player may vote to restart.',
+          )
+        record.series.restartVotes = [
+          ...new Set([...record.series.restartVotes, actorId]),
+        ]
+        const players = new Set(
+          record.seats.flatMap((seat) => (seat.actorId ? [seat.actorId] : [])),
+        )
+        if (
+          ![...players].every((player) =>
+            record.series.restartVotes.includes(player),
+          )
+        ) {
+          record.updatedAt = this.now().toISOString()
+          await this.persist(record)
+          await this.notify(matchId)
+          return this.describe(record)
+        }
+      }
+      await this.advanceRound(record)
+      record.updatedAt = this.now().toISOString()
+      await this.persist(record)
+      await this.notify(matchId)
+      return this.describe(record)
+    })
   }
 
   async pauseMatch(matchId: string): Promise<MatchDescriptor> {
@@ -698,6 +988,9 @@ export class LocalArcadePlatform {
       updatedAt: record.updatedAt,
       ownerId: record.ownerId,
       visibility: record.visibility,
+      lobby: record.lobby,
+      series: record.series,
+      completedRounds: record.completedRounds,
     }
     try {
       await this.persistMatch(saved, record.version || undefined)
@@ -725,6 +1018,111 @@ export class LocalArcadePlatform {
     )
   }
 
+  private assertJoinAccess(
+    record: MatchRecord,
+    actorId: string,
+    controllerKind: 'human' | 'agent',
+  ): void {
+    if (record.series.status === 'complete')
+      throw new LocalPlatformError('CONFLICT', 409, 'The series is complete.')
+    if (!record.lobby.allowedControllers.includes(controllerKind))
+      throw new LocalPlatformError(
+        'CONTROL_REVOKED',
+        403,
+        `${controllerKind === 'agent' ? 'Agent' : 'Human'} controllers are disabled for this lobby.`,
+      )
+    if (
+      record.visibility === 'private' &&
+      record.ownerId !== undefined &&
+      record.ownerId !== actorId
+    )
+      throw new LocalPlatformError(
+        'CONTROL_REVOKED',
+        403,
+        'This private match is available only to its owner.',
+      )
+    if (
+      record.lobby.joinPolicy === 'invite-only' &&
+      record.ownerId !== actorId &&
+      !record.lobby.invitedActorIds.includes(actorId)
+    )
+      throw new LocalPlatformError(
+        'CONTROL_REVOKED',
+        403,
+        'This lobby accepts invited players only.',
+      )
+  }
+
+  private assertSpectateAccess(record: MatchRecord, actorId?: string): void {
+    if (
+      record.lobby.spectating === 'enabled' ||
+      record.ownerId === actorId ||
+      record.seats.some((seat) => seat.actorId === actorId)
+    )
+      return
+    throw new LocalPlatformError(
+      'CONTROL_REVOKED',
+      403,
+      'Spectating is disabled for this session.',
+    )
+  }
+
+  private finishRound(record: MatchRecord): void {
+    if (record.series.status !== 'active') return
+    const result = record.runtime.exportReplay().events.at(-1)?.payload
+    if (
+      typeof result === 'object' &&
+      result !== null &&
+      'winnerSeatId' in result
+    ) {
+      const winnerSeatId = result.winnerSeatId
+      if (typeof winnerSeatId === 'string')
+        record.series.scores[winnerSeatId] =
+          (record.series.scores[winnerSeatId] ?? 0) + 1
+    }
+    record.series.status =
+      record.series.currentRound >= record.series.maximumRounds
+        ? 'complete'
+        : 'awaiting-restart'
+    record.series.restartVotes = []
+  }
+
+  private async advanceRound(record: MatchRecord): Promise<void> {
+    record.completedRounds.push(record.runtime.exportReplay())
+    record.series.currentRound += 1
+    record.series.status = 'active'
+    record.series.restartVotes = []
+    const prior = record.runtime
+    record.runtime = await AuthoritativeMatch.create({
+      matchId: prior.matchId,
+      game: prior.game,
+      seed: `${prior.matchId}:round:${record.series.currentRound}`,
+      configuration: prior.configuration,
+      roster: prior.roster,
+      ownershipEpoch: prior.getOwnershipEpoch() + 1,
+      now: this.now,
+    })
+    for (const session of this.sessions.values())
+      if (session.matchId === record.runtime.matchId)
+        session.ownershipEpoch = record.runtime.getOwnershipEpoch()
+    for (const seat of record.seats) {
+      const connected = [...this.sessions.values()].some(
+        (session) =>
+          session.matchId === record.runtime.matchId &&
+          session.seatId === seat.id &&
+          session.connected,
+      )
+      seat.status =
+        seat.actorId === undefined
+          ? 'open'
+          : connected
+            ? 'connected'
+            : 'claimed'
+    }
+    if (record.seats.every((seat) => seat.status !== 'open'))
+      record.runtime.start()
+  }
+
   private sessionRecord(sessionId: string): SessionRecord {
     const session = this.sessions.get(sessionId)
     if (session === undefined) {
@@ -747,6 +1145,8 @@ export class LocalArcadePlatform {
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       visibility: record.visibility,
+      lobby: record.lobby,
+      series: record.series,
       viewerCount: [...this.sessions.values()].filter(
         (session) =>
           session.matchId === record.runtime.matchId &&
@@ -758,6 +1158,9 @@ export class LocalArcadePlatform {
         role: seat.role,
         status: seat.status,
         ...(seat.actorId === undefined ? {} : { actorId: seat.actorId }),
+        ...(seat.controllerKind === undefined
+          ? {}
+          : { controllerKind: seat.controllerKind }),
       })),
       ...(snapshot.result === undefined ? {} : { result: snapshot.result }),
     }

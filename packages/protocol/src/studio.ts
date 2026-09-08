@@ -1,6 +1,42 @@
 import { z } from 'zod'
 import type { GameManifest } from './index.js'
 
+export const gameDistributionSchema = z
+  .object({
+    license: z.enum([
+      'all-rights-reserved',
+      'cc-by-4.0',
+      'cc-by-sa-4.0',
+      'cc0-1.0',
+      'custom',
+    ]),
+    customLicenseUrl: z.string().url().optional(),
+    remixing: z.enum(['disabled', 'allowed']),
+    attributionRequired: z.boolean(),
+    commercialUse: z.boolean(),
+    revenueShareBps: z.number().int().min(0).max(10_000),
+  })
+  .strict()
+  .superRefine((distribution, context) => {
+    if (
+      distribution.license === 'custom' &&
+      distribution.customLicenseUrl === undefined
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['customLicenseUrl'],
+        message: 'Custom licenses require a public license URL.',
+      })
+  })
+
+export const defaultGameDistribution = {
+  license: 'all-rights-reserved',
+  remixing: 'disabled',
+  attributionRequired: true,
+  commercialUse: false,
+  revenueShareBps: 0,
+} as const
+
 export const gridGameDocumentSchema = z
   .object({
     title: z.string().trim().min(1).max(100),
@@ -10,6 +46,7 @@ export const gridGameDocumentSchema = z
     marks: z.tuple([z.string().min(1).max(3), z.string().min(1).max(3)]),
     accent: z.string().regex(/^#[0-9a-fA-F]{6}$/),
     background: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    distribution: gameDistributionSchema.optional(),
   })
   .strict()
   .superRefine((d, c) => {
@@ -160,6 +197,7 @@ export const browserGameDocumentSchema = z
       })
       .strict()
       .optional(),
+    distribution: gameDistributionSchema.optional(),
     files: z
       .array(
         z
@@ -210,6 +248,7 @@ export const gameDocumentSchema = z.union([
 export type GridGameDocument = z.infer<typeof gridGameDocumentSchema>
 export type BrowserGameDocument = z.infer<typeof browserGameDocumentSchema>
 export type GameDocument = z.infer<typeof gameDocumentSchema>
+export type GameDistribution = z.infer<typeof gameDistributionSchema>
 export function isBrowserGame(d: GameDocument): d is BrowserGameDocument {
   return 'kind' in d && d.kind === 'browser'
 }
@@ -306,6 +345,15 @@ export type StudioProject = {
   createdAt: string
   updatedAt: string
   releaseId?: string
+  collaborators?: {
+    actorId: string
+    permissions: ('test' | 'comment' | 'edit')[]
+  }[]
+  forkedFrom?: {
+    releaseId: string
+    digest: string
+    originalCreatorId: string
+  }
 }
 export type StudioRelease = {
   id: string
@@ -314,5 +362,7 @@ export type StudioRelease = {
   document: GameDocument
   digest: string
   manifest: GameManifest
+  ownerId?: string
+  distribution?: GameDistribution
   publishedAt: string
 }

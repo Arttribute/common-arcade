@@ -8,10 +8,14 @@ export function MatchLauncher({
   releaseId,
   gameId,
   browserGame = false,
+  remixing,
+  license,
 }: {
   releaseId: string
   gameId: string
   browserGame?: boolean
+  remixing?: 'disabled' | 'allowed'
+  license?: string
 }) {
   const router = useRouter()
   const [signedIn, setSignedIn] = useState(false)
@@ -21,6 +25,17 @@ export function MatchLauncher({
   const [visibility, setVisibility] = useState<
     'public' | 'unlisted' | 'private'
   >('unlisted')
+  const [joinPolicy, setJoinPolicy] = useState<'open' | 'invite-only'>('open')
+  const [invites, setInvites] = useState('')
+  const [allowHumans, setAllowHumans] = useState(true)
+  const [allowAgents, setAllowAgents] = useState(true)
+  const [spectating, setSpectating] = useState<'enabled' | 'disabled'>(
+    'enabled',
+  )
+  const [maximumRounds, setMaximumRounds] = useState(3)
+  const [restartPolicy, setRestartPolicy] = useState<
+    'automatic' | 'owner' | 'unanimous'
+  >('owner')
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     void fetch('/api/auth/session')
@@ -42,8 +57,41 @@ export function MatchLauncher({
       const match = await browserControlClient().createMatch({
         releaseId,
         visibility,
+        lobby: {
+          joinPolicy,
+          allowedControllers: [
+            ...(allowHumans ? (['human'] as const) : []),
+            ...(allowAgents ? (['agent'] as const) : []),
+          ],
+          invitedActorIds: invites
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean),
+          spectating,
+        },
+        series: { maximumRounds, restartPolicy },
       })
       router.push(`/play/${match.id}`)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+      setBusy(false)
+    }
+  }
+  async function findOpenGame() {
+    setBusy(true)
+    setError('')
+    try {
+      const joined = await browserControlClient().findMatch({
+        releaseId,
+        controllerId: 'browser-human_player',
+        controllerKind: 'human',
+        lobby: {
+          allowedControllers: ['human', 'agent'],
+          spectating: 'enabled',
+        },
+        series: { maximumRounds, restartPolicy },
+      })
+      router.push(`/play/${joined.match.id}`)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
       setBusy(false)
@@ -87,34 +135,140 @@ export function MatchLauncher({
                 ? 'Open a private test room.'
                 : 'Choose the lobby visibility and create the match.'}
             </li>
-            <li>Choose a Commons agent for each seat.</li>
-            <li>Run, pause, inspect feedback, or take over at any time.</li>
+            <li>
+              Join yourself, or give the session link and release contract to
+              your Commons or external agent.
+            </li>
+            <li>
+              Every controller claims one authoritative seat; spectators use the
+              same live state stream.
+            </li>
           </ol>
           {!browserGame ? (
-            <label className="match-visibility-picker">
-              Who can discover this match?
-              <select
-                value={visibility}
-                onChange={(event) =>
-                  setVisibility(
-                    event.target.value as 'public' | 'unlisted' | 'private',
-                  )
-                }
-              >
-                <option value="public">Public · listed in Live</option>
-                <option value="unlisted">Unlisted · link only</option>
-                <option value="private">Private · owner only</option>
-              </select>
-            </label>
+            <div className="match-setup-grid">
+              <label>
+                Discoverability
+                <select
+                  value={visibility}
+                  onChange={(event) =>
+                    setVisibility(
+                      event.target.value as 'public' | 'unlisted' | 'private',
+                    )
+                  }
+                >
+                  <option value="public">Public · listed in Live</option>
+                  <option value="unlisted">Unlisted · link only</option>
+                  <option value="private">Private · owner only</option>
+                </select>
+              </label>
+              <label>
+                Joining
+                <select
+                  value={joinPolicy}
+                  onChange={(event) =>
+                    setJoinPolicy(event.target.value as typeof joinPolicy)
+                  }
+                >
+                  <option value="open">Open lobby</option>
+                  <option value="invite-only">Invite only</option>
+                </select>
+              </label>
+              {joinPolicy === 'invite-only' ? (
+                <label className="match-setup-wide">
+                  Invited Commons IDs
+                  <input
+                    value={invites}
+                    onChange={(event) => setInvites(event.target.value)}
+                    placeholder="user_one, agent_owner_two"
+                  />
+                </label>
+              ) : null}
+              <label>
+                Rounds
+                <select
+                  value={maximumRounds}
+                  onChange={(event) =>
+                    setMaximumRounds(Number(event.target.value))
+                  }
+                >
+                  {[1, 3, 5, 7, 9].map((rounds) => (
+                    <option key={rounds} value={rounds}>
+                      {rounds}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Between rounds
+                <select
+                  value={restartPolicy}
+                  onChange={(event) =>
+                    setRestartPolicy(event.target.value as typeof restartPolicy)
+                  }
+                >
+                  <option value="owner">Host starts next round</option>
+                  <option value="unanimous">Every player agrees</option>
+                  <option value="automatic">Automatic</option>
+                </select>
+              </label>
+              <label>
+                Watching
+                <select
+                  value={spectating}
+                  onChange={(event) =>
+                    setSpectating(event.target.value as typeof spectating)
+                  }
+                >
+                  <option value="enabled">Live spectators</option>
+                  <option value="disabled">Players only</option>
+                </select>
+              </label>
+              <fieldset className="controller-options">
+                <legend>Who can play?</legend>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={allowHumans}
+                    onChange={(event) => setAllowHumans(event.target.checked)}
+                  />
+                  Humans
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={allowAgents}
+                    onChange={(event) => setAllowAgents(event.target.checked)}
+                  />
+                  Agents
+                </label>
+              </fieldset>
+            </div>
           ) : null}
           {signedIn ? (
-            <button className="primary" disabled={busy} onClick={create}>
-              {busy
-                ? 'Preparing room…'
-                : browserGame
-                  ? 'Open agent test room'
-                  : 'Create live match'}
-            </button>
+            <div className="match-launch-actions">
+              <button
+                className="primary"
+                disabled={
+                  busy || (!browserGame && !allowHumans && !allowAgents)
+                }
+                onClick={create}
+              >
+                {busy
+                  ? 'Preparing room…'
+                  : browserGame
+                    ? 'Open creator workspace or remix'
+                    : 'Host a live session'}
+              </button>
+              {!browserGame ? (
+                <button
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => void findOpenGame()}
+                >
+                  Find an open game
+                </button>
+              ) : null}
+            </div>
           ) : (
             <a className="primary" href="/api/auth/login?next=/discover">
               Sign in with Commons
@@ -146,9 +300,11 @@ export function MatchLauncher({
       )}
       {browserGame ? (
         <small>
-          Browser releases currently run as private, unrated test rooms. Public
-          competitive hosting activates only after an authoritative runtime is
-          attached.
+          Published source is immutable. Owners return to their workspace;
+          others receive an attributed copy only when the creator has enabled
+          remixes. Browser releases remain private and unrated until an
+          authoritative runtime is attached. {license ?? 'all-rights-reserved'}{' '}
+          · {remixing === 'allowed' ? 'remixes enabled' : 'remixes restricted'}.
         </small>
       ) : null}
       {error ? <p className="error-text">{error}</p> : null}

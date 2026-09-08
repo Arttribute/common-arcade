@@ -10,6 +10,7 @@ import {
   releaseManifest,
   starterDocument,
   isBrowserGame,
+  defaultGameDistribution,
   type StudioProject,
   type StudioRelease,
 } from '@common-arcade/studio'
@@ -29,8 +30,14 @@ import {
   type DocumentStore,
   type StoredDocument,
 } from './store.js'
+import {
+  accessibleProjects,
+  projectAccess,
+  syncProjectMemberships,
+  type ProjectPermission,
+  type ProjectRecord,
+} from './project-access.js'
 
-type ProjectRecord = StoredDocument & { project: StudioProject }
 /** How long a proposal may run before the studio stops waiting on it. */
 const COPILOT_JOB_DEADLINE_MS = 590_000
 type CopilotJob = StoredDocument & {
@@ -367,12 +374,11 @@ export function createStudioApi(
   } = {},
 ) {
   const app = new Hono()
-  const owned = async (owner: string, projectId: string) => {
-    const record = await store.get<ProjectRecord>(`owner:${owner}`, projectId)
-    if (!record)
-      throw new IdentityError(403, 'Project is unavailable to this account.')
-    return record
-  }
+  const owned = (
+    actorId: string,
+    projectId: string,
+    permission: ProjectPermission = 'edit',
+  ) => projectAccess(store, actorId, projectId, permission)
   const checkSize = (project: StudioProject) => {
     if (new TextEncoder().encode(JSON.stringify(project)).length > 340000)
       throw new IdentityError(
@@ -438,9 +444,7 @@ export function createStudioApi(
   }
   app.get('/v1/projects', async (c) => {
     const p = await authenticate(c.req.header('Authorization'), 'projects:read')
-    let projects = (
-      await store.list<ProjectRecord>(`owner:${p.id}`, 'prj_')
-    ).map((r) => r.project)
+    let projects = await accessibleProjects(store, p.id)
     if (!projects.length) {
       // A failed seed must never block the listing: an empty studio is a far
       // smaller problem than a studio that will not open at all.
@@ -476,7 +480,7 @@ export function createStudioApi(
   })
   app.get('/v1/projects/:id', async (c) => {
     const p = await authenticate(c.req.header('Authorization'), 'projects:read')
-    return c.json((await owned(p.id, c.req.param('id'))).project)
+    return c.json((await owned(p.id, c.req.param('id'), 'view')).project)
   })
   app.put('/v1/projects/:id', async (c) => {
     const p = await authenticate(
@@ -500,7 +504,7 @@ export function createStudioApi(
   })
   app.get('/v1/projects/:id/revisions', async (c) => {
     const p = await authenticate(c.req.header('Authorization'), 'projects:read')
-    const { project } = await owned(p.id, c.req.param('id'))
+    const { project } = await owned(p.id, c.req.param('id'), 'view')
     return c.json({
       revisions: (await store.list<ProjectRecord>(`revisions:${project.id}`))
         .filter((r) => r.project.revision <= project.revision)
@@ -513,7 +517,7 @@ export function createStudioApi(
         c.req.header('Authorization'),
         'projects:write',
       ),
-      record = await owned(p.id, c.req.param('id')),
+      record = await owned(p.id, c.req.param('id'), 'comment'),
       body = annotationBody.parse(await c.req.json())
     const targetRevision =
       body.revision === record.project.revision
@@ -548,7 +552,7 @@ export function createStudioApi(
         c.req.header('Authorization'),
         'projects:write',
       ),
-      record = await owned(p.id, c.req.param('id'))
+      record = await owned(p.id, c.req.param('id'), 'comment')
     const body = z
       .object({ status: z.enum(['open', 'resolved']) })
       .strict()
@@ -571,6 +575,11 @@ export function createStudioApi(
       ),
       record = await owned(p.id, c.req.param('id')),
       project = record.project
+    if (project.ownerId !== p.id)
+      throw new IdentityError(
+        403,
+        'Only the project owner can publish releases.',
+      )
     if (expected.parse(c.req.header('If-Match')) !== project.revision)
       throw new StoreConflict()
     compilePresentation(project.document)
@@ -584,6 +593,8 @@ export function createStudioApi(
       document: project.document,
       digest: project.digest,
       manifest: await releaseManifest(project, releaseId),
+      ownerId: project.ownerId,
+      distribution: project.document.distribution ?? defaultGameDistribution,
       publishedAt: new Date().toISOString(),
     }
     await store.put('releases', releaseId, { version: 1, release })
@@ -595,6 +606,48 @@ export function createStudioApi(
     if (!record) return c.json({ error: 'Release not found' }, 404)
     return c.json(record.release)
   })
+  app.put('/v1/projects/:id/collaborators', async (c) => {
+    const p = await authenticate(
+      c.req.header('Authorization'),
+      'projects:write',
+    )
+    const record = await owned(p.id, c.req.param('id'))
+    if (record.project.ownerId !== p.id)
+      throw new IdentityError(403, 'Only the project owner can manage access.')
+    const body = z
+      .object({
+        collaborators: z
+          .array(
+            z
+              .object({
+                actorId: z.string().trim().min(1).max(200),
+                permissions: z
+                  .array(z.enum(['test', 'comment', 'edit']))
+                  .min(1)
+                  .max(3),
+              })
+              .strict(),
+          )
+          .max(50),
+      })
+      .strict()
+      .parse(await c.req.json())
+    if (
+      new Set(body.collaborators.map((member) => member.actorId)).size !==
+      body.collaborators.length
+    )
+      throw new IdentityError(403, 'Each collaborator may appear only once.')
+    const project: StudioProject = {
+      ...record.project,
+      collaborators: body.collaborators.map((member) => ({
+        actorId: member.actorId,
+        permissions: [...new Set(member.permissions)],
+      })),
+      updatedAt: new Date().toISOString(),
+    }
+    await syncProjectMemberships(store, record.project.collaborators, project)
+    return c.json(await save(record, project))
+  })
   app.post('/v1/studio/releases/:id/fork', async (c) => {
     const p = await authenticate(
       c.req.header('Authorization'),
@@ -602,6 +655,19 @@ export function createStudioApi(
     )
     const record = await store.get<ReleaseRecord>('releases', c.req.param('id'))
     if (!record) return c.json({ error: 'Release not found' }, 404)
+    const original = await projectAccess(
+      store,
+      p.id,
+      record.release.projectId,
+      'view',
+    ).catch(() => undefined)
+    if (original) return c.json(original.project)
+    const distribution = record.release.distribution ?? defaultGameDistribution
+    if (distribution.remixing !== 'allowed')
+      throw new IdentityError(
+        403,
+        'The creator has not enabled remixes for this release.',
+      )
     const now = new Date().toISOString()
     const project: StudioProject = {
       id: id('prj'),
@@ -610,6 +676,13 @@ export function createStudioApi(
       digest: await documentDigest(record.release.document),
       document: record.release.document,
       annotations: [],
+      forkedFrom: {
+        releaseId: record.release.id,
+        digest: record.release.digest,
+        originalCreatorId:
+          record.release.ownerId ??
+          record.release.manifest.metadata.publisher.id,
+      },
       createdAt: now,
       updatedAt: now,
     }
@@ -618,10 +691,7 @@ export function createStudioApi(
     return c.json(
       {
         ...project,
-        forkedFrom: {
-          releaseId: record.release.id,
-          digest: record.release.digest,
-        },
+        forkedFrom: project.forkedFrom,
       },
       201,
     )
@@ -674,7 +744,7 @@ export function createStudioApi(
         c.req.header('Authorization'),
         'projects:write',
       ),
-      { project } = await owned(p.id, c.req.param('id'))
+      { project } = await owned(p.id, c.req.param('id'), 'test')
     const body = z
       .object({
         seed: z.string().max(200).default('studio-42'),
@@ -1406,6 +1476,9 @@ export function createStudioApi(
             document: project.document,
             digest: project.digest,
             manifest: await releaseManifest(project, releaseId),
+            ownerId: project.ownerId,
+            distribution:
+              project.document.distribution ?? defaultGameDistribution,
             publishedAt: new Date().toISOString(),
           }
           await store.put('releases', releaseId, { version: 1, release })

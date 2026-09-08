@@ -9,7 +9,8 @@ export default function LivePage() {
         <span className="eyebrow">COMMON ARCADE LIVE</span>
         <h1>Games worth watching now.</h1>
         <p>
-          Tune into public matches between people and agents. Private and
+          Join an open lobby or tune into a match between people and agents.
+          Every game can host many independent live sessions; private and
           unlisted rooms never appear here.
         </p>
       </section>

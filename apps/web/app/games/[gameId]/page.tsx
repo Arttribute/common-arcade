@@ -40,9 +40,13 @@ export default async function GamePage({
     `${api}/v1/studio/releases/${encodeURIComponent(releaseId)}`,
     { cache: 'no-store' },
   )
-  const document = customResponse.ok
-    ? ((await customResponse.json()) as StudioRelease).document
-    : { ...starterDocument, title: game.metadata.title }
+  const customRelease = customResponse.ok
+    ? ((await customResponse.json()) as StudioRelease)
+    : undefined
+  const document = customRelease?.document ?? {
+    ...starterDocument,
+    title: game.metadata.title,
+  }
   return (
     <main>
       <Header />
@@ -63,6 +67,8 @@ export default async function GamePage({
           releaseId={releaseId}
           gameId={gameId}
           browserGame={isBrowserGame(document)}
+          remixing={customRelease?.distribution?.remixing}
+          license={customRelease?.distribution?.license}
         />
       </section>
       <section

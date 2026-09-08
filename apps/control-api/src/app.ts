@@ -69,12 +69,47 @@ const createMatchBody = z
     configuration: z.json().optional(),
     seed: z.string().min(1).max(200).optional(),
     visibility: z.enum(['public', 'unlisted', 'private']).default('unlisted'),
+    lobby: z
+      .object({
+        joinPolicy: z.enum(['open', 'invite-only']).default('open'),
+        allowedControllers: z
+          .array(z.enum(['human', 'agent']))
+          .min(1)
+          .max(2)
+          .default(['human', 'agent']),
+        invitedActorIds: z
+          .array(z.string().min(1).max(200))
+          .max(100)
+          .default([]),
+        spectating: z.enum(['enabled', 'disabled']).default('enabled'),
+      })
+      .strict()
+      .optional(),
+    series: z
+      .object({
+        maximumRounds: z.number().int().min(1).max(99).default(1),
+        restartPolicy: z
+          .enum(['automatic', 'owner', 'unanimous'])
+          .default('owner'),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
 
 const claimSeatBody = z
-  .object({ controllerId: z.string().min(1).max(200) })
+  .object({
+    controllerId: z.string().min(1).max(200),
+    controllerKind: z.enum(['human', 'agent']).default('human'),
+  })
   .strict()
+
+const joinMatchBody = claimSeatBody
+
+const findMatchBody = createMatchBody.omit({ visibility: true }).extend({
+  controllerId: z.string().min(1).max(200),
+  controllerKind: z.enum(['human', 'agent']).default('human'),
+})
 
 const createSessionBody = z
   .object({
@@ -318,6 +353,35 @@ export function createApp(options: ControlApiOptions = {}) {
       },
     })
   })
+  app.use('/v1/matchmaking*', async (c, next) => {
+    if (options.platform || !process.env.ARCADE_REALTIME_CONTROL_URL)
+      return next()
+    const url = new URL(c.req.url)
+    const target = new URL(
+      url.pathname + url.search,
+      process.env.ARCADE_REALTIME_CONTROL_URL,
+    )
+    const response = await fetch(target, {
+      method: c.req.method,
+      headers: {
+        Authorization: c.req.header('Authorization') ?? '',
+        'Content-Type': 'application/json',
+        'Idempotency-Key': c.req.header('Idempotency-Key') ?? '',
+      },
+      body: ['GET', 'HEAD'].includes(c.req.method)
+        ? undefined
+        : await c.req.text(),
+      redirect: 'error',
+      signal: AbortSignal.timeout(20000),
+    })
+    return new Response(response.body, {
+      status: response.status,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+      },
+    })
+  })
 
   app.route(
     '/',
@@ -356,6 +420,9 @@ export function createApp(options: ControlApiOptions = {}) {
           : [
               'games:read',
               'matches:create',
+              'matchmaking:join',
+              'lobbies:discover',
+              'series:restart',
               'seats:claim',
               'sessions:create',
               'replays:read',
@@ -503,6 +570,30 @@ export function createApp(options: ControlApiOptions = {}) {
     context.json({ matches: await requirePlatform().listPublicMatches() }),
   )
 
+  app.post('/v1/matchmaking', async (context) => {
+    const identity = await authenticate(
+      context.req.header('Authorization'),
+      'matches:play',
+    )
+    const rawIdempotencyKey = context.req.header('Idempotency-Key')
+    if (!rawIdempotencyKey)
+      throw new ApiError(
+        'IDEMPOTENCY_KEY_REQUIRED',
+        428,
+        false,
+        'Idempotency-Key is required for matchmaking.',
+      )
+    const body = findMatchBody.parse(await context.req.json())
+    return context.json(
+      await requirePlatform().findOrCreateMatch({
+        ...body,
+        actorId: identity.id,
+        idempotencyKey: `${identity.id}:${rawIdempotencyKey}`,
+      }),
+      201,
+    )
+  })
+
   app.get('/v1/matches/:matchId', async (context) =>
     context.json(
       await requirePlatform().getMatch(
@@ -533,7 +624,34 @@ export function createApp(options: ControlApiOptions = {}) {
         seatId: context.req.param('seatId'),
         actorId,
         controllerId: body.controllerId,
+        controllerKind: body.controllerKind,
       }),
+    )
+  })
+
+  app.post('/v1/matches/:matchId/join', async (context) => {
+    const actorId = (
+      await authenticate(context.req.header('Authorization'), 'matches:play')
+    ).id
+    const body = joinMatchBody.parse(await context.req.json())
+    return context.json(
+      await requirePlatform().joinMatch({
+        matchId: context.req.param('matchId'),
+        actorId,
+        ...body,
+      }),
+    )
+  })
+
+  app.post('/v1/matches/:matchId/restart', async (context) => {
+    const actorId = (
+      await authenticate(context.req.header('Authorization'), 'matches:play')
+    ).id
+    return context.json(
+      await requirePlatform().restartRound(
+        context.req.param('matchId'),
+        actorId,
+      ),
     )
   })
 
@@ -565,6 +683,16 @@ export function createApp(options: ControlApiOptions = {}) {
     context.json(
       requirePlatform().getReplay(
         context.req.param('matchId'),
+        await optionalMatchActor(context.req.header('Authorization')),
+      ),
+    ),
+  )
+
+  app.get('/v1/matches/:matchId/rounds/:round/replay', async (context) =>
+    context.json(
+      requirePlatform().getRoundReplay(
+        context.req.param('matchId'),
+        z.coerce.number().int().positive().parse(context.req.param('round')),
         await optionalMatchActor(context.req.header('Authorization')),
       ),
     ),
@@ -728,6 +856,9 @@ function openApiDocument(serverUrl: string) {
       '/v1/projects/{id}/annotations': {
         post: { summary: 'Attach a point or region note to a revision' },
       },
+      '/v1/projects/{id}/collaborators': {
+        put: { summary: 'Set owner-managed edit, test, and comment grants' },
+      },
       '/v1/projects/{id}/publish': {
         post: { summary: 'Publish the If-Match revision' },
       },
@@ -751,7 +882,8 @@ function openApiDocument(serverUrl: string) {
       },
       '/v1/studio/releases/{id}/fork': {
         post: {
-          summary: 'Fork a published release into a private agent test room',
+          summary:
+            'Open an owned project or create a permitted attributed remix',
         },
       },
       '/v1/commons/agents': {
@@ -817,11 +949,23 @@ function openApiDocument(serverUrl: string) {
       '/v1/matches/{matchId}/seats/{seatId}/claim': {
         post: { summary: 'Claim a seat for the authenticated actor' },
       },
+      '/v1/matchmaking': {
+        post: { summary: 'Join the oldest compatible lobby or create one' },
+      },
+      '/v1/matches/{matchId}/join': {
+        post: { summary: 'Atomically claim the first open compatible seat' },
+      },
+      '/v1/matches/{matchId}/restart': {
+        post: { summary: 'Start or vote for the next configured round' },
+      },
       '/v1/matches/{matchId}/sessions': {
         post: { summary: 'Mint a one-time realtime session ticket' },
       },
       '/v1/matches/{matchId}/replay': {
         get: { summary: 'Retrieve the authoritative replay' },
+      },
+      '/v1/matches/{matchId}/rounds/{round}/replay': {
+        get: { summary: 'Retrieve one immutable round replay' },
       },
       '/v1/test-runs': {
         post: { summary: 'Run autonomous policies in a private Test Arena' },

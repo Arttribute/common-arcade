@@ -8,6 +8,7 @@ import type {
   RealtimeEnvelope,
 } from '@common-arcade/protocol'
 import { useEffect, useRef, useState } from 'react'
+import { Check, RotateCcw, Share2 } from 'lucide-react'
 
 const apiUrl = process.env.NEXT_PUBLIC_ARCADE_API_URL ?? 'http://localhost:4100'
 
@@ -33,6 +34,7 @@ export function PlayMatch({
   const [connection, setConnection] = useState('idle')
   const [lastResult, setLastResult] = useState<string>()
   const [error, setError] = useState<string>()
+  const [copied, setCopied] = useState(false)
   const clientRef = useRef<RealtimeClient | undefined>(undefined)
   const actionSequence = useRef(0)
 
@@ -133,6 +135,22 @@ export function PlayMatch({
     })
   }
 
+  async function restart() {
+    setError(undefined)
+    try {
+      const next = await browserControlClient().restartRound(matchId)
+      setMatch(next)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  async function share() {
+    await navigator.clipboard.writeText(window.location.href)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1400)
+  }
+
   const legalCells = new Set(
     (observation?.legalActions ?? []).map((action) =>
       typeof action === 'object' && action !== null && 'cell' in action
@@ -144,7 +162,13 @@ export function PlayMatch({
   return (
     <div className="match-shell">
       <aside className="match-panel">
-        <span className="panel-label">ROSTER</span>
+        <div className="match-panel-title">
+          <span className="panel-label">ROSTER</span>
+          <button className="icon-copy" onClick={() => void share()}>
+            {copied ? <Check size={12} /> : <Share2 size={12} />}
+            {copied ? 'Copied' : 'Share'}
+          </button>
+        </div>
         <p style={{ fontSize: 11, color: '#78716c' }}>
           Sign in with Commons to claim a seat, or watch as a spectator.
         </p>
@@ -154,6 +178,7 @@ export function PlayMatch({
               <strong>Player {index + 1}</strong>
               <small>
                 {seat.status} · {seat.actorId ?? 'unclaimed'}
+                {seat.controllerKind ? ` · ${seat.controllerKind}` : ''}
               </small>
               <button
                 disabled={connection === 'connected'}
@@ -166,16 +191,31 @@ export function PlayMatch({
         </div>
         <button
           className="secondary compact"
+          disabled={match?.lobby?.spectating === 'disabled'}
           onClick={() => connect('spectate')}
         >
-          Spectate
+          {match?.lobby?.spectating === 'disabled'
+            ? 'Spectating disabled'
+            : 'Watch live'}
         </button>
+        <p className="match-rule-note">
+          {match?.lobby?.joinPolicy === 'invite-only'
+            ? 'Invite-only lobby'
+            : 'Open lobby'}{' '}
+          · humans{' '}
+          {match?.lobby?.allowedControllers.includes('human') ? 'on' : 'off'} ·
+          agents{' '}
+          {match?.lobby?.allowedControllers.includes('agent') ? 'on' : 'off'}
+        </p>
       </aside>
 
       <section className="game-stage">
         <div className="stage-meta">
           <span>{match?.status ?? 'loading'}</span>
-          <span>{connection}</span>
+          <span>
+            Round {match?.series?.currentRound ?? 1}/
+            {match?.series?.maximumRounds ?? 1} · {connection}
+          </span>
         </div>
         <div
           className="tic-grid"
@@ -204,6 +244,17 @@ export function PlayMatch({
                 ? `Turn: ${publicBoard.currentSeatId}`
                 : 'Connect to watch or play'}
         </strong>
+        {match?.series?.status === 'awaiting-restart' ? (
+          <button className="round-restart" onClick={() => void restart()}>
+            <RotateCcw size={13} />
+            {match.series.restartPolicy === 'unanimous'
+              ? 'Vote for next round'
+              : 'Start next round'}
+          </button>
+        ) : null}
+        {match?.series?.status === 'complete' ? (
+          <p className="series-complete">Series complete</p>
+        ) : null}
       </section>
 
       <aside className="match-panel inspector">
@@ -217,6 +268,14 @@ export function PlayMatch({
           <dd>{observation?.eventSequence ?? match?.eventSequence ?? 0}</dd>
           <dt>Last action</dt>
           <dd>{lastResult ?? '—'}</dd>
+          <dt>Series score</dt>
+          <dd>
+            {Object.entries(match?.series?.scores ?? {})
+              .map(([seat, score]) => `${seat.slice(-5)}: ${score}`)
+              .join(' · ') || 'No wins yet'}
+          </dd>
+          <dt>Restart rule</dt>
+          <dd>{match?.series?.restartPolicy ?? 'owner'}</dd>
         </dl>
         {connection === 'disconnected' ? (
           <button

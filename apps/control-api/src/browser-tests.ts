@@ -1,10 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import {
-  isBrowserGame,
-  jsonValueSchema,
-  type StudioProject,
-} from '@common-arcade/protocol'
+import { isBrowserGame, jsonValueSchema } from '@common-arcade/protocol'
 import {
   commonsAgentText,
   CommonsServiceError,
@@ -17,6 +13,7 @@ import {
   type DocumentStore,
   type StoredDocument,
 } from './store.js'
+import { projectAccess } from './project-access.js'
 
 type BrowserRun = StoredDocument & {
   id: string
@@ -114,11 +111,8 @@ export function createBrowserTestApi(
       c.req.header('Authorization'),
       'projects:write',
     )
-    const record = await store.get<StoredDocument & { project: StudioProject }>(
-      `owner:${p.id}`,
-      c.req.param('id'),
-    )
-    if (!record || !isBrowserGame(record.project.document))
+    const record = await projectAccess(store, p.id, c.req.param('id'), 'test')
+    if (!isBrowserGame(record.project.document))
       throw new IdentityError(
         403,
         'Browser project is unavailable to this account.',
@@ -216,6 +210,7 @@ export function createBrowserTestApi(
   })
   app.get('/v1/projects/:id/browser-runs', async (c) => {
     const p = await authenticate(c.req.header('Authorization'), 'projects:read')
+    await projectAccess(store, p.id, c.req.param('id'), 'view')
     const runs = await store.list<BrowserRun>(`browser-runs:${p.id}`)
     return c.json({
       runs: runs

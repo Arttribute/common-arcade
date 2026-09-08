@@ -31,9 +31,11 @@ import {
   Save,
   Scan,
   Settings2,
+  Share2,
   SkipForward,
   Sparkles,
   Upload,
+  Users,
   X,
 } from 'lucide-react'
 import {
@@ -51,6 +53,7 @@ import {
 } from '@agent-commons/ui'
 import {
   compilePresentation,
+  defaultGameDistribution,
   gameDocumentSchema,
   emptyBrowserDocument,
   isBrowserGame,
@@ -354,6 +357,10 @@ export function GameStudio({ projectId }: { projectId: string }) {
   const [zoom, setZoom] = useState(1)
   const [user, setUser] = useState<{ id: string; name: string } | null>(null)
   const [project, setProject] = useState<StudioProject>()
+  const [collaboratorId, setCollaboratorId] = useState('')
+  const [collaboratorPermission, setCollaboratorPermission] = useState<
+    'test' | 'comment' | 'edit'
+  >('test')
   const [projects, setProjects] = useState<StudioProject[]>([])
   const [document, setDocument] = useState<GameDocument>(emptyBrowserDocument)
   const [source, setSource] = useState(
@@ -402,6 +409,12 @@ export function GameStudio({ projectId }: { projectId: string }) {
         view === 'code' &&
         source !== JSON.stringify(document, null, 2))
     : false
+  const isOwner = Boolean(user && project?.ownerId === user.id)
+  const myPermissions =
+    project?.collaborators?.find((member) => member.actorId === user?.id)
+      ?.permissions ?? []
+  const canEdit =
+    project === undefined || isOwner || myPermissions.includes('edit')
   const load = useCallback(
     (p: StudioProject) => {
       setProject(p)
@@ -525,6 +538,18 @@ export function GameStudio({ projectId }: { projectId: string }) {
     setProjects((all) => [p, ...all.filter((x) => x.id !== p.id)])
     window.history.replaceState(null, '', `/studio/${p.id}`)
     return p
+  }
+  async function setCollaborators(
+    collaborators: NonNullable<StudioProject['collaborators']>,
+  ) {
+    if (!project) return
+    const next = await arcade<StudioProject>(
+      `projects/${project.id}/collaborators`,
+      { collaborators },
+      'PUT',
+    )
+    setProject(next)
+    setProjects((all) => [next, ...all.filter((item) => item.id !== next.id)])
   }
   function update(patch: Partial<GameDocument>) {
     setPlaying(false)
@@ -859,38 +884,42 @@ export function GameStudio({ projectId }: { projectId: string }) {
           <div className="studio-toolbar-end">
             {user ? (
               <>
-                <Button
-                  disabled={!!busy}
-                  onClick={() =>
-                    void task('save', async () => {
-                      await save()
-                      setNotice('Revision saved.')
-                    })
-                  }
-                >
-                  <Save size={14} />
-                  Save
-                </Button>
-                <Button
-                  disabled={!!busy}
-                  onClick={() =>
-                    void task('publish', async () => {
-                      const p = !project || dirty ? await save() : project
-                      const release = await arcade<StudioRelease>(
-                        `projects/${p.id}/publish`,
-                        {},
-                        'POST',
-                        { 'If-Match': String(p.revision) },
-                      )
-                      setProject({ ...p, releaseId: release.id })
-                      setNotice('Published. Your game is now in the Arcade.')
-                    })
-                  }
-                  variant="primary"
-                >
-                  <Upload size={14} />
-                  Publish
-                </Button>
+                {canEdit ? (
+                  <Button
+                    disabled={!!busy}
+                    onClick={() =>
+                      void task('save', async () => {
+                        await save()
+                        setNotice('Revision saved.')
+                      })
+                    }
+                  >
+                    <Save size={14} />
+                    Save
+                  </Button>
+                ) : null}
+                {isOwner ? (
+                  <Button
+                    disabled={!!busy}
+                    onClick={() =>
+                      void task('publish', async () => {
+                        const p = !project || dirty ? await save() : project
+                        const release = await arcade<StudioRelease>(
+                          `projects/${p.id}/publish`,
+                          {},
+                          'POST',
+                          { 'If-Match': String(p.revision) },
+                        )
+                        setProject({ ...p, releaseId: release.id })
+                        setNotice('Published. Your game is now in the Arcade.')
+                      })
+                    }
+                    variant="primary"
+                  >
+                    <Upload size={14} />
+                    Publish
+                  </Button>
+                ) : null}
               </>
             ) : (
               <a
@@ -926,6 +955,174 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 () => setLeftOpen(false),
               )}
             </div>
+            <div className="studio-section">
+              <div className="studio-section-label">
+                <Share2 size={13} />
+                Publishing & remixes
+              </div>
+              <label>
+                License
+                <select
+                  value={
+                    document.distribution?.license ??
+                    defaultGameDistribution.license
+                  }
+                  onChange={(event) =>
+                    update({
+                      distribution: {
+                        ...(document.distribution ?? defaultGameDistribution),
+                        license: event.target.value as
+                          | 'all-rights-reserved'
+                          | 'cc-by-4.0'
+                          | 'cc-by-sa-4.0'
+                          | 'cc0-1.0',
+                      },
+                    })
+                  }
+                >
+                  <option value="all-rights-reserved">
+                    All rights reserved
+                  </option>
+                  <option value="cc-by-4.0">CC BY 4.0</option>
+                  <option value="cc-by-sa-4.0">CC BY-SA 4.0</option>
+                  <option value="cc0-1.0">CC0 1.0</option>
+                </select>
+              </label>
+              <label>
+                Remixing
+                <select
+                  value={
+                    document.distribution?.remixing ??
+                    defaultGameDistribution.remixing
+                  }
+                  onChange={(event) =>
+                    update({
+                      distribution: {
+                        ...(document.distribution ?? defaultGameDistribution),
+                        remixing: event.target.value as 'disabled' | 'allowed',
+                      },
+                    })
+                  }
+                >
+                  <option value="disabled">Disabled</option>
+                  <option value="allowed">Allow attributed remixes</option>
+                </select>
+              </label>
+              <label>
+                Future creator share
+                <select
+                  value={
+                    document.distribution?.revenueShareBps ??
+                    defaultGameDistribution.revenueShareBps
+                  }
+                  onChange={(event) =>
+                    update({
+                      distribution: {
+                        ...(document.distribution ?? defaultGameDistribution),
+                        revenueShareBps: Number(event.target.value),
+                      },
+                    })
+                  }
+                >
+                  {[0, 500, 1000, 2000, 3000, 5000].map((bps) => (
+                    <option key={bps} value={bps}>
+                      {bps / 100}%
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="studio-help">
+                Remixes are isolated projects with immutable source attribution.
+                Creator-share terms are recorded now; settlement is not active.
+              </p>
+            </div>
+            {project && isOwner ? (
+              <div className="studio-section">
+                <div className="studio-section-label">
+                  <Users size={13} />
+                  Team access
+                </div>
+                <label>
+                  Commons user ID
+                  <input
+                    value={collaboratorId}
+                    onChange={(event) => setCollaboratorId(event.target.value)}
+                    placeholder="user_…"
+                  />
+                </label>
+                <label>
+                  Permission
+                  <select
+                    value={collaboratorPermission}
+                    onChange={(event) =>
+                      setCollaboratorPermission(
+                        event.target.value as typeof collaboratorPermission,
+                      )
+                    }
+                  >
+                    <option value="test">Can test</option>
+                    <option value="comment">Can comment</option>
+                    <option value="edit">Can edit</option>
+                  </select>
+                </label>
+                <button
+                  className="studio-access-add"
+                  disabled={!collaboratorId.trim() || !!busy}
+                  onClick={() =>
+                    void task('access', async () => {
+                      const actorId = collaboratorId.trim()
+                      const current = project.collaborators ?? []
+                      await setCollaborators([
+                        ...current.filter(
+                          (member) => member.actorId !== actorId,
+                        ),
+                        { actorId, permissions: [collaboratorPermission] },
+                      ])
+                      setCollaboratorId('')
+                      setNotice('Team access updated.')
+                    })
+                  }
+                >
+                  Add team member
+                </button>
+                <div className="studio-access-list">
+                  {(project.collaborators ?? []).map((member) => (
+                    <div key={member.actorId}>
+                      <span>
+                        <strong>{member.actorId}</strong>
+                        <small>{member.permissions.join(', ')}</small>
+                      </span>
+                      <button
+                        aria-label={`Remove ${member.actorId}`}
+                        onClick={() =>
+                          void task('access', async () => {
+                            await setCollaborators(
+                              (project.collaborators ?? []).filter(
+                                (candidate) =>
+                                  candidate.actorId !== member.actorId,
+                              ),
+                            )
+                            setNotice('Team member removed.')
+                          })
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : project ? (
+              <div className="studio-section">
+                <div className="studio-section-label">
+                  <Users size={13} /> Shared workspace
+                </div>
+                <p className="studio-help">
+                  Your access: {myPermissions.join(', ') || 'view only'}. Only
+                  the owner can publish or change team permissions.
+                </p>
+              </div>
+            ) : null}
             <div className="studio-project-switch">
               <Folder size={14} />
               <select

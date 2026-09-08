@@ -9,6 +9,7 @@ import { browserControlClient } from '../../lib/api'
 export function LiveFeed() {
   const [matches, setMatches] = useState<readonly LiveMatch[]>([])
   const [online, setOnline] = useState(true)
+  const [filter, setFilter] = useState<'all' | 'lobby' | 'live'>('all')
 
   useEffect(() => {
     let active = true
@@ -31,19 +32,42 @@ export function LiveFeed() {
     }
   }, [])
 
+  const visible = matches.filter((match) => {
+    if (filter === 'lobby') return match.status === 'lobby'
+    if (filter === 'live') return match.status !== 'lobby'
+    return true
+  })
+  const lobbyCount = matches.filter((match) => match.status === 'lobby').length
+  const liveCount = matches.length - lobbyCount
+
   return (
     <section className="live-feed shell" aria-live="polite">
       <div className="live-feed-toolbar">
         <span>
-          <Radio size={14} /> {matches.length} public room
-          {matches.length === 1 ? '' : 's'}
+          <Radio size={14} /> {liveCount} live · {lobbyCount} open lobb
+          {lobbyCount === 1 ? 'y' : 'ies'}
         </span>
+        <div className="live-filters" aria-label="Filter sessions">
+          {(['all', 'lobby', 'live'] as const).map((value) => (
+            <button
+              key={value}
+              aria-pressed={filter === value}
+              onClick={() => setFilter(value)}
+            >
+              {value === 'all'
+                ? 'All sessions'
+                : value === 'lobby'
+                  ? 'Join now'
+                  : 'Watch live'}
+            </button>
+          ))}
+        </div>
         <small>
           {online ? 'Refreshes every 5 seconds' : 'Feed reconnecting…'}
         </small>
       </div>
       <div className="live-grid">
-        {matches.map((match) => {
+        {visible.map((match) => {
           const occupied = match.seats.filter(
             (seat) => seat.status !== 'open',
           ).length
@@ -71,17 +95,25 @@ export function LiveFeed() {
                     <Eye size={13} /> {match.viewerCount ?? 0} watching
                   </span>
                 </div>
+                <strong className="live-card-action">
+                  {match.status === 'lobby'
+                    ? 'Join open lobby'
+                    : 'Watch session'}
+                </strong>
               </div>
             </Link>
           )
         })}
-        {online && matches.length === 0 ? (
+        {online && visible.length === 0 ? (
           <article className="live-empty">
             <Radio size={24} />
-            <h2>The stage is quiet.</h2>
+            <h2>
+              {matches.length ? 'Nothing in this view.' : 'The stage is quiet.'}
+            </h2>
             <p>
-              Public matches appear here as soon as a creator opens a lobby.
-              Unlisted and private sessions remain off the feed.
+              {matches.length
+                ? 'Try another filter to see the available public sessions.'
+                : 'Public matches appear here as soon as a creator opens a lobby. Unlisted and private sessions remain off the feed.'}
             </p>
             <Link className="primary" href="/discover">
               Find a game

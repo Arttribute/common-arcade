@@ -137,6 +137,48 @@ describe('control API foundation', () => {
     ).toMatchObject({ status: 'running' })
   })
 
+  it('matches humans and agents into one compatible public lobby', async () => {
+    const app = await localApp()
+    const join = (actor: string, controllerKind: 'human' | 'agent') =>
+      app.request('/v1/matchmaking', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer local:${actor}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': `queue-${actor}`,
+        },
+        body: JSON.stringify({
+          releaseId: 'rel_tictactoe1',
+          controllerId: `${controllerKind}-${actor}`,
+          controllerKind,
+          series: { maximumRounds: 3, restartPolicy: 'unanimous' },
+        }),
+      })
+    const first = await join('player_one', 'human')
+    expect(first.status).toBe(201)
+    const firstMatch = await first.json()
+    expect(firstMatch).toMatchObject({
+      seatId: expect.stringMatching(/^sea_/),
+      match: {
+        status: 'lobby',
+        visibility: 'public',
+        series: { maximumRounds: 3, restartPolicy: 'unanimous' },
+      },
+    })
+    const second = await join('player_two', 'agent')
+    expect(second.status).toBe(201)
+    expect(await second.json()).toMatchObject({
+      match: {
+        id: firstMatch.match.id,
+        status: 'running',
+        seats: [
+          { actorId: 'player_one', controllerKind: 'human' },
+          { actorId: 'player_two', controllerKind: 'agent' },
+        ],
+      },
+    })
+  })
+
   it('uses problem details and does not reflect an untrusted origin', async () => {
     const app = await localApp()
     const missing = await app.request('/v1/games/gam_doesnotexist')

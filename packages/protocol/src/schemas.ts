@@ -248,6 +248,29 @@ export const matchDescriptorSchema = z
     updatedAt: z.string().datetime(),
     visibility: z.enum(['public', 'unlisted', 'private']).optional(),
     viewerCount: z.number().int().nonnegative().optional(),
+    lobby: z
+      .object({
+        joinPolicy: z.enum(['open', 'invite-only']),
+        allowedControllers: z
+          .array(z.enum(['human', 'agent']))
+          .min(1)
+          .max(2),
+        invitedActorIds: z.array(z.string().min(1).max(200)).max(100),
+        spectating: z.enum(['enabled', 'disabled']),
+      })
+      .strict()
+      .optional(),
+    series: z
+      .object({
+        currentRound: z.number().int().positive(),
+        maximumRounds: z.number().int().positive().max(99),
+        restartPolicy: z.enum(['automatic', 'owner', 'unanimous']),
+        status: z.enum(['active', 'awaiting-restart', 'complete']),
+        scores: z.record(z.string().min(1), z.number().int().nonnegative()),
+        restartVotes: z.array(z.string().min(1).max(200)),
+      })
+      .strict()
+      .optional(),
     seats: z.array(
       z.object({
         id: seatIdSchema,
@@ -255,6 +278,7 @@ export const matchDescriptorSchema = z
         team: z.string().min(1).optional(),
         status: z.enum(['open', 'claimed', 'connected', 'disconnected']),
         actorId: z.string().min(1).optional(),
+        controllerKind: z.enum(['human', 'agent']).optional(),
       }),
     ),
     result: jsonValueSchema.optional(),

@@ -11,6 +11,7 @@ export {
   starterDocument,
   exampleDocument,
   emptyBrowserDocument,
+  defaultGameDistribution,
   isBrowserGame,
 } from '@common-arcade/protocol'
 export type {
