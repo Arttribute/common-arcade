@@ -2,7 +2,6 @@ import { jsonValueSchema, type JsonValue } from '@common-arcade/protocol'
 import {
   RELEASE_SYNC,
   newQuickJSWASMModule,
-  shouldInterruptAfterDeadline,
   type QuickJSWASMModule,
 } from 'quickjs-emscripten'
 import type {
@@ -94,6 +93,17 @@ function safeArgs(args: readonly unknown[]): string {
   return JSON.stringify(args).replaceAll('<', '\\u003c')
 }
 
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object' && 'message' in error)
+    return String(error.message)
+  try {
+    return JSON.stringify(error)
+  } catch {
+    return String(error)
+  }
+}
+
 function invocationSource(
   source: string,
   method: string,
@@ -146,6 +156,9 @@ export async function createSandboxedScriptGame(
     throw new RangeError('Managed runtime source exceeds 120 KB.')
   const quickjs = await (quickjsModule ??= newQuickJSWASMModule(RELEASE_SYNC))
   const evaluate = (method: string, args: readonly unknown[]): unknown => {
+    let interruptCycles = 0
+    const maximumInterruptCycles = rules.timeoutMs * 64
+    const hardDeadline = Date.now() + Math.max(250, rules.timeoutMs * 10)
     try {
       return quickjs.evalCode(
         invocationSource(
@@ -155,16 +168,18 @@ export async function createSandboxedScriptGame(
           rules.mode === 'realtime' || rules.mode === 'hybrid',
         ),
         {
-          shouldInterrupt: shouldInterruptAfterDeadline(
-            Date.now() + rules.timeoutMs,
-          ),
+          // Instruction-cycle fuel is stable under a busy host. The generous
+          // wall deadline remains a final fail-safe for host/engine faults.
+          shouldInterrupt: () =>
+            ++interruptCycles > maximumInterruptCycles ||
+            Date.now() > hardDeadline,
           memoryLimitBytes: rules.memoryMiB * 1024 * 1024,
           maxStackSizeBytes: 512 * 1024,
         },
       )
     } catch (error) {
       throw new Error(
-        `Managed runtime ${method} failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Managed runtime ${method} failed: ${errorMessage(error)}`,
       )
     }
   }

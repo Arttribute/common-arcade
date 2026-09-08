@@ -6,6 +6,7 @@ import {
   compilePresentation,
   documentDigest,
   gameDocumentSchema,
+  isManagedBrowserGame,
   rulesFor,
   starterDocument,
   emptyBrowserDocument,
@@ -52,6 +53,10 @@ describe('bounded game authoring', () => {
       },
     ],
   })
+  if (!isManagedBrowserGame(realtimeDuel))
+    throw new Error(
+      'Realtime duel fixture must use the managed browser runtime.',
+    )
   it('compiles complete horizontal, vertical and diagonal winning lines', () => {
     expect(
       rulesFor(starterDocument, 'rel_test', 'sha256:test').winningLines,
@@ -240,6 +245,34 @@ describe('bounded game authoring', () => {
     expect(html).toContain('arcade.authoritative-state')
     expect(html).toContain('arcade.action')
     expect(html).toContain('api.submit=')
+  })
+  it('interrupts creator rules that exceed their deterministic execution budget', async () => {
+    const unsafe = gameDocumentSchema.parse({
+      ...realtimeDuel,
+      runtime: { ...realtimeDuel.runtime, timeoutMs: 1 },
+      files: realtimeDuel.files.map((file) =>
+        file.path === 'server.js'
+          ? {
+              ...file,
+              content:
+                'globalThis.arcadeGame={initialize:()=>{while(true){}},validateAction:()=>null,applyAction:s=>({state:s,events:[]}),tick:s=>({state:s,events:[]}),observe:s=>({visibleState:s,legalActions:[]}),result:()=>null};',
+            }
+          : file,
+      ),
+    })
+    const game = await compileGame(
+      unsafe,
+      'rel_unsafe_loop',
+      `sha256:${'2'.repeat(64)}`,
+    )
+    expect(() =>
+      game.initialize({
+        matchId: 'mat_unsafe_loop',
+        seed: 'fixed',
+        configuration: {},
+        roster: [{ seatId: 'sea_unsafe_loop', role: 'player' }],
+      }),
+    ).toThrow(/interrupted/i)
   })
   it('gives browser games bounded seats and an opaque-origin storage fallback', () => {
     const parsed = gameDocumentSchema.parse(emptyBrowserDocument)
