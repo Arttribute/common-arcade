@@ -338,7 +338,7 @@ describe('local match worker boundary', () => {
         actorId: `clock_actor_${index}`,
         controllerId: `clock_controller_${index}`,
       })
-    await vi.advanceTimersByTimeAsync(110)
+    await vi.runAllTimersAsync()
     expect((await platform.getMatch(match.id)).status).toBe('completed')
     expect(
       platform.getReplay(match.id).timeline?.map((step) => step.kind),
