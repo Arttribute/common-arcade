@@ -246,6 +246,8 @@ export const matchDescriptorSchema = z
     eventSequence: z.number().int().nonnegative(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
+    visibility: z.enum(['public', 'unlisted', 'private']).optional(),
+    viewerCount: z.number().int().nonnegative().optional(),
     seats: z.array(
       z.object({
         id: seatIdSchema,

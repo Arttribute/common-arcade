@@ -80,6 +80,35 @@ describe('hosted Studio boundary', () => {
       ).headers.get('content-security-policy'),
     ).toContain('sandbox allow-scripts')
   })
+  it('forks a published release into an isolated project owned by the caller', async () => {
+    const { app } = setup()
+    const original = await (
+      await app.request('/v1/projects', { method: 'POST', headers, body: '{}' })
+    ).json()
+    const release = await (
+      await app.request(`/v1/projects/${original.id}/publish`, {
+        method: 'POST',
+        headers: { ...headers, 'If-Match': '1' },
+        body: '{}',
+      })
+    ).json()
+    const fork = await app.request(`/v1/studio/releases/${release.id}/fork`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer local:challenger',
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    })
+    expect(fork.status).toBe(201)
+    expect(await fork.json()).toMatchObject({
+      ownerId: 'challenger',
+      revision: 1,
+      document: original.document,
+      annotations: [],
+      forkedFrom: { releaseId: release.id, digest: release.digest },
+    })
+  })
   it('binds annotations to exact revisions and keeps them private', async () => {
     const { app } = setup()
     const p = await (
@@ -99,6 +128,18 @@ describe('hosted Studio boundary', () => {
     expect((await request(2)).status).toBe(409)
     const saved = await (await request(1)).json()
     expect(saved.annotations[0].digest).toBe(p.digest)
+    const revised = await app.request(`/v1/projects/${p.id}`, {
+      method: 'PUT',
+      headers: { ...headers, 'If-Match': '1' },
+      body: JSON.stringify({ ...starterDocument, title: 'Revision two' }),
+    })
+    expect(revised.status).toBe(200)
+    const historical = await request(1)
+    expect(historical.status).toBe(200)
+    expect((await historical.json()).annotations.at(-1)).toMatchObject({
+      revision: 1,
+      digest: p.digest,
+    })
   })
   it('steps a pinned test after process replacement and prevents duplicate advancement', async () => {
     const { app, store } = setup()

@@ -36,6 +36,11 @@ locally. Recording is bounded to five minutes or 8 MB of event data; it is a
 browser replay, not a screen-video encoder, and cross-origin or protected media
 may not be captured.
 
+Open a recording in Studio to add a point or region note at the current
+playback time. Timeline markers seek back to that exact moment, while the note
+retains the same revision and normalized geometry used by live-preview
+annotations.
+
 ## Agent playtests
 
 For browser games, expose `window.arcade.seats()`, `observe(seatId)`,
@@ -106,6 +111,25 @@ Use `decideBrowserAction` with a current observation and action ID for your own
 agent, or an owned Commons agent ID when creating the run. Execute the selected
 action in your browser and submit the next observation. For grid online play,
 `claimSeat` and `createSession` return the credentials needed by `RealtimeClient`.
+
+## Larger worlds, teams, and 3D
+
+Browser documents may declare optional `capabilities` for session, campaign, or
+persistent worlds; turn, event, window, or fixed-tick cadence; 2D, 3D, or mixed
+presentation; team topology and control; and content authored in Blender for
+runtime delivery as glTF/GLB and compressed textures. The browser bundle still
+runs with the same sandbox and size limits. Blender project files are authoring
+inputs, not browser runtime assets.
+
+Economy declarations distinguish `disabled` from `integration-ready` and list
+future authorization, escrow, settlement, refund, or ledger hooks. This is
+capability metadata only: it never enables money movement, wagering, prizes, or
+settlement. Those require a separately reviewed authoritative runtime and
+payments integration.
+
+Authoritative match creators choose public, unlisted, or private visibility.
+Only public lobbies and active matches appear in [Live](/live); private Studio
+agent playtests and unlisted rooms stay out of the feed.
 
 ## Hosting and current boundaries
 

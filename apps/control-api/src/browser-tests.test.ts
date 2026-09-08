@@ -251,4 +251,134 @@ describe('browser playtest decisions', () => {
       ).json(),
     ).toMatchObject({ step: 1 })
   })
+
+  it('uses current threat timing and measured feedback for a fast adaptive realtime policy', async () => {
+    const store = new MemoryDocumentStore()
+    const local = createApp({ store, allowLocalAuth: true, logRequests: false })
+    const headers = {
+      Authorization: 'Bearer local:browser_creator',
+      'Content-Type': 'application/json',
+    }
+    const project = await (
+      await local.request('/v1/projects', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ document: emptyBrowserDocument }),
+      })
+    ).json()
+    vi.stubGlobal('fetch', async (input: unknown) => {
+      const url = String(input)
+      if (url.endsWith('/v1/sessions'))
+        return Response.json({ data: { sessionId: 'ses_fast_policy' } })
+      return Response.json({ data: { agentId: 'agt_fast_policy' } })
+    })
+    const app = createBrowserTestApi(store, async () => ({
+      id: 'browser_creator',
+      scopes: ['projects:read', 'projects:write'],
+      token: 'commons-token',
+      provider: 'commons',
+    }))
+    const run = await (
+      await app.request(`/v1/projects/${project.id}/browser-runs`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          controllers: [
+            {
+              seatId: 'seat-1',
+              label: 'Red',
+              kind: 'agent',
+              agentId: 'agt_fast_policy',
+              strategy: 'Survive and counterattack.',
+            },
+          ],
+        }),
+      })
+    ).json()
+    const decide = (step: number, feedback?: Record<string, unknown>) =>
+      app.request(`/v1/studio/browser-runs/${run.id}/decide`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          step,
+          seatId: 'seat-1',
+          decisionMode: 'realtime-policy',
+          observation: {
+            state: {
+              arcadeDecisionContext: {
+                incomingThreats: step === 0 ? [] : [{ timeToImpactMs: 320 }],
+              },
+            },
+            actions: [
+              { id: 'seat:seat-1:idle', label: 'Idle' },
+              { id: 'seat:seat-1:jump', label: 'Jump' },
+              { id: 'seat:seat-1:duck', label: 'Duck' },
+              { id: 'seat:seat-1:shoot', label: 'Shoot' },
+            ],
+          },
+          ...(feedback ? { feedback } : {}),
+        }),
+      })
+    const first = await (await decide(0)).json()
+    expect(first).toMatchObject({
+      decisionSource: 'arcade-policy',
+      decision: { actionId: 'seat:seat-1:shoot' },
+    })
+    expect(
+      (
+        await decide(1, {
+          actionId: 'seat:seat-1:duck',
+          outcome: 'positive',
+          reward: 100,
+          summary: 'Fabricated feedback for a different action.',
+          observedAfterMs: 1,
+          metrics: {},
+        })
+      ).status,
+    ).toBe(400)
+    const second = await (
+      await decide(1, {
+        actionId: first.decision.actionId,
+        outcome: 'positive',
+        reward: 1,
+        summary: 'Opponent lost one life.',
+        observedAfterMs: 800,
+        metrics: { opponentLivesDelta: -1 },
+      })
+    ).json()
+    expect(second.decision.reason).toContain('320 ms to impact')
+    const third = await (
+      await decide(2, {
+        actionId: second.decision.actionId,
+        outcome: 'negative',
+        reward: -1,
+        summary: 'Agent lost one life.',
+        observedAfterMs: 900,
+        metrics: { ownLivesDelta: -1 },
+      })
+    ).json()
+    const fourth = await (
+      await decide(3, {
+        actionId: third.decision.actionId,
+        outcome: 'positive',
+        reward: 2,
+        summary: 'The dodge avoided damage.',
+        observedAfterMs: 900,
+        metrics: { ownLivesDelta: 0 },
+      })
+    ).json()
+    expect(fourth).toMatchObject({
+      adaptation: {
+        to: expect.any(String),
+        strategyEpoch: 2,
+        source: 'agent-self-review',
+      },
+      performance: {
+        feedbackSamples: 3,
+        cumulativeReward: 2,
+        improving: true,
+      },
+    })
+    expect(fourth.timing.decisionLatencyMs).toBeLessThan(100)
+  })
 })

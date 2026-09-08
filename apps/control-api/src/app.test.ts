@@ -71,7 +71,11 @@ describe('control API foundation', () => {
         'Content-Type': 'application/json',
         'Idempotency-Key': 'control-api-match-one',
       },
-      body: JSON.stringify({ releaseId: 'rel_tictactoe1', seed: 'seed-one' }),
+      body: JSON.stringify({
+        releaseId: 'rel_tictactoe1',
+        seed: 'seed-one',
+        visibility: 'public',
+      }),
     })
     expect(createResponse.status).toBe(201)
     const match = (await createResponse.json()) as {
@@ -80,6 +84,12 @@ describe('control API foundation', () => {
       seats: { id: string }[]
     }
     expect(match.status).toBe('lobby')
+    const live = (await (await app.request('/v1/matches')).json()) as {
+      matches: Array<{ id: string; visibility: string }>
+    }
+    expect(live.matches).toContainEqual(
+      expect.objectContaining({ id: match.id, visibility: 'public' }),
+    )
     const first = match.seats[0]
     const second = match.seats[1]
     if (first === undefined || second === undefined)
@@ -141,6 +151,38 @@ describe('control API foundation', () => {
       headers: { origin: 'https://attacker.invalid' },
     })
     expect(response.headers.get('access-control-allow-origin')).toBeNull()
+  })
+
+  it('keeps private match details and replays owner-scoped', async () => {
+    const app = await localApp()
+    const created = await app.request('/v1/matches', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer local:private_owner',
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'private-control-match',
+      },
+      body: JSON.stringify({
+        releaseId: 'rel_tictactoe1',
+        visibility: 'private',
+      }),
+    })
+    const match = (await created.json()) as { id: string }
+    expect((await app.request(`/v1/matches/${match.id}`)).status).toBe(403)
+    expect(
+      (
+        await app.request(`/v1/matches/${match.id}`, {
+          headers: { Authorization: 'Bearer local:private_owner' },
+        })
+      ).status,
+    ).toBe(200)
+    expect(
+      (
+        await app.request(`/v1/matches/${match.id}/replay`, {
+          headers: { Authorization: 'Bearer local:not_the_owner' },
+        })
+      ).status,
+    ).toBe(403)
   })
 
   it('runs autonomous agents and exposes owner-scoped diagnostics', async () => {

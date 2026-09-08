@@ -59,7 +59,11 @@ export default async function GamePage({
             ))}
           </div>
         </div>
-        {!isBrowserGame(document) && <MatchLauncher releaseId={releaseId} />}
+        <MatchLauncher
+          releaseId={releaseId}
+          gameId={gameId}
+          browserGame={isBrowserGame(document)}
+        />
       </section>
       <section
         className="shell"
@@ -107,6 +111,57 @@ export default async function GamePage({
           </p>
         </article>
       </section>
+      {isBrowserGame(document) && document.capabilities ? (
+        <section className="capability-contract shell">
+          <div>
+            <span className="panel-label">WORLD</span>
+            <strong>{document.capabilities.world.persistence}</strong>
+            <p>
+              {document.capabilities.world.cadence} ·{' '}
+              {document.capabilities.world.authority}
+            </p>
+          </div>
+          <div>
+            <span className="panel-label">PRESENTATION</span>
+            <strong>
+              {document.capabilities.presentation.dimension} ·{' '}
+              {document.capabilities.presentation.engine}
+            </strong>
+            <p>
+              {document.capabilities.presentation.contentPipeline?.authoringTools.includes(
+                'blender',
+              )
+                ? 'Blender → web-optimized ' +
+                  document.capabilities.presentation.contentPipeline.runtimeFormats.join(
+                    ' / ',
+                  )
+                : 'Web-native presentation pipeline'}
+            </p>
+          </div>
+          <div>
+            <span className="panel-label">TEAMS</span>
+            <strong>
+              {document.capabilities.teams.enabled
+                ? `${document.capabilities.teams.maxTeams} teams · ${document.capabilities.teams.control}`
+                : 'Individual play'}
+            </strong>
+            <p>
+              {document.capabilities.teams.enabled
+                ? `${document.capabilities.teams.membersPerTeam} seats per team`
+                : 'No shared team controller'}
+            </p>
+          </div>
+          <div>
+            <span className="panel-label">ECONOMY</span>
+            <strong>{document.capabilities.economy.payments}</strong>
+            <p>
+              {document.capabilities.economy.payments === 'integration-ready'
+                ? 'Hooks declared; payments are not active.'
+                : 'No payment capability requested.'}
+            </p>
+          </div>
+        </section>
+      ) : null}
       <section className="manifest-block shell">
         <details>
           <summary className="panel-label">View the agent contract</summary>

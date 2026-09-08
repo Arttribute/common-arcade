@@ -32,6 +32,47 @@ async function setup() {
 }
 
 describe('local match worker boundary', () => {
+  it('lists only public matches and fences private rooms to their owner', async () => {
+    const platform = await LocalArcadePlatform.create({
+      ticketSecret: new Uint8Array(32).fill(4),
+    })
+    const publicMatch = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      idempotencyKey: 'public-match-one',
+      ownerId: 'public_owner',
+      visibility: 'public',
+    })
+    const privateMatch = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      idempotencyKey: 'private-match-one',
+      ownerId: 'private_owner',
+      visibility: 'private',
+    })
+    expect(
+      (await platform.listPublicMatches()).map((match) => match.id),
+    ).toEqual([publicMatch.id])
+    await expect(
+      platform.createSession({
+        matchId: privateMatch.id,
+        mode: 'spectate',
+        actorId: 'someone_else',
+      }),
+    ).rejects.toMatchObject({ code: 'CONTROL_REVOKED' })
+    await expect(platform.getMatch(privateMatch.id)).rejects.toMatchObject({
+      code: 'CONTROL_REVOKED',
+    })
+    expect((await platform.getMatch(privateMatch.id, 'private_owner')).id).toBe(
+      privateMatch.id,
+    )
+    const ticket = await platform.createSession({
+      matchId: publicMatch.id,
+      mode: 'spectate',
+      actorId: 'viewer_one',
+    })
+    await platform.connectWithTicket(ticket.ticket, publicMatch.id)
+    expect((await platform.getMatch(publicMatch.id)).viewerCount).toBe(1)
+  })
+
   it('keeps match creation idempotent', async () => {
     const { platform, match } = await setup()
     const duplicate = await platform.createMatch({

@@ -71,16 +71,56 @@ type BrowserController = {
   sessionId?: string
   strategy: string
   strategyEpoch?: number
+  lastActionId?: string
+  lastDecisionAt?: number
+  performance?: {
+    decisions: number
+    feedbackSamples: number
+    cumulativeReward: number
+    recentReward: number
+    improving: boolean
+  }
+  policyMemory?: {
+    preferredDefense?: string
+    actions: Record<
+      string,
+      { samples: number; totalReward: number; meanReward: number }
+    >
+    lastLesson?: string
+  }
+}
+type BrowserFeedback = {
+  actionId: string
+  outcome: 'positive' | 'negative' | 'neutral' | 'unknown'
+  reward: number
+  summary: string
+  observedAfterMs: number
+  metrics: Record<string, number>
 }
 type BrowserEvent = {
   step: number
   seatId?: string
   observation: CanvasObservation
-  decision: { actionId: string; reason: string }
-  decisionSource?: 'commons' | 'arcade-fallback' | 'human' | 'external'
+  decision: {
+    actionId: string
+    reason: string
+    learning?: { lesson: string; confidence: number }
+  }
+  decisionSource?:
+    'commons' | 'arcade-policy' | 'arcade-fallback' | 'human' | 'external'
+  feedback?: BrowserFeedback
+  adaptation?: {
+    from: string
+    to: string
+    strategyEpoch: number
+    reason: string
+    source: string
+  }
+  timing?: { decisionLatencyMs: number; observationFrame?: number }
+  performance?: BrowserController['performance']
   controller?: Pick<
     BrowserController,
-    'kind' | 'agentId' | 'strategy' | 'strategyEpoch'
+    'kind' | 'agentId' | 'strategy' | 'strategyEpoch' | 'policyMemory'
   >
 }
 type BrowserRun = {
@@ -110,6 +150,10 @@ export function GameStudio({ projectId }: { projectId: string }) {
   const compiledRef = useRef<CompiledFrameHandle>(null)
   const previewStageRef = useRef<HTMLDivElement>(null)
   const annotationContext = useRef<Promise<unknown> | undefined>(undefined)
+  const browserDecisionActive = useRef(false)
+  const browserOutcome = useRef(
+    new Map<string, { state: unknown; actionId: string; actedAt: number }>(),
+  )
   const [shareRecordings, setShareRecordings] = useState(false),
     [recordingsRefresh, setRecordingsRefresh] = useState(0)
   const [browserRun, setBrowserRun] = useState<BrowserRun>()
@@ -118,6 +162,8 @@ export function GameStudio({ projectId }: { projectId: string }) {
   const [browserObservation, setBrowserObservation] =
     useState<CanvasObservation>()
   const [browserPlaying, setBrowserPlaying] = useState(false)
+  const [browserDeciding, setBrowserDeciding] = useState(false)
+  const [logsOpen, setLogsOpen] = useState(true)
   const [browserAction, setBrowserAction] = useState<{
     seat: string
     action: string
@@ -165,8 +211,18 @@ export function GameStudio({ projectId }: { projectId: string }) {
         'No agent-controlled seat has a legal action. Make a human move or restart the session.',
       )
     }
+    const rawSeatState = stateForSeat(observation.state, selected.seatId)
+    const prior = browserOutcome.current.get(selected.seatId)
+    const feedback = prior
+      ? transitionFeedback(
+          prior.state,
+          rawSeatState,
+          prior.actionId,
+          Date.now() - prior.actedAt,
+        )
+      : undefined
     const seatObservation = {
-      state: stateForSeat(observation.state, selected.seatId),
+      state: enrichRealtimeState(rawSeatState),
       actions: actionsForSeat(observation.actions, selected.seatId),
     }
     setBrowserAction({
@@ -180,6 +236,11 @@ export function GameStudio({ projectId }: { projectId: string }) {
         step: current.step,
         seatId: selected.seatId,
         observation: seatObservation,
+        ...(feedback ? { feedback } : {}),
+        decisionMode:
+          isBrowserGame(document) && document.play?.mode === 'realtime'
+            ? 'realtime-policy'
+            : 'model',
       },
     )
     const chosen = seatObservation.actions.find(
@@ -193,8 +254,25 @@ export function GameStudio({ projectId }: { projectId: string }) {
     const nextObservation = await compiledRef.current.act(
       event.decision.actionId,
     )
+    browserOutcome.current.set(selected.seatId, {
+      state: rawSeatState,
+      actionId: event.decision.actionId,
+      actedAt: Date.now(),
+    })
     setBrowserObservation(nextObservation)
-    setBrowserRun({ ...current, step: current.step + 1 })
+    setBrowserRun({
+      ...current,
+      step: current.step + 1,
+      controllers: current.controllers.map((controller) =>
+        controller.seatId === selected.seatId && event.controller
+          ? {
+              ...controller,
+              ...event.controller,
+              performance: event.performance,
+            }
+          : controller,
+      ),
+    })
     setBrowserEvents((all) => [...all, event])
     if (event.decisionSource === 'arcade-fallback')
       setNotice(
@@ -333,6 +411,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
       setBrowserRun(undefined)
       setBrowserRuns([])
       setBrowserEvents([])
+      browserOutcome.current.clear()
       setBrowserObservation(undefined)
       setBrowserControllers(defaultBrowserControllers(p.document))
       setBrowserPlaying(false)
@@ -504,7 +583,9 @@ export function GameStudio({ projectId }: { projectId: string }) {
     setBrowserRun(created)
     setBrowserRuns((runs) => [created, ...runs])
     setBrowserEvents([])
+    browserOutcome.current.clear()
     setBrowserObservation(initialObservation)
+    setLogsOpen(true)
     setBrowserPlaying(
       Boolean(
         created.controllers.some(
@@ -590,6 +671,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
     setRun(r)
     setView('test')
     setPlaying(true)
+    setLogsOpen(true)
     setSelected(undefined)
   }
   async function stepRun() {
@@ -605,19 +687,46 @@ export function GameStudio({ projectId }: { projectId: string }) {
     }, 750)
     return () => clearTimeout(timer)
   }, [playing, busy, run])
+  const runBrowserDecision = useCallback(async () => {
+    if (browserDecisionActive.current) return
+    browserDecisionActive.current = true
+    setBrowserDeciding(true)
+    setError('')
+    try {
+      await browserDecision()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+      setBrowserPlaying(false)
+    } finally {
+      browserDecisionActive.current = false
+      setBrowserDeciding(false)
+    }
+  }, [browserRun, project, dirty, document, browserControllers])
   useEffect(() => {
-    if (!browserPlaying || busy || !browserRun || browserRun.step >= 200) return
+    if (
+      !browserPlaying ||
+      browserDeciding ||
+      !browserRun ||
+      browserRun.step >= 200
+    )
+      return
     const decisionsPerSecond = isBrowserGame(document)
       ? (document.play?.maxDecisionsPerSecond ?? 2)
       : 2
     const timer = setTimeout(
       () => {
-        void task('agent move', browserDecision)
+        void runBrowserDecision()
       },
-      Math.max(250, Math.ceil(1000 / decisionsPerSecond)),
+      Math.max(50, Math.ceil(1000 / decisionsPerSecond)),
     )
     return () => clearTimeout(timer)
-  }, [browserPlaying, busy, browserRun?.step, document])
+  }, [
+    browserPlaying,
+    browserDeciding,
+    browserRun?.step,
+    document,
+    runBrowserDecision,
+  ])
   const board = run?.replay.checkpoints.at(-1)?.state as
     { board?: (string | null)[] } | undefined
   const previewDocument = view === 'test' && run ? run.document : document
@@ -1057,6 +1166,28 @@ export function GameStudio({ projectId }: { projectId: string }) {
                           <small>Strategy {controller.strategyEpoch}</small>
                         ) : null}
                       </div>
+                      {controller.performance ? (
+                        <div className="studio-learning-summary">
+                          <span>
+                            {controller.performance.improving ? '↗' : '→'}{' '}
+                            {controller.performance.feedbackSamples} feedback
+                            samples
+                          </span>
+                          <span>
+                            reward{' '}
+                            {controller.performance.cumulativeReward >= 0
+                              ? '+'
+                              : ''}
+                            {controller.performance.cumulativeReward.toFixed(1)}
+                          </span>
+                        </div>
+                      ) : null}
+                      {controller.policyMemory?.preferredDefense ? (
+                        <small className="studio-learned-policy">
+                          Learned defense:{' '}
+                          {controller.policyMemory.preferredDefense}
+                        </small>
+                      ) : null}
                       <select
                         aria-label={`${controller.label} controller`}
                         value={controller.kind}
@@ -1196,22 +1327,33 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 ) : (
                   <div className="studio-controller-actions">
                     <Button
-                      disabled={!!busy || browserRun.step >= 200}
-                      onClick={() => setBrowserPlaying(!browserPlaying)}
+                      disabled={browserRun.step >= 200}
+                      onClick={() => setBrowserPlaying((active) => !active)}
                     >
                       {browserPlaying ? (
                         <Pause size={13} />
+                      ) : browserDeciding ? (
+                        <Loader2 size={13} className="spin" />
                       ) : (
                         <Play size={13} />
                       )}
-                      {browserPlaying ? 'Pause agents' : 'Run agents'}
+                      {browserPlaying
+                        ? browserDeciding
+                          ? 'Stop after this move'
+                          : 'Pause agents'
+                        : browserDeciding
+                          ? 'Stopping…'
+                          : 'Run agents'}
                     </Button>
                     <Button
                       variant="ghost"
                       disabled={
-                        !!busy || browserPlaying || browserRun.step >= 200
+                        !!busy ||
+                        browserDeciding ||
+                        browserPlaying ||
+                        browserRun.step >= 200
                       }
-                      onClick={() => void task('agent move', browserDecision)}
+                      onClick={() => void runBrowserDecision()}
                     >
                       <SkipForward size={13} /> One decision
                     </Button>
@@ -1220,6 +1362,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 {browserRun && (
                   <Button
                     variant="ghost"
+                    disabled={browserDeciding}
                     onClick={() => {
                       setBrowserPlaying(false)
                       setBrowserRun(undefined)
@@ -1279,6 +1422,31 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 <RecordingShelf
                   projectId={project.id}
                   refresh={recordingsRefresh}
+                  annotations={project.annotations}
+                  onAnnotate={async (
+                    recordingId,
+                    timeMs,
+                    revision,
+                    geometry,
+                    body,
+                  ) => {
+                    const updated = await arcade<StudioProject>(
+                      `projects/${project.id}/annotations`,
+                      {
+                        ...geometry,
+                        body,
+                        revision,
+                        context: {
+                          viewport: { width: 1280, height: 720 },
+                          moment: { recordingId, timeMs },
+                        },
+                      },
+                    )
+                    setProject(updated)
+                    setNotice(
+                      `Annotation saved at ${(timeMs / 1000).toFixed(1)}s.`,
+                    )
+                  }}
                 />
               </div>
             )}
@@ -1606,23 +1774,55 @@ export function GameStudio({ projectId }: { projectId: string }) {
         )
       }
       bottom={
-        isBrowserGame(document) && browserEvents.length > 0 ? (
+        !logsOpen ? undefined : isBrowserGame(document) && browserRun ? (
           <div className="studio-browser-events">
-            <strong>
-              Browser Test Arena · {browserRun?.controllers.length ?? 0} seats ·
-              private / unrated
-            </strong>
+            <div className="studio-browser-events-heading">
+              <strong>
+                Browser Test Arena · {browserRun.controllers.length} seats ·
+                private / unrated
+              </strong>
+              <span>
+                {browserEvents.length} decisions ·{' '}
+                {document.play?.mode === 'realtime'
+                  ? 'low-latency policy'
+                  : 'model policy'}
+              </span>
+              <button
+                aria-label="Close test logs"
+                title="Close test logs"
+                onClick={() => setLogsOpen(false)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            {!browserEvents.length ? (
+              <p className="studio-help">
+                Decisions, measured feedback, latency, and strategy changes will
+                appear here.
+              </p>
+            ) : null}
             {browserEvents.map((event) => (
               <details key={event.step}>
                 <summary>
                   {event.step + 1}. {event.seatId ?? 'seat'} ·{' '}
-                  {event.decision.actionId} · {event.decision.reason}
+                  {event.decision.actionId} · {event.decision.reason}{' '}
+                  {event.feedback ? (
+                    <em className={`studio-feedback ${event.feedback.outcome}`}>
+                      {event.feedback.reward >= 0 ? '+' : ''}
+                      {event.feedback.reward.toFixed(1)}
+                    </em>
+                  ) : null}
                 </summary>
                 <pre>
                   {JSON.stringify(
                     {
                       controller: event.controller,
                       observation: event.observation,
+                      feedback: event.feedback,
+                      learning: event.decision.learning,
+                      adaptation: event.adaptation,
+                      performance: event.performance,
+                      timing: event.timing,
                     },
                     null,
                     2,
@@ -1651,6 +1851,13 @@ export function GameStudio({ projectId }: { projectId: string }) {
                   <option value="policy">Observations & decisions</option>
                   <option value="runtime">Actions & state</option>
                 </select>
+                <button
+                  aria-label="Close test logs"
+                  title="Close test logs"
+                  onClick={() => setLogsOpen(false)}
+                >
+                  <X size={14} />
+                </button>
                 {run && (
                   <button
                     onClick={() => {
@@ -1764,6 +1971,11 @@ export function GameStudio({ projectId }: { projectId: string }) {
           ))}
         </div>
         <div className="studio-stage-actions">
+          {!logsOpen && (browserRun || view === 'test')
+            ? icon(<FlaskConical size={14} />, 'Open test logs', () =>
+                setLogsOpen(true),
+              )
+            : null}
           {!leftOpen &&
             icon(<Folder size={15} />, 'Open project panel', () =>
               setLeftOpen(true),
@@ -2086,6 +2298,122 @@ function stateForSeat(state: unknown, seatId: string): unknown {
   const observations = (arcade as Record<string, unknown>).observations
   if (!observations || typeof observations !== 'object') return state
   return (observations as Record<string, unknown>)[seatId] ?? state
+}
+
+function numberAt(state: unknown, path: readonly string[]): number | undefined {
+  let value = state
+  for (const key of path) {
+    if (!value || typeof value !== 'object') return undefined
+    value = (value as Record<string, unknown>)[key]
+  }
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function textAt(state: unknown, path: readonly string[]): string | undefined {
+  let value = state
+  for (const key of path) {
+    if (!value || typeof value !== 'object') return undefined
+    value = (value as Record<string, unknown>)[key]
+  }
+  return typeof value === 'string' ? value : undefined
+}
+
+function transitionFeedback(
+  before: unknown,
+  after: unknown,
+  actionId: string,
+  observedAfterMs: number,
+): BrowserFeedback {
+  const metrics: Record<string, number> = {}
+  let reward = 0
+  const measure = (
+    name: string,
+    path: readonly string[],
+    rewardWeight: number,
+  ) => {
+    const prior = numberAt(before, path)
+    const current = numberAt(after, path)
+    if (prior === undefined || current === undefined) return
+    const delta = current - prior
+    metrics[name] = delta
+    reward += delta * rewardWeight
+  }
+  measure('ownLivesDelta', ['me', 'lives'], 2)
+  measure('opponentLivesDelta', ['opponent', 'lives'], -2)
+  measure('ownHitsDelta', ['me', 'shotsHit'], 1)
+  measure('opponentHitsDelta', ['opponent', 'shotsHit'], -1)
+  measure('scoreDelta', ['score'], 1)
+  const winner = textAt(after, ['winner'])
+  const me = textAt(after, ['me', 'id'])
+  if (winner && me) reward += winner === me ? 5 : -5
+  const rounded = Math.round(reward * 100) / 100
+  const outcome =
+    rounded > 0
+      ? ('positive' as const)
+      : rounded < 0
+        ? ('negative' as const)
+        : Object.keys(metrics).length
+          ? ('neutral' as const)
+          : ('unknown' as const)
+  const changed = Object.entries(metrics)
+    .filter(([, delta]) => delta !== 0)
+    .map(([name, delta]) => `${name} ${delta >= 0 ? '+' : ''}${delta}`)
+  return {
+    actionId,
+    outcome,
+    reward: rounded,
+    summary: changed.length
+      ? `Observed ${changed.join(', ')} after the prior action.`
+      : `No measurable outcome change was visible after the prior action.`,
+    observedAfterMs: Math.max(0, Math.round(observedAfterMs)),
+    metrics,
+  }
+}
+
+function enrichRealtimeState(state: unknown): unknown {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return state
+  const source = state as Record<string, unknown>
+  const me =
+    source.me && typeof source.me === 'object'
+      ? (source.me as Record<string, unknown>)
+      : undefined
+  const bullets = Array.isArray(source.bullets) ? source.bullets : []
+  const meX = typeof me?.x === 'number' ? me.x : undefined
+  const meId = typeof me?.id === 'string' ? me.id : undefined
+  const incomingThreats = bullets.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== 'object' || meX === undefined)
+      return []
+    const bullet = candidate as Record<string, unknown>
+    if (
+      typeof bullet.x !== 'number' ||
+      typeof bullet.vx !== 'number' ||
+      bullet.vx === 0 ||
+      (meId && bullet.owner === meId)
+    )
+      return []
+    const seconds = (meX - bullet.x) / bullet.vx
+    if (!Number.isFinite(seconds) || seconds < 0) return []
+    return [
+      {
+        owner: typeof bullet.owner === 'string' ? bullet.owner : undefined,
+        distance: Math.round(Math.abs(meX - bullet.x)),
+        timeToImpactMs: Math.round(seconds * 1000),
+        ...(typeof bullet.y === 'number' ? { y: bullet.y } : {}),
+      },
+    ]
+  })
+  return {
+    ...source,
+    arcadeDecisionContext: {
+      capturedAt: new Date().toISOString(),
+      incomingThreats,
+      urgency: incomingThreats.some((threat) => threat.timeToImpactMs <= 500)
+        ? 'immediate'
+        : incomingThreats.length
+          ? 'approaching'
+          : 'clear',
+    },
+  }
 }
 
 async function waitForPreview(

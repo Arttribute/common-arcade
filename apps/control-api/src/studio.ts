@@ -87,7 +87,7 @@ type RunRecord = StoredDocument & {
   createdAt: string
 }
 const COPILOT_INSTRUCTIONS =
-  'You are a Common Arcade copilot. Use the assigned build-common-arcade-games skill and the supplied Arcade tools. Read the current project before editing. Every browser game must declare its play mode and seat bounds and synchronously expose window.arcade.seats(), observe(seatId), actions(seatId), and step(actionId, seatId) with stable IDs and JSON-serializable observations. Save with arcade_write_game, then run arcade_test_game and repair any failure before reporting completion. Report only actions that tools confirm.'
+  'You are a Common Arcade copilot. Use the assigned build-common-arcade-games skill and the supplied Arcade tools. Read the current project before editing. Every browser game must declare its play mode and seat bounds and synchronously expose window.arcade.seats(), observe(seatId), actions(seatId), and step(actionId, seatId) with stable IDs and JSON-serializable observations. Realtime observations should include actionable derived timing such as time-to-impact rather than only raw positions. Declare capabilities for persistent worlds, teams, 3D presentation, and payment integration hooks when the game needs them; declarations do not activate unavailable hosting or payments. Blender assets must be exported to a web runtime format such as glTF/GLB and rendered through a declared web engine. Save with arcade_write_game, then run arcade_test_game and repair any failure before reporting completion. Report only actions that tools confirm.'
 const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_read_project',
@@ -125,7 +125,10 @@ const ARCADE_COPILOT_TOOLS = [
           description:
             'Playable seat and cadence contract used by Studio and release manifests.',
           properties: {
-            mode: { type: 'string', enum: ['turn-based', 'realtime'] },
+            mode: {
+              type: 'string',
+              enum: ['turn-based', 'simultaneous', 'realtime', 'hybrid'],
+            },
             seats: {
               type: 'object',
               properties: {
@@ -143,6 +146,158 @@ const ARCADE_COPILOT_TOOLS = [
             },
           },
           required: ['mode', 'seats', 'maxDecisionsPerSecond'],
+          additionalProperties: false,
+        },
+        capabilities: {
+          type: 'object',
+          description:
+            'Optional requirements for richer games. These declarations make future runtime, team, asset and payment integrations explicit without claiming they are active.',
+          properties: {
+            genres: {
+              type: 'array',
+              items: { type: 'string' },
+              maxItems: 12,
+            },
+            world: {
+              type: 'object',
+              properties: {
+                persistence: {
+                  type: 'string',
+                  enum: ['session', 'campaign', 'persistent-world'],
+                },
+                authority: {
+                  type: 'string',
+                  enum: [
+                    'browser-preview',
+                    'arcade-managed',
+                    'external-conformant-host',
+                  ],
+                },
+                cadence: {
+                  type: 'string',
+                  enum: ['turn', 'window', 'fixed-tick', 'event-driven'],
+                },
+                checkpointing: {
+                  type: 'string',
+                  enum: ['end-only', 'periodic', 'event-and-periodic'],
+                },
+              },
+              required: [
+                'persistence',
+                'authority',
+                'cadence',
+                'checkpointing',
+              ],
+              additionalProperties: false,
+            },
+            presentation: {
+              type: 'object',
+              properties: {
+                dimension: { type: 'string', enum: ['2d', '3d', 'mixed'] },
+                engine: {
+                  type: 'string',
+                  enum: [
+                    'dom',
+                    'canvas',
+                    'phaser',
+                    'pixi',
+                    'three',
+                    'react-three-fiber',
+                    'babylon',
+                    'playcanvas',
+                    'custom-webgl',
+                  ],
+                },
+                contentPipeline: {
+                  type: 'object',
+                  properties: {
+                    authoringTools: {
+                      type: 'array',
+                      items: {
+                        type: 'string',
+                        enum: ['blender', 'procedural', 'other'],
+                      },
+                    },
+                    runtimeFormats: {
+                      type: 'array',
+                      items: {
+                        type: 'string',
+                        enum: [
+                          'html',
+                          'svg',
+                          'png',
+                          'webp',
+                          'spritesheet',
+                          'gltf',
+                          'glb',
+                          'ktx2',
+                          'basis',
+                        ],
+                      },
+                    },
+                  },
+                  required: ['authoringTools', 'runtimeFormats'],
+                  additionalProperties: false,
+                },
+              },
+              required: ['dimension', 'engine'],
+              additionalProperties: false,
+            },
+            teams: {
+              type: 'object',
+              properties: {
+                enabled: { type: 'boolean' },
+                maxTeams: { type: 'integer', minimum: 1, maximum: 32 },
+                membersPerTeam: {
+                  type: 'integer',
+                  minimum: 1,
+                  maximum: 64,
+                },
+                control: {
+                  type: 'string',
+                  enum: ['individual', 'centralized', 'hybrid'],
+                },
+                sharedStrategy: { type: 'boolean' },
+              },
+              required: [
+                'enabled',
+                'maxTeams',
+                'membersPerTeam',
+                'control',
+                'sharedStrategy',
+              ],
+              additionalProperties: false,
+            },
+            economy: {
+              type: 'object',
+              properties: {
+                payments: {
+                  type: 'string',
+                  enum: ['disabled', 'integration-ready'],
+                },
+                valueMode: {
+                  type: 'string',
+                  enum: ['none', 'virtual', 'regulated'],
+                },
+                hooks: {
+                  type: 'array',
+                  items: {
+                    type: 'string',
+                    enum: [
+                      'entry-authorization',
+                      'escrow-reservation',
+                      'settlement-proposal',
+                      'refund-proposal',
+                      'ledger-export',
+                    ],
+                  },
+                },
+              },
+              required: ['payments', 'valueMode', 'hooks'],
+              additionalProperties: false,
+            },
+          },
+          required: ['world', 'presentation', 'teams', 'economy'],
           additionalProperties: false,
         },
         files: {
@@ -360,7 +515,13 @@ export function createStudioApi(
       ),
       record = await owned(p.id, c.req.param('id')),
       body = annotationBody.parse(await c.req.json())
-    if (body.revision !== record.project.revision) throw new StoreConflict()
+    const targetRevision =
+      body.revision === record.project.revision
+        ? record.project
+        : (await store.list<ProjectRecord>(`revisions:${record.project.id}`))
+            .map((candidate) => candidate.project)
+            .find((candidate) => candidate.revision === body.revision)
+    if (!targetRevision) throw new StoreConflict()
     if (record.project.annotations.length >= 50)
       throw new IdentityError(
         403,
@@ -374,7 +535,7 @@ export function createStudioApi(
           {
             ...body,
             id: id('ann'),
-            digest: record.project.digest,
+            digest: targetRevision.digest,
             status: 'open',
             createdAt: new Date().toISOString(),
           },
@@ -433,6 +594,37 @@ export function createStudioApi(
     const record = await store.get<ReleaseRecord>('releases', c.req.param('id'))
     if (!record) return c.json({ error: 'Release not found' }, 404)
     return c.json(record.release)
+  })
+  app.post('/v1/studio/releases/:id/fork', async (c) => {
+    const p = await authenticate(
+      c.req.header('Authorization'),
+      'projects:write',
+    )
+    const record = await store.get<ReleaseRecord>('releases', c.req.param('id'))
+    if (!record) return c.json({ error: 'Release not found' }, 404)
+    const now = new Date().toISOString()
+    const project: StudioProject = {
+      id: id('prj'),
+      ownerId: p.id,
+      revision: 1,
+      digest: await documentDigest(record.release.document),
+      document: record.release.document,
+      annotations: [],
+      createdAt: now,
+      updatedAt: now,
+    }
+    await revision(project)
+    await store.put(`owner:${p.id}`, project.id, { version: 1, project })
+    return c.json(
+      {
+        ...project,
+        forkedFrom: {
+          releaseId: record.release.id,
+          digest: record.release.digest,
+        },
+      },
+      201,
+    )
   })
   app.get('/v1/studio/releases/:id/preview', async (c) => {
     const record = await store.get<ReleaseRecord>('releases', c.req.param('id'))

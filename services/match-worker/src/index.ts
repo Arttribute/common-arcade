@@ -42,6 +42,8 @@ export interface PersistedMatch {
   ownershipEpoch: number
   createdAt: string
   updatedAt: string
+  ownerId?: string
+  visibility?: 'public' | 'unlisted' | 'private'
 }
 
 interface MatchRecord {
@@ -52,6 +54,8 @@ interface MatchRecord {
   readonly createdAt: string
   updatedAt: string
   readonly seats: MutableSeat[]
+  readonly ownerId?: string
+  readonly visibility: 'public' | 'unlisted' | 'private'
 }
 
 interface SessionRecord {
@@ -71,6 +75,8 @@ export interface CreateMatchRequest {
   readonly configuration?: JsonValue
   readonly seed?: string
   readonly idempotencyKey: string
+  readonly ownerId?: string
+  readonly visibility?: 'public' | 'unlisted' | 'private'
 }
 
 export interface ClaimSeatRequest {
@@ -204,6 +210,8 @@ export class LocalArcadePlatform {
         })),
         createdAt: saved.createdAt,
         updatedAt: saved.updatedAt,
+        ownerId: saved.ownerId,
+        visibility: saved.visibility ?? 'unlisted',
       }
       await platform.persist(record)
       platform.matches.set(saved.replay.matchId, record)
@@ -310,6 +318,8 @@ export class LocalArcadePlatform {
       createdAt: timestamp,
       updatedAt: timestamp,
       seats,
+      ownerId: request.ownerId,
+      visibility: request.visibility ?? 'unlisted',
     }
     await this.persist(record)
     this.matches.set(matchId, record)
@@ -317,15 +327,45 @@ export class LocalArcadePlatform {
     return this.describe(record)
   }
 
-  async getMatch(matchId: string): Promise<MatchDescriptor> {
-    return this.describe(this.record(matchId))
+  async getMatch(matchId: string, actorId?: string): Promise<MatchDescriptor> {
+    const record = this.record(matchId)
+    this.assertViewAccess(record, actorId)
+    return this.describe(record)
+  }
+
+  async listPublicMatches(): Promise<
+    readonly (MatchDescriptor & {
+      gameId: string
+      gameTitle: string
+      summary: string
+    })[]
+  > {
+    const matches = [...this.matches.values()].filter(
+      (record) =>
+        record.visibility === 'public' &&
+        !['completed', 'canceled', 'expired', 'failed', 'invalidated'].includes(
+          record.runtime.getStatus(),
+        ),
+    )
+    return Promise.all(
+      matches
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+        .map(async (record) => ({
+          ...(await this.describe(record)),
+          gameId: record.manifest.metadata.id,
+          gameTitle: record.manifest.metadata.title,
+          summary: record.manifest.metadata.summary,
+        })),
+    )
   }
 
   async getMatchView(
     matchId: string,
     afterEventSequence = 0,
+    actorId?: string,
   ): Promise<MatchView> {
     const record = this.record(matchId)
+    this.assertViewAccess(record, actorId)
     return {
       match: await this.describe(record),
       publicState: record.runtime.publicState(),
@@ -342,6 +382,16 @@ export class LocalArcadePlatform {
     request: ClaimSeatRequest,
   ): Promise<MatchDescriptor> {
     const record = this.record(request.matchId)
+    if (
+      record.visibility === 'private' &&
+      record.ownerId !== undefined &&
+      record.ownerId !== request.actorId
+    )
+      throw new LocalPlatformError(
+        'CONTROL_REVOKED',
+        403,
+        'This private match is available only to its owner.',
+      )
     const seat = record.seats.find(
       (candidate) => candidate.id === request.seatId,
     )
@@ -383,6 +433,16 @@ export class LocalArcadePlatform {
     request: CreateSessionRequest,
   ): Promise<SessionTicketDescriptor> {
     const record = this.record(request.matchId)
+    if (
+      record.visibility === 'private' &&
+      record.ownerId !== undefined &&
+      record.ownerId !== request.actorId
+    )
+      throw new LocalPlatformError(
+        'CONTROL_REVOKED',
+        403,
+        'This private match is available only to its owner.',
+      )
     if (request.mode === 'control') {
       const seat = record.seats.find(
         (candidate) => candidate.id === request.seatId,
@@ -575,8 +635,10 @@ export class LocalArcadePlatform {
     return result
   }
 
-  getReplay(matchId: string): Replay {
-    return this.record(matchId).runtime.exportReplay()
+  getReplay(matchId: string, actorId?: string): Replay {
+    const record = this.record(matchId)
+    this.assertViewAccess(record, actorId)
+    return record.runtime.exportReplay()
   }
 
   async pauseMatch(matchId: string): Promise<MatchDescriptor> {
@@ -634,6 +696,8 @@ export class LocalArcadePlatform {
       ownershipEpoch: record.runtime.getOwnershipEpoch(),
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
+      ownerId: record.ownerId,
+      visibility: record.visibility,
     }
     try {
       await this.persistMatch(saved, record.version || undefined)
@@ -650,6 +714,15 @@ export class LocalArcadePlatform {
       throw new LocalPlatformError('NOT_FOUND', 404, `Unknown match ${matchId}`)
     }
     return record
+  }
+
+  private assertViewAccess(record: MatchRecord, actorId?: string): void {
+    if (record.visibility !== 'private' || record.ownerId === actorId) return
+    throw new LocalPlatformError(
+      'CONTROL_REVOKED',
+      403,
+      'This private match is available only to its owner.',
+    )
   }
 
   private sessionRecord(sessionId: string): SessionRecord {
@@ -673,6 +746,13 @@ export class LocalArcadePlatform {
       eventSequence: snapshot.eventSequence,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
+      visibility: record.visibility,
+      viewerCount: [...this.sessions.values()].filter(
+        (session) =>
+          session.matchId === record.runtime.matchId &&
+          session.mode === 'spectate' &&
+          session.connected,
+      ).length,
       seats: record.seats.map((seat) => ({
         id: seat.id,
         role: seat.role,
@@ -710,7 +790,8 @@ export class LocalArcadePlatform {
   ): Promise<void> {
     const listeners = this.listeners.get(matchId)
     if (listeners === undefined || listeners.size === 0) return
-    const view = await this.getMatchView(matchId)
+    const record = this.record(matchId)
+    const view = await this.getMatchView(matchId, 0, record.ownerId)
     const update: MatchUpdate = {
       ...view,
       ...(actionResult === undefined ? {} : { actionResult }),

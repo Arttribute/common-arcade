@@ -85,6 +85,54 @@ export async function releaseManifest(
   project: StudioProject,
   releaseId: string,
 ): Promise<GameManifest> {
+  const capabilities = isBrowserGame(project.document)
+    ? project.document.capabilities
+    : undefined
+  const capabilityTags = capabilities
+    ? [
+        ...capabilities.genres,
+        capabilities.presentation.dimension,
+        capabilities.teams.enabled ? 'teams' : undefined,
+        capabilities.world.persistence !== 'session'
+          ? capabilities.world.persistence
+          : undefined,
+        capabilities.economy.payments === 'integration-ready'
+          ? 'payments-ready'
+          : undefined,
+      ].filter((tag): tag is string => Boolean(tag))
+    : []
+  const extensions = capabilities
+    ? [
+        {
+          id: 'https://arcade.agentcommons.io/extensions/world/v1',
+          required: false,
+          config: capabilities.world,
+        },
+        {
+          id: 'https://arcade.agentcommons.io/extensions/presentation/v1',
+          required: false,
+          config: capabilities.presentation,
+        },
+        ...(capabilities.teams.enabled
+          ? [
+              {
+                id: 'https://arcade.agentcommons.io/extensions/teams/v1',
+                required: false,
+                config: capabilities.teams,
+              },
+            ]
+          : []),
+        ...(capabilities.economy.payments === 'integration-ready'
+          ? [
+              {
+                id: 'https://arcade.agentcommons.io/extensions/economy/v1',
+                required: false,
+                config: capabilities.economy,
+              },
+            ]
+          : []),
+      ]
+    : []
   const m: GameManifest = {
     apiVersion: ARCADE_API_VERSION,
     kind: 'Game',
@@ -101,7 +149,7 @@ export async function releaseManifest(
         name: 'Arcade creator',
       },
       tags: isBrowserGame(project.document)
-        ? ['browser', 'interactive', 'agents']
+        ? [...new Set(['browser', 'interactive', 'agents', ...capabilityTags])]
         : ['grid', 'turn-based', 'agents'],
     },
     spec: {
@@ -117,7 +165,7 @@ export async function releaseManifest(
             'generic-controls-v1',
             'policy-v1',
           ],
-      extensions: [],
+      extensions,
       seats: {
         min: isBrowserGame(project.document)
           ? (project.document.play?.seats.min ?? 1)
@@ -137,7 +185,13 @@ export async function releaseManifest(
         spectators: true,
         lateJoin: false,
       },
-      clock: { maxDurationSeconds: 600 },
+      clock: {
+        ...(isBrowserGame(project.document) &&
+        project.document.play?.mode === 'realtime'
+          ? { simulationHz: 60, networkHz: 20 }
+          : {}),
+        maxDurationSeconds: 600,
+      },
       schemas: Object.fromEntries(
         [
           'config',

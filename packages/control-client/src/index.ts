@@ -54,7 +54,14 @@ export interface CreateMatchInput {
   readonly releaseId: string
   readonly configuration?: JsonValue
   readonly seed?: string
+  readonly visibility?: 'public' | 'unlisted' | 'private'
   readonly idempotencyKey?: string
+}
+
+export interface LiveMatch extends MatchDescriptor {
+  readonly gameId: string
+  readonly gameTitle: string
+  readonly summary: string
 }
 
 export interface MatchView {
@@ -192,6 +199,25 @@ export class ControlClient {
         headers: { 'Idempotency-Key': idempotencyKey },
         body,
         signal,
+      }),
+    )
+  }
+
+  async listLiveMatches(signal?: AbortSignal): Promise<readonly LiveMatch[]> {
+    const body = (await this.request('/v1/matches', { signal })) as {
+      matches: Array<{
+        gameId: string
+        gameTitle: string
+        summary: string
+        [key: string]: unknown
+      }>
+    }
+    return body.matches.map(
+      ({ gameId, gameTitle, summary, ...descriptor }) => ({
+        ...matchDescriptorSchema.parse(descriptor),
+        gameId,
+        gameTitle,
+        summary,
       }),
     )
   }

@@ -68,6 +68,7 @@ const createMatchBody = z
     releaseId: z.string().min(1),
     configuration: z.json().optional(),
     seed: z.string().min(1).max(200).optional(),
+    visibility: z.enum(['public', 'unlisted', 'private']).default('unlisted'),
   })
   .strict()
 
@@ -265,6 +266,10 @@ export function createApp(options: ControlApiOptions = {}) {
     }
     return options.platform
   }
+  const optionalMatchActor = async (authorization?: string) =>
+    authorization
+      ? (await authenticate(authorization, 'matches:play')).id
+      : undefined
 
   app.use('*', requestId())
   app.use('*', bodyLimit({ maxSize: 256 * 1024 }))
@@ -468,8 +473,6 @@ export function createApp(options: ControlApiOptions = {}) {
   })
 
   app.post('/v1/matches', async (context) => {
-    ;(await authenticate(context.req.header('Authorization'), 'matches:play'))
-      .id
     const rawIdempotencyKey = context.req.header('Idempotency-Key')
     const identity = await authenticate(
       context.req.header('Authorization'),
@@ -491,13 +494,21 @@ export function createApp(options: ControlApiOptions = {}) {
     const match = await requirePlatform().createMatch({
       ...body,
       idempotencyKey,
+      ownerId: identity.id,
     })
     return context.json(match, 201)
   })
 
+  app.get('/v1/matches', async (context) =>
+    context.json({ matches: await requirePlatform().listPublicMatches() }),
+  )
+
   app.get('/v1/matches/:matchId', async (context) =>
     context.json(
-      await requirePlatform().getMatch(context.req.param('matchId')),
+      await requirePlatform().getMatch(
+        context.req.param('matchId'),
+        await optionalMatchActor(context.req.header('Authorization')),
+      ),
     ),
   )
 
@@ -506,6 +517,7 @@ export function createApp(options: ControlApiOptions = {}) {
       await requirePlatform().getMatchView(
         context.req.param('matchId'),
         Number.parseInt(context.req.query('afterEventSequence') ?? '0', 10),
+        await optionalMatchActor(context.req.header('Authorization')),
       ),
     ),
   )
@@ -549,8 +561,13 @@ export function createApp(options: ControlApiOptions = {}) {
     )
   })
 
-  app.get('/v1/matches/:matchId/replay', (context) =>
-    context.json(requirePlatform().getReplay(context.req.param('matchId'))),
+  app.get('/v1/matches/:matchId/replay', async (context) =>
+    context.json(
+      requirePlatform().getReplay(
+        context.req.param('matchId'),
+        await optionalMatchActor(context.req.header('Authorization')),
+      ),
+    ),
   )
 
   app.post('/v1/test-runs', async (context) => {
@@ -732,6 +749,11 @@ function openApiDocument(serverUrl: string) {
       '/v1/studio/runs/{id}/step': {
         post: { summary: 'Advance one test decision with expected steps' },
       },
+      '/v1/studio/releases/{id}/fork': {
+        post: {
+          summary: 'Fork a published release into a private agent test room',
+        },
+      },
       '/v1/commons/agents': {
         get: { summary: 'List canonical Commons agents' },
         post: { summary: 'Create a canonical Commons agent' },
@@ -787,7 +809,10 @@ function openApiDocument(serverUrl: string) {
       '/v1/releases/{releaseId}': {
         get: { summary: 'Inspect an immutable game release' },
       },
-      '/v1/matches': { post: { summary: 'Create an idempotent match' } },
+      '/v1/matches': {
+        get: { summary: 'List public live and lobby matches' },
+        post: { summary: 'Create an idempotent match' },
+      },
       '/v1/matches/{matchId}': { get: { summary: 'Inspect a match' } },
       '/v1/matches/{matchId}/seats/{seatId}/claim': {
         post: { summary: 'Claim a seat for the authenticated actor' },

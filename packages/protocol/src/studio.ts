@@ -36,7 +36,9 @@ export const browserGameDocumentSchema = z
       .optional(),
     play: z
       .object({
-        mode: z.enum(['turn-based', 'realtime']).default('turn-based'),
+        mode: z
+          .enum(['turn-based', 'simultaneous', 'realtime', 'hybrid'])
+          .default('turn-based'),
         seats: z
           .object({
             min: z.number().int().min(1).max(16),
@@ -57,6 +59,104 @@ export const browserGameDocumentSchema = z
               })
           }),
         maxDecisionsPerSecond: z.number().int().min(1).max(20).default(2),
+      })
+      .strict()
+      .optional(),
+    capabilities: z
+      .object({
+        genres: z
+          .array(z.string().regex(/^[a-z][a-z0-9-]{0,39}$/))
+          .max(12)
+          .default([]),
+        world: z
+          .object({
+            persistence: z.enum(['session', 'campaign', 'persistent-world']),
+            authority: z.enum([
+              'browser-preview',
+              'arcade-managed',
+              'external-conformant-host',
+            ]),
+            cadence: z.enum(['turn', 'window', 'fixed-tick', 'event-driven']),
+            checkpointing: z.enum([
+              'end-only',
+              'periodic',
+              'event-and-periodic',
+            ]),
+          })
+          .strict(),
+        presentation: z
+          .object({
+            dimension: z.enum(['2d', '3d', 'mixed']),
+            engine: z.enum([
+              'dom',
+              'canvas',
+              'phaser',
+              'pixi',
+              'three',
+              'react-three-fiber',
+              'babylon',
+              'playcanvas',
+              'custom-webgl',
+            ]),
+            contentPipeline: z
+              .object({
+                authoringTools: z
+                  .array(z.enum(['blender', 'procedural', 'other']))
+                  .max(8),
+                runtimeFormats: z
+                  .array(
+                    z.enum([
+                      'html',
+                      'svg',
+                      'png',
+                      'webp',
+                      'spritesheet',
+                      'gltf',
+                      'glb',
+                      'ktx2',
+                      'basis',
+                    ]),
+                  )
+                  .max(12),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict(),
+        teams: z
+          .object({
+            enabled: z.boolean(),
+            maxTeams: z.number().int().min(1).max(32),
+            membersPerTeam: z.number().int().min(1).max(64),
+            control: z.enum(['individual', 'centralized', 'hybrid']),
+            sharedStrategy: z.boolean(),
+          })
+          .strict(),
+        economy: z
+          .object({
+            payments: z.enum(['disabled', 'integration-ready']),
+            valueMode: z.enum(['none', 'virtual', 'regulated']),
+            hooks: z
+              .array(
+                z.enum([
+                  'entry-authorization',
+                  'escrow-reservation',
+                  'settlement-proposal',
+                  'refund-proposal',
+                  'ledger-export',
+                ]),
+              )
+              .max(8),
+          })
+          .strict()
+          .superRefine((economy, context) => {
+            if (economy.payments === 'disabled' && economy.hooks.length)
+              context.addIssue({
+                code: 'custom',
+                path: ['hooks'],
+                message: 'Payment hooks require integration-ready mode.',
+              })
+          }),
       })
       .strict()
       .optional(),

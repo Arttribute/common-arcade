@@ -4,11 +4,13 @@ export async function arcade<T>(
   body?: unknown,
   method = body === undefined ? 'GET' : 'POST',
   headers: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(`/api/arcade/v1/${path}`, {
     method,
     headers: { 'Content-Type': 'application/json', ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   })
   const result = await response.json()
   if (!response.ok)

@@ -7,6 +7,7 @@ import {
   rulesFor,
   starterDocument,
   emptyBrowserDocument,
+  releaseManifest,
 } from './index.js'
 describe('bounded game authoring', () => {
   it('compiles complete horizontal, vertical and diagonal winning lines', () => {
@@ -101,5 +102,69 @@ describe('bounded game authoring', () => {
     expect(html).toContain('async function start(id)')
     expect(html).toContain("default-src 'none'")
     expect(html).not.toContain('__ARCADE_PLAY__')
+  })
+  it('publishes extensible world, team, 3D, and payment-ready declarations as metadata', async () => {
+    const document = gameDocumentSchema.parse({
+      ...emptyBrowserDocument,
+      play: {
+        mode: 'hybrid',
+        seats: { min: 2, max: 16, default: 4 },
+        maxDecisionsPerSecond: 10,
+      },
+      capabilities: {
+        genres: ['strategy', 'team-sport'],
+        world: {
+          persistence: 'persistent-world',
+          authority: 'external-conformant-host',
+          cadence: 'fixed-tick',
+          checkpointing: 'event-and-periodic',
+        },
+        presentation: {
+          dimension: '3d',
+          engine: 'three',
+          contentPipeline: {
+            authoringTools: ['blender'],
+            runtimeFormats: ['gltf', 'glb', 'ktx2'],
+          },
+        },
+        teams: {
+          enabled: true,
+          maxTeams: 4,
+          membersPerTeam: 8,
+          control: 'hybrid',
+          sharedStrategy: true,
+        },
+        economy: {
+          payments: 'integration-ready',
+          valueMode: 'regulated',
+          hooks: ['entry-authorization', 'settlement-proposal'],
+        },
+      },
+    })
+    const manifest = await releaseManifest(
+      {
+        id: 'prj_capabilities',
+        ownerId: 'creator',
+        revision: 1,
+        digest: 'sha256:' + '0'.repeat(64),
+        document,
+        annotations: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      'rel_capabilities',
+    )
+    expect(manifest.spec.mode).toBe('hybrid')
+    expect(manifest.metadata.tags).toEqual(
+      expect.arrayContaining(['strategy', '3d', 'teams', 'payments-ready']),
+    )
+    expect(manifest.spec.extensions.map((extension) => extension.id)).toEqual(
+      expect.arrayContaining([
+        'https://arcade.agentcommons.io/extensions/world/v1',
+        'https://arcade.agentcommons.io/extensions/presentation/v1',
+        'https://arcade.agentcommons.io/extensions/teams/v1',
+        'https://arcade.agentcommons.io/extensions/economy/v1',
+      ]),
+    )
   })
 })

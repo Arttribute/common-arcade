@@ -10,7 +10,7 @@ export function Header() {
       </Link>
       <div className="nav-links">
         <Link href="/discover">Discover</Link>
-        <Link href="/play">Play</Link>
+        <Link href="/live">Live</Link>
         <Link href="/studio">Studio</Link>
         <Link href="/agents">Agents</Link>
         <Link href="/docs">Docs</Link>
