@@ -1,10 +1,5 @@
 import { compileBrowserPresentation } from './browser.js'
-import {
-  createGridPlacementGame,
-  createSandboxedScriptGame,
-  type GameDefinition,
-  type GridPlacementRuleSet,
-} from '@common-arcade/match-runtime'
+import type { GridPlacementRuleSet } from '@common-arcade/match-runtime'
 import { computeManifestDigest } from '@common-arcade/manifest'
 import { ARCADE_API_VERSION, type GameManifest } from '@common-arcade/protocol'
 
@@ -136,32 +131,6 @@ export function rulesFor(
     winningLines: lines,
     objective: `Place ${d.winLength} marks in a row.`,
   }
-}
-export async function compileGame(
-  document: GameDocument,
-  releaseId: string,
-  digest: string,
-): Promise<GameDefinition<any, any>> {
-  const parsed = gameDocumentSchema.parse(document)
-  if (isManagedBrowserGame(parsed)) {
-    const source = parsed.files.find(
-      (file) => file.path === parsed.runtime.entryFile,
-    )?.content
-    if (!source) throw new Error('Managed runtime source file is missing.')
-    return createSandboxedScriptGame({
-      releaseId,
-      releaseDigest: digest,
-      mode: parsed.play?.mode ?? 'turn-based',
-      source,
-      memoryMiB: parsed.runtime.memoryMiB,
-      timeoutMs: parsed.runtime.timeoutMs,
-    })
-  }
-  if (isBrowserGame(parsed))
-    throw new Error(
-      'Browser projects need a sandboxed authoritative runtime before they can host live matches.',
-    )
-  return createGridPlacementGame(rulesFor(parsed, releaseId, digest))
 }
 export async function documentDigest(document: GameDocument): Promise<string> {
   const data = new TextEncoder().encode(

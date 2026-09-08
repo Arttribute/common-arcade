@@ -1,9 +1,9 @@
 import { jsonValueSchema, type JsonValue } from '@common-arcade/protocol'
 import {
-  RELEASE_SYNC,
   newQuickJSWASMModule,
   type QuickJSWASMModule,
 } from 'quickjs-emscripten'
+import bundledQuickJSVariant from '@jitl/quickjs-singlefile-cjs-release-sync'
 import type {
   GameActionContext,
   GameDefinition,
@@ -154,7 +154,12 @@ export async function createSandboxedScriptGame(
 ): Promise<GameDefinition<JsonValue, JsonValue>> {
   if (rules.source.length > 120_000)
     throw new RangeError('Managed runtime source exceeds 120 KB.')
-  const quickjs = await (quickjsModule ??= newQuickJSWASMModule(RELEASE_SYNC))
+  // The single-file variant embeds the WebAssembly bytes. This is required for
+  // bundled hosts such as Lambda, where a CommonJS build has no import.meta.url
+  // from which the default wasm-file variant can resolve its companion file.
+  const quickjs = await (quickjsModule ??= newQuickJSWASMModule(
+    bundledQuickJSVariant.default,
+  ))
   const evaluate = (method: string, args: readonly unknown[]): unknown => {
     let interruptCycles = 0
     const maximumInterruptCycles = rules.timeoutMs * 64

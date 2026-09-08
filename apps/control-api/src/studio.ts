@@ -2,7 +2,6 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import {
   assessLiveReadiness,
-  compileGame,
   compilePresentation,
   documentDigest,
   gameDocumentSchema,
@@ -15,6 +14,7 @@ import {
   type StudioProject,
   type StudioRelease,
 } from '@common-arcade/studio'
+import { compileGame } from '@common-arcade/studio/runtime'
 import {
   createPreferencePolicy,
   TicTacToeTestRun,
@@ -95,7 +95,7 @@ type RunRecord = StoredDocument & {
   createdAt: string
 }
 const COPILOT_INSTRUCTIONS =
-  'You are a Common Arcade copilot. Use the assigned build-common-arcade-games skill and the supplied Arcade tools. Read the current project before editing. Build the game the creator actually requested—never substitute a grid, line-building, or tic-tac-toe game unless they explicitly asked for one. If older skill text says live-managed games are grid-only, that statement is obsolete and this contract supersedes it. arcade_write_live_game accepts any genre through a custom web presentation plus a sandboxed authoritative server module, including realtime action, racing, sports, strategy, cards, simulations, teams, and 2D/3D games. The browser files render the game and expose window.arcade.seats(), observe(seatId), actions(seatId), step(action, seatId), render(authoritativeState, context), and call window.arcade.submit(action) from human controls. The separate server module assigns globalThis.arcadeGame with pure synchronous initialize(context), validateAction(state, action, context), applyAction(state, action, context), observe(state, seatId, context), result(state), and—for realtime/hybrid games—tick(state, context). Every state, action, observation, event, and result must be JSON-serializable. Server functions receive only their arguments; use context.elapsedMs, context.deltaMs, and the initialization seed, never Date, network, filesystem, process, or Math.random. Each transition returns {state,events}; each event has a dotted type, visibility, and payload. result returns null until terminal. Realtime observations should include actionable derived timing such as time-to-impact. Use arcade_write_preview_game only when the creator explicitly asks for a local non-live prototype. Declare persistent worlds, teams, 3D presentation, and future payment hooks when relevant. Blender assets must be exported to glTF/GLB. After every write, run arcade_test_game and repair failures. Use arcade_publish_game only when asked to publish or make live. Report only actions confirmed by tools.'
+  'You are a Common Arcade copilot. Use the assigned build-common-arcade-games skill and the supplied Arcade tools. The Arcade tools are the complete creation path; Agent Computer is not required and its availability is never a blocker. Read the current project before editing. Build the game the creator actually requested—never substitute a grid, line-building, or tic-tac-toe game unless they explicitly asked for one. If older skill text says live-managed games are grid-only, that statement is obsolete and this contract supersedes it. arcade_write_live_game accepts any genre through a custom web presentation plus a sandboxed authoritative server module, including realtime action, racing, sports, strategy, cards, simulations, teams, and 2D/3D games. For a managed live game, browser files are presentation only: assign window.arcade with render(authoritativeState, context), and have human controls call window.arcade.submit(action). Do not define submit yourself; Arcade installs it. Do not duplicate authoritative seats, observations, legal actions, or state transitions in the browser. The separate server module owns those concerns and assigns globalThis.arcadeGame with pure synchronous initialize(context), validateAction(state, action, context), applyAction(state, action, context), observe(state, seatId, context), result(state), and—for realtime/hybrid games—tick(state, context). Every state, action, observation, event, and result must be JSON-serializable. Server functions receive only their arguments; use context.elapsedMs, context.deltaMs, and the initialization seed, never Date, network, filesystem, process, or Math.random. Each transition returns {state,events}; each event has a dotted type, visibility, and payload. result returns null until terminal. Realtime observations should include actionable derived timing such as time-to-impact. Only preview-only browser games need the local seats(), observe(), actions(), and step() bridge. Use arcade_write_preview_game only when the creator explicitly asks for a local non-live prototype. Declare persistent worlds, teams, 3D presentation, and future payment hooks when relevant. Blender assets must be exported to glTF/GLB. After every write, run arcade_test_game and repair failures. Use arcade_publish_game only when asked to publish or make live. Report only actions confirmed by tools.'
 const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_read_project',
@@ -106,7 +106,7 @@ const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_write_live_game',
     description:
-      'Create any genre as a live-ready Arcade game. Supply complete browser presentation files and a separate deterministic server rules file. The server file runs authoritatively in a bounded no-I/O WebAssembly sandbox and is the source of truth for every live session.',
+      'Create any genre as a live-ready Arcade game. Supply complete browser presentation files with window.arcade.render and human controls that call window.arcade.submit, plus a separate deterministic server rules file. The server file runs authoritatively in a bounded no-I/O WebAssembly sandbox and owns seats, observations, legal actions, state and results for every live session.',
     parameters: {
       type: 'object',
       properties: {
@@ -1425,7 +1425,10 @@ export function createStudioApi(
         messages: [{ role: 'user', content: input.message }],
         attachments: input.attachments,
         model: input.model,
-        computerRequest: { enabled: true },
+        // Game writes, compilation and runtime smoke tests are all provided by
+        // the scoped Arcade tools. Do not make creation depend on an optional
+        // remote desktop attached to the Commons agent.
+        computerRequest: { enabled: false },
         cliContext: `Common Arcade Studio project ${job.projectId} is connected through the supplied arcade_* tools. Read it first. Build the requested mechanics with arcade_write_live_game using browser presentation files plus a sandboxed authoritative server module; never replace the request with a grid game. Require arcade_test_game to return liveReady true.`,
         cliTools: ARCADE_COPILOT_TOOLS,
       })) {
@@ -2112,28 +2115,37 @@ function assertAgentPlayable(
     throw new Error(
       'Agent-playable browser games must declare play.mode, play.seats, and play.maxDecisionsPerSecond.',
     )
-  const source = document.files.map((file) => file.content).join('\n')
+  const managedLive = live && isManagedBrowserGame(document)
+  // Server method names must never satisfy presentation-bridge validation.
+  // They execute in a different sandbox and cannot render or submit input.
+  const source = document.files
+    .filter((file) => !managedLive || file.path !== document.runtime.entryFile)
+    .map((file) => file.content)
+    .join('\n')
   const missing = [
     [
       'window.arcade',
       /\b(?:window|globalThis)\s*(?:\.\s*arcade|\[\s*['"]arcade['"]\s*\])/,
     ],
-    ['seats', /\bseats\b/],
-    ['observe', /\bobserve\b/],
-    ['actions', /\bactions\b/],
-    ['step', /\bstep\b/],
-    ...(live
+    ...(managedLive
       ? ([
           ['render', /\brender\b/],
-          ['submit', /\bsubmit\b/],
+          ['submit call', /\bsubmit\s*\(/],
         ] as const)
-      : []),
+      : ([
+          ['seats', /\bseats\b/],
+          ['observe', /\bobserve\b/],
+          ['actions', /\bactions\b/],
+          ['step', /\bstep\b/],
+        ] as const)),
   ].flatMap(([name, pattern]) =>
     (pattern as RegExp).test(source) ? [] : [name as string],
   )
   if (missing.length)
     throw new Error(
-      `Agent play bridge is incomplete. Add ${missing.join(', ')} synchronously before the entry module finishes.`,
+      managedLive
+        ? `Live presentation bridge is incomplete. Add ${missing.join(', ')}. Assign window.arcade.render(authoritativeState, context), then call window.arcade.submit(action) from human controls; Arcade provides submit and authoritative seat observations.`
+        : `Agent play bridge is incomplete. Add ${missing.join(', ')} synchronously before the entry module finishes.`,
     )
 }
 

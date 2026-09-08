@@ -1,4 +1,5 @@
-import { compileGame, type StudioRelease } from '@common-arcade/studio'
+import type { StudioRelease } from '@common-arcade/studio'
+import { compileGame } from '@common-arcade/studio/runtime'
 import {
   LocalRealtimeTicketAuthority,
   type RealtimeTicketClaims,

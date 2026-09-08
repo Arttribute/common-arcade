@@ -558,6 +558,9 @@ importers:
       '@common-arcade/protocol':
         specifier: workspace:^
         version: link:../protocol
+      '@jitl/quickjs-singlefile-cjs-release-sync':
+        specifier: 0.31.0
+        version: 0.31.0
       quickjs-emscripten:
         specifier: 0.31.0
         version: 0.31.0
@@ -1585,6 +1588,9 @@ packages:
 
   '@jitl/quickjs-ffi-types@0.31.0':
     resolution: {integrity: sha512-1yrgvXlmXH2oNj3eFTrkwacGJbmM0crwipA3ohCrjv52gBeDaD7PsTvFYinlAnqU8iPME3LGP437yk05a2oejw==}
+
+  '@jitl/quickjs-singlefile-cjs-release-sync@0.31.0':
+    resolution: {integrity: sha512-TQ6WUsmdcdlXQKPyyGE/qNAoWY83mvjn+VNru6ug5ILv1D3Y+yaFXnMx+QyNX0onx9xSRGgVNZxXN0V0U+ZKpQ==}
 
   '@jitl/quickjs-wasmfile-debug-asyncify@0.31.0':
     resolution: {integrity: sha512-YkdzQdr1uaftFhgEnTRjTTZHk2SFZdpWO7XhOmRVbi6CEVsH9g5oNF8Ta1q3OuSJHRwwT8YsuR1YzEiEIJEk6w==}
@@ -4844,6 +4850,10 @@ snapshots:
       '@types/node': 22.20.1
 
   '@jitl/quickjs-ffi-types@0.31.0': {}
+
+  '@jitl/quickjs-singlefile-cjs-release-sync@0.31.0':
+    dependencies:
+      '@jitl/quickjs-ffi-types': 0.31.0
 
   '@jitl/quickjs-wasmfile-debug-asyncify@0.31.0':
     dependencies:

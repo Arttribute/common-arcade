@@ -50,7 +50,8 @@ Fetch the project before changing it. `PUT /v1/projects/{id}` takes the entire d
 
 ## Play and test
 
-General browser games run in an opaque-origin sandbox. Expose a semantic bridge where possible:
+Preview-only browser games run in an opaque-origin sandbox. Expose a local
+semantic bridge for those previews where possible:
 
 ```js
 window.arcade = {
@@ -67,7 +68,9 @@ window.arcade = {
 }
 ```
 
-The Studio copilot contract requires this bridge for every game it creates.
+The Studio copilot contract requires this full local bridge for preview-only
+games. Managed live games use the authoritative server bridge described below
+and must not duplicate authoritative state transitions in browser code.
 Create it synchronously before the entry module finishes. Seat IDs and action
 IDs must be stable, unique strings; `observe` must return only JSON-serializable
 public state for the requested seat; `actions` must return only actions legal
@@ -77,9 +80,12 @@ returned by the bridge and render the first playable state before initialization
 finishes. Re-observe after every state change. Do not put secrets, prize logic,
 wallet authority, or authoritative competitive outcomes in browser code.
 
-For a live release, presentation additionally implements
+For a live release, presentation assigns `window.arcade` with
 `render(authoritativeState, context)` and calls `window.arcade.submit(action)`
-from human controls. The separate server file assigns
+from human controls. Arcade installs `submit`; game code must not implement or
+recursively wrap it. Live seat observations and legal actions come from the
+authoritative runtime, so browser `seats`, `observe`, `actions`, and `step`
+functions are neither required nor authoritative. The separate server file assigns
 `globalThis.arcadeGame` with pure synchronous methods:
 
 ```js

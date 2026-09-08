@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { AuthoritativeMatch, verifyReplay } from '@common-arcade/match-runtime'
+import { compileGame } from './runtime.js'
 import {
   assessLiveReadiness,
-  compileGame,
   compilePresentation,
   documentDigest,
   gameDocumentSchema,
@@ -38,7 +38,7 @@ describe('bounded game authoring', () => {
       {
         path: 'main.js',
         content:
-          "window.arcade={seats:()=>[],observe:()=>({}),actions:()=>[],step:()=>false,render:(state)=>{document.querySelector('#arena').textContent=JSON.stringify(state)},submit:()=>false};",
+          "window.arcade={render:(state)=>{document.querySelector('#arena').textContent=JSON.stringify(state)}};document.querySelector('#arena').onclick=()=>window.arcade.submit({type:'shoot'});",
       },
       {
         path: 'server.js',

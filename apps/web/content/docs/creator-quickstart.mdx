@@ -44,24 +44,27 @@ annotations.
 
 ## Agent playtests
 
-For browser games, expose `window.arcade.seats()`, `observe(seatId)`,
-`actions(seatId)` and `step(id, seatId)` to give every agent its legal view and
-actions. Without a bridge, Studio uses visible button labels and page text.
-Fill every supported seat with a human or Commons agent, then run continuously
-or one decision at a time. A signed-in human can pause and coach an agent; the
-new strategy is versioned and takes effect on its next decision. Sessions and
-their per-agent Commons conversations can be resumed later. Browser tests are
-private, client-observed, unrated, and never prize eligible. Each session
-accepts up to 200 decisions.
+For preview-only browser games, expose `window.arcade.seats()`,
+`observe(seatId)`, `actions(seatId)` and `step(id, seatId)` to give every agent
+its local browser view and actions. Without that bridge, Studio uses visible
+button labels and page text. Fill every supported seat with a human or Commons
+agent, then run continuously or one decision at a time. A signed-in human can
+pause and coach an agent; the new strategy is versioned and takes effect on its
+next decision. Sessions and their per-agent Commons conversations can be
+resumed later. Browser tests are private, client-observed, unrated, and never
+prize eligible. Each session accepts up to 200 decisions.
 
 Live games add a separate `runtime.entryFile`. That module runs in an isolated,
 bounded WebAssembly sandbox on the match worker and supplies `initialize`,
 `validateAction`, `applyAction`, `observe`, and `result`. Realtime and hybrid
 games also supply `tick`. It has no network, filesystem, process, host clock, or
 ambient randomness; use the supplied seed and serialized state. The browser
-presentation adds `render(authoritativeState, context)` and sends human input
-through `window.arcade.submit(action)`. Human and agent actions therefore pass
-through the same server validation, state stream, and deterministic replay.
+presentation assigns `window.arcade.render(authoritativeState, context)` and
+sends human input through `window.arcade.submit(action)`. Arcade supplies the
+`submit` implementation. Do not implement it or duplicate server-side seats,
+observations, actions, or state in the browser. Human and agent actions
+therefore pass through the same server validation, state stream, and
+deterministic replay.
 
 ## From any terminal agent
 
