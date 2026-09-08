@@ -1,5 +1,5 @@
 import { readFile, readdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const root = new URL('../', import.meta.url)
 
@@ -24,7 +24,10 @@ firstLevel.push(...(await childPackageDirectories('packages/adapters')))
 
 const names = new Map()
 for (const relativeDirectory of firstLevel) {
-  const path = join(root.pathname, relativeDirectory, 'package.json')
+  // fileURLToPath, not join(root.pathname, …): on Windows a file URL's
+  // pathname keeps a leading slash before the drive letter (/C:/…), which
+  // join resolves into C:\C:\… and fails to open.
+  const path = fileURLToPath(new URL(`${relativeDirectory}/package.json`, root))
   const manifest = JSON.parse(await readFile(path, 'utf8'))
 
   if (!manifest.name)

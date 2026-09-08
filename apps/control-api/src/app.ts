@@ -1,5 +1,6 @@
 import { createBrowserTestApi } from './browser-tests.js'
 import { createRecordingApi } from './recordings.js'
+import { createEconomyApi } from './economy.js'
 import { bodyLimit } from 'hono/body-limit'
 import {
   CommonsServiceError,
@@ -392,6 +393,10 @@ export function createApp(options: ControlApiOptions = {}) {
   )
   app.route('/', createRecordingApi(store, authenticate))
   app.route('/', createBrowserTestApi(store, authenticate))
+  app.route(
+    '/',
+    createEconomyApi(store, authenticate, { workerSecret: options.workerSecret }),
+  )
 
   app.get('/healthz', (context) =>
     context.json({

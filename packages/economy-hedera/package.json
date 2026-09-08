@@ -1,0 +1,46 @@
+{
+  "name": "@common-arcade/economy-hedera",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Opt-in, testnet-only bounty/stake/betting extension for Common Arcade games, settled on Hedera.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "files": [
+    "dist",
+    "contracts",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "clean": "rm -rf dist coverage artifacts cache",
+    "contracts:compile": "hardhat compile",
+    "contracts:test": "hardhat test",
+    "contracts:deploy:testnet": "hardhat run scripts/deploy.cts --network hederaTestnet",
+    "lint": "tsc --noEmit --pretty false",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit --pretty false"
+  },
+  "dependencies": {
+    "@common-arcade/protocol": "workspace:^",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-network-helpers": "^1.0.0",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^5.6.1",
+    "@types/chai": "^4.3.20",
+    "@types/node": "catalog:",
+    "chai": "^4.5.0",
+    "ethers": "^6.17.0",
+    "hardhat": "^2.29.1",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

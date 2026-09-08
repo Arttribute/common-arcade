@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {
+    "@common-arcade/economy-hedera": "workspace:^",
     "@common-arcade/match-runtime": "workspace:^",
     "@common-arcade/manifest": "workspace:^",
     "@common-arcade/protocol": "workspace:^"

@@ -3,6 +3,10 @@ import { gameDocumentSchema } from '@common-arcade/studio'
 import { ControlClient } from '@common-arcade/control-client'
 import { McpServer } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
+import { x402Client } from '@x402/core/client'
+import { wrapFetchWithPayment } from '@x402/fetch'
+import { createClientHederaSigner, PrivateKey } from '@x402/hedera'
+import { ExactHederaScheme } from '@x402/hedera/exact/client'
 import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 
@@ -21,6 +25,7 @@ export const MCP_TOOL_NAMES = [
   'arcade.create_test_run',
   'arcade.get_test_run',
   'arcade.query_test_logs',
+  'arcade.pay_for_coaching',
 ] as const
 
 export interface ArcadeMcpOptions {
@@ -305,7 +310,84 @@ export function createArcadeMcpServer(
       response('diagnostics', await client.getTestDiagnostics(runId, query)),
   )
 
+  server.registerTool(
+    'arcade.pay_for_coaching',
+    {
+      title: 'Pay for move/strategy coaching',
+      description:
+        'Discover and pay a x402-gated Common Arcade coaching service in HBAR on Hedera, settled through the Blocky402 facilitator, and return the paid coaching response. Requires MCP_HEDERA_ACCOUNT_ID and MCP_HEDERA_PRIVATE_KEY to be configured on this server.',
+      inputSchema: z.object({
+        position: z.string().min(1).max(4_000),
+        depth: z.number().int().min(1).max(5).optional(),
+        serviceUrl: z
+          .string()
+          .url()
+          .optional()
+          .describe(
+            'Base URL of the coaching service. Defaults to X402_COACH_SERVICE_URL.',
+          ),
+      }),
+    },
+    async ({ position, depth, serviceUrl }) =>
+      response(
+        'coaching',
+        await payForCoaching({ position, depth, serviceUrl }),
+      ),
+  )
+
   return server
+}
+
+/**
+ * Discovers and pays the x402-gated coaching service (services/x402-inference-service)
+ * on Hedera. This gives any MCP-connected agent a self-contained way to find and
+ * pay for the service, independent of whether it also has an Agent Commons wallet.
+ */
+async function payForCoaching(input: {
+  position: string
+  depth?: number
+  serviceUrl?: string
+}): Promise<unknown> {
+  const accountId = process.env.MCP_HEDERA_ACCOUNT_ID
+  const privateKey = process.env.MCP_HEDERA_PRIVATE_KEY
+  const baseUrl = input.serviceUrl ?? process.env.X402_COACH_SERVICE_URL
+  const network =
+    process.env.MCP_HEDERA_NETWORK === 'mainnet' ? 'mainnet' : 'testnet'
+  const x402Network = `hedera:${network}` as const
+
+  if (!accountId || !privateKey) {
+    throw new Error(
+      'MCP_HEDERA_ACCOUNT_ID and MCP_HEDERA_PRIVATE_KEY must be configured to pay for coaching',
+    )
+  }
+  if (!baseUrl) {
+    throw new Error(
+      'serviceUrl or X402_COACH_SERVICE_URL must point at the coaching service',
+    )
+  }
+
+  const signer = createClientHederaSigner(
+    accountId,
+    PrivateKey.fromStringECDSA(privateKey),
+    {
+      network: x402Network,
+    },
+  )
+  const client = new x402Client().register(
+    x402Network,
+    new ExactHederaScheme(signer),
+  )
+  const payFetch = wrapFetchWithPayment(fetch, client)
+
+  const response = await payFetch(new URL('/v1/coach', baseUrl), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ position: input.position, depth: input.depth }),
+  })
+  if (!response.ok) {
+    throw new Error(`Coaching service returned ${response.status}`)
+  }
+  return response.json()
 }
 
 export const service = {

@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { verifyManifestDigest } from '@common-arcade/manifest'
 import { AuthoritativeMatch, verifyReplay } from '@common-arcade/match-runtime'
 import type { ActionSubmission } from '@common-arcade/protocol'
-import { getTicTacToeManifest, ticTacToeGame } from './index.js'
+import {
+  isEconomyFeatureEnabled,
+  readEconomyHederaConfig,
+} from '@common-arcade/economy-hedera'
+import {
+  getTicTacToeManifest,
+  getTicTacToeManifestWithEconomy,
+  ticTacToeGame,
+} from './index.js'
 
 const roster = [
   { seatId: 'sea_playerone', role: 'player' },
@@ -42,6 +50,30 @@ async function match() {
 describe('tic-tac-toe manifest', () => {
   it('is schema-ready and content-addressed', async () => {
     expect(await verifyManifestDigest(await getTicTacToeManifest())).toBe(true)
+  })
+
+  it('declares no economy extension by default', async () => {
+    const manifest = await getTicTacToeManifest()
+    expect(isEconomyFeatureEnabled(readEconomyHederaConfig(manifest))).toBe(
+      false,
+    )
+  })
+
+  it('can opt into stake-to-play without changing the default manifest', async () => {
+    const staked = await getTicTacToeManifestWithEconomy({
+      network: 'hedera-testnet',
+      escrowContractAddress: '0x1111111111111111111111111111111111111111',
+      bounty: { enabled: false },
+      stake: { enabled: true, amountTinybars: '100000000' },
+      betting: { enabled: false },
+    })
+    expect(await verifyManifestDigest(staked)).toBe(true)
+    expect(isEconomyFeatureEnabled(readEconomyHederaConfig(staked))).toBe(true)
+
+    const untouched = await getTicTacToeManifest()
+    expect(isEconomyFeatureEnabled(readEconomyHederaConfig(untouched))).toBe(
+      false,
+    )
   })
 })
 

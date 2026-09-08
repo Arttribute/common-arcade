@@ -6,6 +6,10 @@ import {
 } from '@common-arcade/match-runtime'
 import { computeManifestDigest } from '@common-arcade/manifest'
 import { ARCADE_API_VERSION, type GameManifest } from '@common-arcade/protocol'
+import {
+  ECONOMY_HEDERA_EXTENSION_ID,
+  type EconomyHederaConfig,
+} from '@common-arcade/economy-hedera'
 import rulesDocument from '../arcade.rules.json' with { type: 'json' }
 
 export type TicTacToeState = GridPlacementState
@@ -84,4 +88,29 @@ export function getTicTacToeManifest(): Promise<GameManifest> {
     return manifest
   })()
   return resolvedManifest
+}
+
+/**
+ * Same game, with the opt-in `economy-hedera/v1` extension declared —
+ * demonstrates stake-to-play without changing the default manifest's
+ * behavior (`getTicTacToeManifest` above is untouched and still declares no
+ * extensions). Every other game, and every human/agent playing this one
+ * through `getTicTacToeManifest`, sees no difference.
+ */
+export async function getTicTacToeManifestWithEconomy(
+  economy: EconomyHederaConfig,
+): Promise<GameManifest> {
+  const manifest = structuredClone(manifestDraft)
+  manifest.spec.extensions = [
+    {
+      id: ECONOMY_HEDERA_EXTENSION_ID,
+      required: false,
+      // The manifest's extension config is untyped JSON on the wire;
+      // @common-arcade/economy-hedera owns the strongly-typed schema for it.
+      config:
+        economy as unknown as GameManifest['spec']['extensions'][number]['config'],
+    },
+  ]
+  manifest.metadata.digest = await computeManifestDigest(manifest)
+  return manifest
 }

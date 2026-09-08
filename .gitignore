@@ -16,3 +16,8 @@ cdk.context.json
 .idea/
 .vscode/
 tmp/
+
+# Hardhat (packages/economy-hedera) build output
+artifacts/
+cache/
+typechain-types/
