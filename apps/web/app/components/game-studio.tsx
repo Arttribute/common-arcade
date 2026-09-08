@@ -4,6 +4,7 @@ import { AccountMenu } from './account-menu'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { MAKE_LIVE_READY_PROMPT } from '../lib/live-ready'
 import { ArcadeComposer, useArcadeIdentity } from './studio-composer'
 import {
   ArrowLeft,
@@ -27,6 +28,7 @@ import {
   Pause,
   Play,
   Plus,
+  Radio,
   RotateCcw,
   Save,
   Scan,
@@ -889,6 +891,27 @@ export function GameStudio({ projectId }: { projectId: string }) {
           >
             {liveReadiness.liveReady ? 'Live-ready' : 'Preview only'}
           </span>
+          {!liveReadiness.liveReady ? (
+            <Button
+              className="studio-make-live"
+              disabled={!!busy || !canEdit || !copilotId}
+              title={
+                !canEdit
+                  ? 'You need edit permission to change this game.'
+                  : !copilotId
+                    ? 'Connect a Commons agent to use Arcade Copilot.'
+                    : 'Preserve this game and add a tested authoritative live runtime.'
+              }
+              onClick={() => {
+                setRight('copilot')
+                setRightOpen(true)
+                void runCopilot(MAKE_LIVE_READY_PROMPT)
+              }}
+            >
+              <Radio size={13} />
+              Make live-ready
+            </Button>
+          ) : null}
           <div className="studio-toolbar-end">
             {user ? (
               <>

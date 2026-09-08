@@ -1006,6 +1006,16 @@ h3 {
   background: #fff7ed;
   color: #c2410c;
 }
+.ac-canvas .studio-make-live {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+  white-space: nowrap;
+}
+.ac-canvas .studio-make-live:hover:not(:disabled) {
+  border-color: #fb923c;
+  background: #ffedd5;
+}
 .studio-toolbar-end {
   margin-left: auto;
   display: flex;

@@ -11,6 +11,7 @@ import {
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { arcade, browserControlClient } from '../../lib/api'
+import { MAKE_LIVE_READY_PROMPT } from '../lib/live-ready'
 
 export function MatchLauncher({
   releaseId,
@@ -50,18 +51,29 @@ export function MatchLauncher({
       .then((response) => response.json())
       .then((session) => setSignedIn(Boolean(session.user)))
   }, [])
+  async function openStudio(makeLiveReady: boolean) {
+    setBusy(true)
+    setError('')
+    try {
+      const project = await arcade<{ id: string }>(
+        `studio/releases/${releaseId}/fork`,
+        {},
+      )
+      if (makeLiveReady)
+        sessionStorage.setItem(
+          `arcade-prompt:${project.id}`,
+          MAKE_LIVE_READY_PROMPT,
+        )
+      router.push(`/studio/${project.id}`)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+      setBusy(false)
+    }
+  }
   async function create() {
     setBusy(true)
     setError('')
     try {
-      if (browserGame) {
-        const project = await arcade<{ id: string }>(
-          `studio/releases/${releaseId}/fork`,
-          {},
-        )
-        router.push(`/studio/${project.id}`)
-        return
-      }
       const match = await browserControlClient().createMatch({
         releaseId,
         visibility,
@@ -123,29 +135,33 @@ export function MatchLauncher({
         </div>
         <div className="preview-hosting-path">
           <strong>
-            <Radio size={13} /> To enable live hosting
+            <Radio size={13} /> Make this game live-ready in Studio
           </strong>
-          <ol>
-            <li>Open the game in Studio.</li>
-            <li>
-              Move its rules and state into an Arcade-managed runtime module, or
-              connect a conformant external host.
-            </li>
-            <li>
-              Publish a release that passes the live-readiness test. The lobby
-              controls will then appear here automatically.
-            </li>
-          </ol>
           <p>
-            Studio&apos;s managed runtime supports turn-based, simultaneous, and
-            fixed-tick realtime rules. Ask the copilot to add a sandboxed server
-            module while keeping this presentation.
+            One click opens the owner&apos;s project—or creates an attributed
+            remix when permitted—and asks Copilot to preserve this game while
+            adding and testing its authoritative live runtime. Review the
+            result, then publish it to unlock lobby controls.
           </p>
         </div>
         {signedIn ? (
-          <button className="primary" disabled={busy} onClick={create}>
-            {busy ? 'Opening Studio…' : 'Open this project in Studio'}
-          </button>
+          <div className="match-launch-actions">
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => void openStudio(true)}
+            >
+              <Radio size={14} />
+              {busy ? 'Preparing Studio…' : 'Make live-ready'}
+            </button>
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() => void openStudio(false)}
+            >
+              Open Studio only
+            </button>
+          </div>
         ) : (
           <a
             className="primary"
@@ -155,7 +171,7 @@ export function MatchLauncher({
           </a>
         )}
         <a className="agent-doc-link" href="/docs/creator-quickstart">
-          Read the live-hosting requirements <ExternalLink size={12} />
+          What Copilot will add <ExternalLink size={12} />
         </a>
         <small>
           You can still play and record this local preview below. Published
