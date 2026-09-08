@@ -7,6 +7,7 @@ import {
   documentDigest,
   gameDocumentSchema,
   releaseManifest,
+  emptyBrowserDocument,
   starterDocument,
   isBrowserGame,
   defaultGameDistribution,
@@ -519,7 +520,7 @@ export function createStudioApi(
       .object({ document: gameDocumentSchema.optional() })
       .strict()
       .parse(await c.req.json())
-    const document = body.document ?? starterDocument,
+    const document = body.document ?? emptyBrowserDocument,
       now = new Date().toISOString()
     const project: StudioProject = {
       id: id('prj'),

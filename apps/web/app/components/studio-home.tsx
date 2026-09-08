@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, ArrowUpRight, Gamepad2, Plus } from 'lucide-react'
-import { starterDocument, type StudioProject } from '@common-arcade/studio'
+import { emptyBrowserDocument, type StudioProject } from '@common-arcade/studio'
 import { ArcadeComposer, useArcadeIdentity } from './studio-composer'
 import { arcade } from '../../lib/api'
 
@@ -38,7 +38,7 @@ export function StudioHome() {
     setError('')
     try {
       const project = await arcade<StudioProject>('projects', {
-        document: starterDocument,
+        document: emptyBrowserDocument,
       })
       // The workspace runs the build, so the creator watches their game take
       // shape in the studio instead of waiting on this page for it to appear.
@@ -81,7 +81,8 @@ export function StudioHome() {
         <p>
           Create a game or simulation with your Commons agents.
           <br />
-          New projects start on an authoritative, live-ready runtime.
+          Every new game starts as a blank project. Copilot builds from your
+          idea.
         </p>
         <ArcadeComposer
           value={prompt}
