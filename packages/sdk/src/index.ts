@@ -16,10 +16,14 @@ export type {
 } from '@common-arcade/control-client'
 export {
   ARCADE_PROTOCOL,
+  gameDocumentSchema,
+  browserGameDocumentSchema,
+  isManagedBrowserGame,
   isArcadeProtocolNamespace,
 } from '@common-arcade/protocol'
 export type {
   ArcadeProtocolNamespace,
+  BrowserGameDocument,
   ProtocolStability,
 } from '@common-arcade/protocol'
 export {
