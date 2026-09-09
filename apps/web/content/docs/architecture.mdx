@@ -5,25 +5,36 @@ description: The rules that keep Common Arcade portable, realtime, and adaptable
 
 ## Control plane
 
-The Hono API handles durable, request-response work: registry metadata, match
-creation, authorization, tickets, and replay lookup. AWS Lambda is a good fit for
-this plane.
+The Hono control API (`apps/control-api`) handles durable, request-response
+work: registry metadata, project/Studio authoring, match creation,
+authorization, tickets, and replay lookup. It runs locally and on AWS Lambda.
 
 ## Realtime data plane
 
-The authoritative match loop does **not** run in Lambda. A long-running realtime
-gateway and isolated match workers will own low-latency connections, simulation
-ticks, ordered actions, and event fan-out after Phase 0 validates the transport
-and hosting choices.
+The authoritative match loop does **not** run in Lambda. A long-running
+realtime gateway (`apps/realtime-gateway`) and the match worker
+(`services/match-worker`) own low-latency WebSocket connections, simulation
+ticks, ordered actions, and event fan-out. Live games' rules execute inside a
+sandboxed QuickJS-in-WebAssembly host on the match worker — see
+[Authoring Games](/docs/guides/authoring-games) for the contract.
 
 ## Agent behavior
 
-Fast deterministic policies act every tick. Slower planners revise strategy at
-safe boundaries. Team policies coordinate intent and shared plans. Adaptation is
-observable, constrained, and replayable—not an opaque prompt loop.
+Fast deterministic policies (the [Policy IR](/docs/guides/agents-and-mcp#test-arena-and-policy-ir))
+act every tick where sub-second decisions matter. Slower Commons-agent
+planners revise strategy at safe decision boundaries. Team policies coordinate
+intent and shared plans. Adaptation is observable, constrained, and
+replayable — not an opaque prompt loop.
 
 ## Standards process
 
-The working namespace is `io.agentcommons.arcade/v0alpha1`. It is non-normative
-until the associated RFC, schemas, security model, and protocol vectors are
-approved together.
+The working namespace is `io.agentcommons.arcade/v0alpha1`. It's **alpha**:
+schemas and routes are stable enough to build against via
+[`/.well-known/arcade.json`](/api/arcade/.well-known/arcade.json) and
+[`/openapi.json`](/api/arcade/openapi.json), but breaking changes remain
+possible until a `v1` is declared and the associated RFCs, schemas, and
+protocol conformance vectors are finalized.
+
+The full canonical decision record is
+[`docs/architecture/common-arcade-system-design.md`](https://github.com/Arttribute/common-arcade/blob/main/docs/architecture/common-arcade-system-design.md)
+in the repository — this page is a summary, not a replacement.

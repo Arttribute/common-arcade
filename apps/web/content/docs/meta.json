@@ -1,4 +1,14 @@
 {
   "title": "Common Arcade",
-  "pages": ["index", "creator-quickstart", "architecture", "repository-map"]
+  "pages": [
+    "index",
+    "creator-quickstart",
+    "concepts",
+    "guides",
+    "api",
+    "cli",
+    "sdk",
+    "architecture",
+    "repository-map"
+  ]
 }

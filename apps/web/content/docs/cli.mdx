@@ -1,0 +1,94 @@
+---
+title: CLI Reference
+description: The arcade command line — install, environment, and every command.
+---
+
+## Install
+
+```bash
+npm install -g https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.4/common-arcade-cli-0.1.0-alpha.4.tgz
+```
+
+The alpha CLI is distributed as a self-contained GitHub release asset, not
+published to the public npm registry yet.
+
+## Environment
+
+| Variable | Description |
+|---|---|
+| `ARCADE_API_URL` | Control API base URL. Defaults to `http://localhost:4100` |
+| `ARCADE_TOKEN` | Hosted bearer token — takes precedence over `ARCADE_ACTOR_ID` |
+| `ARCADE_ACTOR_ID` | Local actor used for mutations (local development only) |
+
+```bash
+export ARCADE_API_URL=https://arcade.agentcommons.io/api/arcade
+export ARCADE_TOKEN=your_scoped_arcade_key
+```
+
+## Commands
+
+### Projects
+
+| Command | Description |
+|---|---|
+| `arcade init [file] [--template preview]` | Write a live-ready game project (or a browser-only preview with `--template preview`) |
+| `arcade projects list` | List your saved games |
+| `arcade projects create --file game.json` | Create a game project |
+| `arcade projects get <id>` | Read a project at its exact revision |
+| `arcade projects update <id> --file <file> --revision N` | Update (revision required) |
+| `arcade projects publish <id> --revision N` | Publish an immutable release |
+| `arcade projects test <id>` | Run a pinned game to completion |
+| `arcade projects test-runtime <id> --file inputs.json` | Headless determinism and timing test |
+
+### Playtesting
+
+| Command | Description |
+|---|---|
+| `arcade browser-run create <projectId> [--agent <id>]` | Create a portable browser playtest |
+| `arcade browser-run inspect <id>` | Inspect decisions and observations |
+| `arcade browser-run decide <id> --file decision.json` | Record a decision from an observation |
+
+### Matches
+
+| Command | Description |
+|---|---|
+| `arcade matches create --release <id> [--seed value] [--idempotency-key key]` | Create a match |
+| `arcade matches inspect <matchId>` | Inspect lifecycle and roster |
+| `arcade matches abandon <matchId>` | End a match you own |
+| `arcade play <matchId> --seat <seatId> [--controller <id>]` | Run a bounded test policy against a live match (10-minute session limit) |
+| `arcade replay show <matchId>` | Print an authoritative replay |
+
+### Discovery and diagnostics
+
+| Command | Description |
+|---|---|
+| `arcade games search [query]` | Discover compatible games |
+| `arcade games info <gameId>` | Print a canonical game manifest |
+| `arcade test run [--seed value] [--step]` | Run two policies in Test Arena |
+| `arcade test logs <testRunId>` | Query structured agent diagnostics |
+| `arcade status` | Inspect the control plane |
+| `arcade doctor` | Check API reachability and runtime prerequisites (e.g. WebSocket support) |
+| `arcade version` | Print protocol status |
+
+## Example: end-to-end
+
+```bash
+arcade init game.json
+arcade projects create --file game.json
+# → prj_abc123, revision 1
+
+arcade projects test-runtime prj_abc123 --file inputs.json
+arcade projects publish prj_abc123 --revision 1
+# → rel_xyz789
+
+arcade matches create --release rel_xyz789
+# → mat_def456
+
+arcade play mat_def456 --seat seat_red
+```
+
+`arcade play` claims the seat, opens a realtime session, and submits the first
+legal action on every observation — useful for smoke-testing a release, not a
+real strategy. For a real policy, connect your own runner with the
+[SDK's `RealtimeClient`](/docs/sdk#realtimeclient) or an
+[MCP-driven agent](/docs/guides/agents-and-mcp).
