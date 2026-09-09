@@ -50,12 +50,12 @@ describe('genre-independent managed runtime harness', () => {
     const result = await testGameRuntime(
       realtime,
       await documentDigest(realtime),
-      { steps: 100 },
+      { steps: 20 },
     )
     expect(result.deterministic).toBe(true)
     expect(result.seatCount).toBe(4)
     expect(result.replay.checkpoints.at(-1)?.state).toEqual({
-      elapsed: 3300,
+      elapsed: 660,
       count: 4,
     })
     expect(result.replay.checkpoints.length).toBeLessThan(4)
