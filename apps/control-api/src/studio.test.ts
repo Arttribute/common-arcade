@@ -60,7 +60,11 @@ describe('hosted Studio boundary', () => {
   it('publishes an immutable game discoverable to unauthenticated clients', async () => {
     const { app } = setup()
     const p = await (
-      await app.request('/v1/projects', { method: 'POST', headers, body: '{}' })
+      await app.request('/v1/projects', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ document: starterDocument }),
+      })
     ).json()
     const publish = () =>
       app.request(`/v1/projects/${p.id}/publish`, {
@@ -84,6 +88,35 @@ describe('hosted Studio boundary', () => {
         await app.request(`/v1/studio/releases/${release.id}/preview`)
       ).headers.get('content-security-policy'),
     ).toContain('sandbox allow-scripts')
+  })
+  it('does not publish preview-only projects into the game catalog', async () => {
+    const { app } = setup()
+    const project = await (
+      await app.request('/v1/projects', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ document: emptyBrowserDocument }),
+      })
+    ).json()
+
+    const response = await app.request(`/v1/projects/${project.id}/publish`, {
+      method: 'POST',
+      headers: { ...headers, 'If-Match': '1' },
+      body: '{}',
+    })
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      code: 'GAME_NOT_LIVE_READY',
+      title: 'Game is not live-ready',
+    })
+    const catalog = await (await app.request('/v1/games')).json()
+    expect(
+      catalog.games.some(
+        (game: { metadata: { title: string } }) =>
+          game.metadata.title === project.document.title,
+      ),
+    ).toBe(false)
   })
   it('forks a published release into an isolated project owned by the caller', async () => {
     const { app } = setup()
@@ -136,7 +169,11 @@ describe('hosted Studio boundary', () => {
   it('keeps published source immutable when its creator disables remixes', async () => {
     const { app } = setup()
     const original = await (
-      await app.request('/v1/projects', { method: 'POST', headers, body: '{}' })
+      await app.request('/v1/projects', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ document: starterDocument }),
+      })
     ).json()
     const release = await (
       await app.request(`/v1/projects/${original.id}/publish`, {
@@ -452,7 +489,7 @@ describe('worked example project', () => {
       app: createApp({ store, allowLocalAuth: true, logRequests: false }),
     }
   }
-  it('seeds one playable example that the owner can edit and publish', async () => {
+  it('seeds one playable example without publishing it as a live game', async () => {
     const { app, store } = setup()
     const first = await (await app.request('/v1/projects', { headers })).json()
     expect(first.projects).toHaveLength(1)
@@ -471,13 +508,10 @@ describe('worked example project', () => {
       headers: { ...headers, 'If-Match': '1' },
       body: '{}',
     })
-    expect(published.status).toBe(201)
-    const release = await published.json()
-    const html = await (
-      await app.request(`/v1/studio/releases/${release.id}/preview`)
-    ).text()
-    expect(html).toContain('<title>Tic-tac-toe</title>')
-    expect(html).toContain('window.arcade')
+    expect(published.status).toBe(409)
+    expect(await published.json()).toMatchObject({
+      code: 'GAME_NOT_LIVE_READY',
+    })
   })
   it('leaves an account that already has projects untouched', async () => {
     const { app } = setup()

@@ -449,6 +449,16 @@ const ARCADE_COPILOT_TOOLS = [
     parameters: { type: 'object', properties: {}, required: [] },
   },
 ] as const
+const PREVIEW_ONLY_REQUEST =
+  /\b(?:preview[- ]only|browser preview|local prototype|non[- ]live prototype)\b/i
+
+function copilotToolsFor(message: string) {
+  return PREVIEW_ONLY_REQUEST.test(message)
+    ? ARCADE_COPILOT_TOOLS
+    : ARCADE_COPILOT_TOOLS.filter(
+        (tool) => tool.name !== 'arcade_write_preview_game',
+      )
+}
 const id = (prefix: string) =>
   `${prefix}_${crypto.randomUUID().replaceAll('-', '')}`
 const expected = z.coerce.number().int().positive()
@@ -693,9 +703,22 @@ export function createStudioApi(
       )
     if (expected.parse(c.req.header('If-Match')) !== project.revision)
       throw new StoreConflict()
+    const liveReadiness = assessLiveReadiness(project.document)
+    if (!liveReadiness.liveReady)
+      return c.json(
+        {
+          type: 'https://arcade.agentcommons.io/problems/not-live-ready',
+          title: 'Game is not live-ready',
+          status: 409,
+          detail:
+            'Studio only publishes games after their authoritative runtime passes live-readiness checks.',
+          code: 'GAME_NOT_LIVE_READY',
+          blockers: liveReadiness.blockers,
+        },
+        409,
+      )
     compilePresentation(project.document)
-    if (assessLiveReadiness(project.document).liveReady)
-      await smokeTestRuntime(project.document, project.digest)
+    await smokeTestRuntime(project.document, project.digest)
     const releaseId = `rel_${project.id.slice(4)}_${project.revision}_${project.digest.slice(7, 19)}`
     const existing = await store.get<ReleaseRecord>('releases', releaseId)
     if (existing) return c.json(existing.release)
@@ -1430,7 +1453,10 @@ export function createStudioApi(
         // remote desktop attached to the Commons agent.
         computerRequest: { enabled: false },
         cliContext: `Common Arcade Studio project ${job.projectId} is connected through the supplied arcade_* tools. Read it first. Build the requested mechanics with arcade_write_live_game using browser presentation files plus a sandboxed authoritative server module; never replace the request with a grid game. Require arcade_test_game to return liveReady true.`,
-        cliTools: ARCADE_COPILOT_TOOLS,
+        // Preview-only writing is not even exposed during an ordinary build.
+        // This makes authoritative hosting the default execution path rather
+        // than a convention the model may accidentally ignore.
+        cliTools: copilotToolsFor(input.message),
       })) {
         if (
           event.type === 'token' &&

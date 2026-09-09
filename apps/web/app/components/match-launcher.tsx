@@ -11,7 +11,6 @@ import {
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { arcade, browserControlClient } from '../../lib/api'
-import { MAKE_LIVE_READY_PROMPT } from '../lib/live-ready'
 
 export function MatchLauncher({
   releaseId,
@@ -51,7 +50,7 @@ export function MatchLauncher({
       .then((response) => response.json())
       .then((session) => setSignedIn(Boolean(session.user)))
   }, [])
-  async function openStudio(makeLiveReady: boolean) {
+  async function openStudio() {
     setBusy(true)
     setError('')
     try {
@@ -59,11 +58,6 @@ export function MatchLauncher({
         `studio/releases/${releaseId}/fork`,
         {},
       )
-      if (makeLiveReady)
-        sessionStorage.setItem(
-          `arcade-prompt:${project.id}`,
-          MAKE_LIVE_READY_PROMPT,
-        )
       router.push(`/studio/${project.id}`)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -135,33 +129,22 @@ export function MatchLauncher({
         </div>
         <div className="preview-hosting-path">
           <strong>
-            <Radio size={13} /> Make this game live-ready in Studio
+            <Radio size={13} /> Legacy preview release
           </strong>
           <p>
-            One click opens the owner&apos;s project—or creates an attributed
-            remix when permitted—and asks Copilot to preserve this game while
-            adding and testing its authoritative live runtime. Review the
-            result, then publish it to unlock lobby controls.
+            New Studio builds are created and tested against the authoritative
+            live runtime as part of the normal Copilot build. This older release
+            remains playable locally, but cannot open a synchronized lobby.
           </p>
         </div>
         {signedIn ? (
-          <div className="match-launch-actions">
-            <button
-              className="primary"
-              disabled={busy}
-              onClick={() => void openStudio(true)}
-            >
-              <Radio size={14} />
-              {busy ? 'Preparing Studio…' : 'Make live-ready'}
-            </button>
-            <button
-              className="secondary"
-              disabled={busy}
-              onClick={() => void openStudio(false)}
-            >
-              Open Studio only
-            </button>
-          </div>
+          <button
+            className="primary"
+            disabled={busy}
+            onClick={() => void openStudio()}
+          >
+            {busy ? 'Opening Studio…' : 'Open project in Studio'}
+          </button>
         ) : (
           <a
             className="primary"
@@ -171,7 +154,7 @@ export function MatchLauncher({
           </a>
         )}
         <a className="agent-doc-link" href="/docs/creator-quickstart">
-          What Copilot will add <ExternalLink size={12} />
+          About live-ready games <ExternalLink size={12} />
         </a>
         <small>
           You can still play and record this local preview below. Published

@@ -199,7 +199,6 @@ describe('building a game in a native Commons agent session', () => {
     expect(run?.body.cliTools.map((tool: any) => tool.name)).toEqual([
       'arcade_read_project',
       'arcade_write_live_game',
-      'arcade_write_preview_game',
       'arcade_test_game',
       'arcade_publish_game',
     ])
@@ -213,6 +212,21 @@ describe('building a game in a native Commons agent session', () => {
     ).json()
     expect(saved.document.title).toBe('Live Lines')
     expect(saved.revision).toBe(2)
+  })
+
+  it('only exposes preview writing when the creator explicitly requests it', async () => {
+    const calls = stubCommons()
+    const { app } = setup()
+    const { jobId } = await start(
+      app,
+      'Create a local preview-only prototype for this experiment.',
+    )
+
+    await poll(app, jobId)
+    const run = calls.find((call) => call.url.endsWith('/v1/agents/run/stream'))
+    expect(run?.body.cliTools.map((tool: any) => tool.name)).toContain(
+      'arcade_write_preview_game',
+    )
   })
 
   it('writes and smoke-tests a realtime live game through the Copilot tool boundary', async () => {

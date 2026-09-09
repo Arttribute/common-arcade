@@ -1,5 +1,0 @@
-export const MAKE_LIVE_READY_PROMPT = `Convert this project into a live-ready Common Arcade game while preserving its current genre, mechanics, controls, presentation, and visual style. Do not replace it with a grid, line-building, or tic-tac-toe template.
-
-Use arcade_write_live_game to add an Arcade-managed authoritative server module with the rules model that fits this game (turn-based, simultaneous, or fixed-tick realtime). Keep browser files presentation-only: expose window.arcade.render(authoritativeState, context), and send human input through window.arcade.submit(action). The server must own seats, legal actions, validation, state transitions, observations, timing, results, rounds, and restart behavior. Make it deterministic and JSON-serializable; for realtime play, expose useful timing such as time-to-impact in observations.
-
-Run arcade_test_game after writing. Fix every reported issue and retest until it returns liveReady: true. Do not publish automatically; leave the verified revision ready for me to review and publish.`
