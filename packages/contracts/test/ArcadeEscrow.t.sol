@@ -140,10 +140,15 @@ contract ArcadeEscrowTest is Test {
             35_000
         );
         assertEq(escrow.claimable(address(token), treasury), 15_000);
+        uint256 creatorRemainder =
+            35_000 - (35_000 * uint256(firstShare) / 10000) - (35_000 * uint256(secondShare) / 10000);
+        if (creatorRemainder == 0) vm.expectRevert(ArcadeEscrow.NothingToClaim.selector);
         escrow.withdraw(token, address(0x777));
+        assertEq(token.balanceOf(address(0x777)), creatorRemainder);
+        escrow.withdraw(token, address(0x888));
+        escrow.withdraw(token, address(0x999));
         assertEq(
-            token.balanceOf(address(0x777)),
-            35_000 - (35_000 * uint256(firstShare) / 10000) - (35_000 * uint256(secondShare) / 10000)
+            token.balanceOf(address(0x777)) + token.balanceOf(address(0x888)) + token.balanceOf(address(0x999)), 35_000
         );
     }
 
