@@ -2,7 +2,7 @@ FROM node:22-bookworm-slim AS build
 RUN corepack enable && corepack prepare pnpm@9.15.3 --activate
 WORKDIR /app
 COPY . .
-RUN pnpm install --frozen-lockfile --ignore-scripts
+RUN pnpm --filter @common-arcade/payment-service... install --frozen-lockfile --ignore-scripts
 RUN pnpm --filter @common-arcade/payment-service... build
 RUN pnpm --filter @common-arcade/payment-service deploy --prod /runtime
 

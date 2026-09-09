@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { privateKeyToAccount } from 'viem/accounts'
 import { randomUUID } from 'node:crypto'
-import { MatchHost, commandMessage } from './matches.js'
+import { MatchHost, commandMessage, type TableRecord } from './matches.js'
 import { MemoryMatchStore } from './store.js'
 import {
   blackjackGame,
@@ -31,6 +31,31 @@ async function auth(
   }
 }
 describe('blackjack match lifecycle', () => {
+  it('pins a funded table to its original executable release across worker upgrades', async () => {
+    const store = new MemoryMatchStore(),
+      host = new MatchHost(store, {}, domain)
+    const body = {
+      id: randomUUID(),
+      recipients: [alice.address, bob.address],
+      economy: { mode: 'free' },
+    }
+    const id = `mat_${body.id}`
+    await host.create(body, await auth(alice, id, 'create', body))
+    const record = (await store.get<TableRecord>(id))!
+    expect(record.releaseDigest).toBe(blackjackGame.releaseDigest)
+    record.releaseDigest = `sha256:${'0'.repeat(64)}`
+    await store.put(id, record)
+    const restarted = new MatchHost(store, {}, domain)
+    expect((await restarted.view(id)).releaseDigest).toBe(record.releaseDigest)
+    await expect(
+      restarted.start(id, await auth(alice, id, 'start', {})),
+    ).rejects.toThrow('Match release is unavailable')
+    expect((await restarted.view(id)).stage).toBe('funding')
+    await expect(
+      restarted.create(body, await auth(alice, id, 'create', body)),
+    ).rejects.toThrow('Match release is unavailable')
+  })
+
   it('uses a complete unique deterministic shoe and ace adjustment', () => {
     expect(new Set(shuffledShoe('seed')).size).toBe(52)
     expect(shuffledShoe('seed')).toEqual(shuffledShoe('seed'))

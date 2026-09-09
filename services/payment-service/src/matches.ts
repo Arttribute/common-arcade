@@ -44,6 +44,7 @@ export interface TableRecord {
   recipients: Address[]
   economy: EconomyConfig
   release?: StudioRelease
+  releaseDigest: string
   revenue?: CreatorRevenue
   seed: string
   commitment: Hex
@@ -166,6 +167,7 @@ export class MatchHost {
         record = {
           id,
           requestHash,
+          releaseDigest: release?.digest ?? blackjackGame.releaseDigest,
           ...(release ? { release, revenue } : {}),
           recipients: body.recipients,
           economy: body.economy,
@@ -173,7 +175,7 @@ export class MatchHost {
           commitment: hashArcadeId(JSON.stringify([id, seed])),
           rulesHash: hashArcadeId(
             JSON.stringify([
-              release?.digest ?? BLACKJACK_RULES,
+              release?.digest ?? blackjackGame.releaseDigest,
               revenue ?? null,
               body.economy,
               body.recipients,
@@ -204,6 +206,13 @@ export class MatchHost {
           )
         await this.store.put(id, record) // Commitment/terms survive a lost deployment receipt.
       }
+      if (
+        record.releaseDigest !==
+        (record.release?.digest ?? blackjackGame.releaseDigest)
+      )
+        throw new Error(
+          'Match release is unavailable in this worker; restore its version or claim timeout refunds',
+        )
       if (record.stage === 'prepared') {
         const adapter = this.adapter(record)
         if (adapter) {
@@ -246,6 +255,10 @@ export class MatchHost {
           record.release.digest,
         )
       : blackjackGame
+    if (record.releaseDigest !== game.releaseDigest)
+      throw new Error(
+        'Match release is unavailable in this worker; restore its version or claim timeout refunds',
+      )
     return record.replay
       ? AuthoritativeMatch.recover(
           game,
@@ -273,12 +286,12 @@ export class MatchHost {
       if (record.stage !== 'funding') return this.viewRecord(record)
       if (Date.now() / 1000 >= record.fundingDeadline)
         throw new Error('Funding expired; claim refunds')
+      const runtime = await this.runtime(record)
       const adapter = this.adapter(record)
       if (adapter) {
         const hash = await adapter.lock(record.pool!)
         if (hash) record.transactions.push(hash)
       }
-      const runtime = await this.runtime(record)
       runtime.start()
       record.replay = runtime.exportReplay()
       record.stage = 'playing'
@@ -391,7 +404,7 @@ export class MatchHost {
       id: record.id,
       game: record.release?.document.title ?? 'Blackjack duel',
       releaseId: record.release?.id ?? blackjackGame.releaseId,
-      releaseDigest: record.release?.digest ?? blackjackGame.releaseDigest,
+      releaseDigest: record.releaseDigest,
       revenue: record.revenue,
       events:
         record.replay?.events.filter(
@@ -401,7 +414,7 @@ export class MatchHost {
       recipients: record.recipients,
       commitment: record.commitment,
       rulesHash: record.rulesHash,
-      rules: BLACKJACK_RULES,
+      ...(record.release ? {} : { rules: BLACKJACK_RULES }),
       pool: record.pool,
       deployment: this.adapter(record)?.deployment,
       stage: record.stage,

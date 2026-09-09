@@ -221,3 +221,5 @@ USDC match and payout transaction links, Safe governance transactions, a public
 repository, setup docs and the required short demo. Circle Agent Stack-specific
 eligibility requires actual Agent Stack usage. Local tests alone do not establish
 that requirement or bounty eligibility. Mainnet activation is not included.
+
+Active tables pin their executable release digest before funding. Drain active matches before changing the game/runtime implementation. A worker with a different blackjack release refuses to start or resume an older table; restore the matching image or let participants claim timeout refunds. Public match views retain the original digest. Published Studio documents are stored with the match, but the runtime compiler still needs compatible deployment versions.
