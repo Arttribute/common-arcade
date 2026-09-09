@@ -200,6 +200,7 @@ describe('building a game in a native Commons agent session', () => {
     expect(run?.body.cliTools.map((tool: any) => tool.name)).toEqual([
       'arcade_read_project',
       'arcade_write_live_game',
+      'arcade_configure_earnings',
       'arcade_test_game',
       'arcade_publish_game',
     ])

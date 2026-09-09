@@ -10,3 +10,11 @@ node_modules
 *.log
 .env*
 !.env.example
+
+**/.payment-data
+**/lib/forge-std
+**/lib/openzeppelin-contracts
+**/lib/safe-contracts
+**/out
+**/cache
+**/broadcast

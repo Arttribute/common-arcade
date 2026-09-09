@@ -2596,3 +2596,26 @@ h3 {
   padding: 6px;
   font-size: 11px;
 }
+
+/* Optional economy controls follow the existing form and button styling. */
+.economy-settings label:has(input[type='checkbox']),
+.payment-panel label:has(input[type='checkbox']) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.economy-settings input[type='checkbox'],
+.payment-panel input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+  flex: none;
+  accent-color: var(--ink);
+}
+.payment-panel button:not(.primary) {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper, #fff);
+  margin-right: 8px;
+  margin-top: 4px;
+}

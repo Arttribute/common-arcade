@@ -1,6 +1,14 @@
+import {
+  inheritedRemixEconomy,
+  unresolvedRemixRoyalty,
+} from '@common-arcade/studio'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { browserGameDocumentSchema } from '@common-arcade/protocol'
+import {
+  gameMonetizationSchema,
+  gameDistributionSchema,
+  browserGameDocumentSchema,
+} from '@common-arcade/protocol'
 import {
   assessLiveReadiness,
   compilePresentation,
@@ -364,6 +372,20 @@ const ARCADE_COPILOT_TOOLS = [
     },
   },
   {
+    name: 'arcade_configure_earnings',
+    description:
+      'Configure optional game earnings and remix licensing on the current draft. Free play stays available. Creator share divides one 2.5% success fee; zero remix royalty permits free remixes. Inherited royalties cannot be removed. Publishing remains a separate owner action.',
+    parameters: {
+      type: 'object',
+      properties: {
+        monetization: z.toJSONSchema(gameMonetizationSchema),
+        distribution: z.toJSONSchema(gameDistributionSchema),
+      },
+      required: ['monetization'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'arcade_test_game',
     description:
       'Compile and validate the current saved game, including authoritative live-hosting readiness. A game may be called live-ready only when this tool returns liveReady true. Repair and retry validation failures.',
@@ -649,6 +671,21 @@ export function createStudioApi(
     const releaseId = `rel_${project.id.slice(4)}_${project.revision}_${project.digest.slice(7, 19)}`
     const existing = await store.get<ReleaseRecord>('releases', releaseId)
     if (existing) return c.json(existing.release)
+    if (
+      project.forkedFrom &&
+      (project.document.monetization?.mode === 'revenue-share' ||
+        project.document.distribution?.commercialUse)
+    ) {
+      const source = await store.get<ReleaseRecord>(
+        'releases',
+        project.forkedFrom.releaseId,
+      )
+      if (!source?.release.distribution?.commercialUse)
+        throw new IdentityError(
+          403,
+          'Source license does not allow commercial remixes',
+        )
+    }
     const release: StudioRelease = {
       id: releaseId,
       projectId: project.id,
@@ -732,13 +769,23 @@ export function createStudioApi(
         'The creator has not enabled remixes for this release.',
       )
     const now = new Date().toISOString()
+    const remixDocument =
+      record.release.document.monetization?.mode === 'revenue-share'
+        ? gameDocumentSchema.parse({
+            ...record.release.document,
+            monetization: { mode: 'free' },
+            distribution: { ...distribution, revenueShareBps: 0 },
+          })
+        : record.release.document
     const project: StudioProject = {
       id: id('prj'),
       ownerId: p.id,
       revision: 1,
-      digest: await documentDigest(record.release.document),
-      document: record.release.document,
+      digest: await documentDigest(remixDocument),
+      document: remixDocument,
       annotations: [],
+      inheritedEconomy: inheritedRemixEconomy(record.release),
+      unresolvedRemixRoyalty: unresolvedRemixRoyalty(record.release),
       forkedFrom: {
         releaseId: record.release.id,
         digest: record.release.digest,
@@ -1642,6 +1689,38 @@ export function createStudioApi(
           liveReadiness: assessLiveReadiness(document),
         })
       }
+      if (tool === 'arcade_configure_earnings') {
+        if (!p.scopes.includes('projects:write'))
+          throw new IdentityError(403, 'Project write scope required')
+        const record = await owned(p.id, projectId)
+        const input = z
+          .object({
+            monetization: gameMonetizationSchema,
+            distribution: gameDistributionSchema.optional(),
+          })
+          .strict()
+          .parse(rawArgs)
+        const document = gameDocumentSchema.parse({
+          ...record.project.document,
+          ...input,
+        })
+        const project = {
+          ...record.project,
+          document,
+          digest: await documentDigest(document),
+          revision: record.project.revision + 1,
+          updatedAt: new Date().toISOString(),
+        }
+        await releaseManifest(project, 'rel_earnings_validation')
+        await revision(project)
+        await save(record, project)
+        return JSON.stringify({
+          ok: true,
+          revision: project.revision,
+          monetization: document.monetization,
+          distribution: document.distribution,
+        })
+      }
       if (tool === 'arcade_test_game') {
         const { project } = await owned(p.id, projectId)
         const liveReadiness = assessLiveReadiness(project.document)
@@ -1693,6 +1772,11 @@ export function createStudioApi(
           throw new IdentityError(403, 'This account cannot publish releases.')
         const record = await owned(p.id, projectId)
         const project = record.project
+        if (project.ownerId !== p.id)
+          throw new IdentityError(
+            403,
+            'Only the project owner can publish earning terms',
+          )
         const liveReadiness = assessLiveReadiness(project.document)
         if (!liveReadiness.liveReady)
           throw new Error(
@@ -1703,6 +1787,21 @@ export function createStudioApi(
         const releaseId = `rel_${project.id.slice(4)}_${project.revision}_${project.digest.slice(7, 19)}`
         const existing = await store.get<ReleaseRecord>('releases', releaseId)
         if (!existing) {
+          if (
+            project.forkedFrom &&
+            (project.document.monetization?.mode === 'revenue-share' ||
+              project.document.distribution?.commercialUse)
+          ) {
+            const source = await store.get<ReleaseRecord>(
+              'releases',
+              project.forkedFrom.releaseId,
+            )
+            if (!source?.release.distribution?.commercialUse)
+              throw new IdentityError(
+                403,
+                'Source license does not allow commercial remixes',
+              )
+          }
           const release: StudioRelease = {
             id: releaseId,
             projectId: project.id,
@@ -2188,6 +2287,7 @@ function copilotToolLabel(tool: string) {
     arcade_read_project: 'Read Arcade project',
     arcade_write_live_game: 'Write live-ready Arcade game',
     arcade_write_preview_game: 'Write preview-only browser game',
+    arcade_configure_earnings: 'Configure earnings and remix royalties',
     arcade_test_game: 'Test Arcade game',
     arcade_publish_game: 'Publish Arcade game',
     invoke_skill: 'Loaded game-building skill',

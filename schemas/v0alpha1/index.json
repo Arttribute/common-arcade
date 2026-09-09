@@ -19,7 +19,7 @@
       "file": "event.schema.json"
     },
     "game-document": {
-      "digest": "sha256:f77a76bb60862accb3d8a599f9d7f3ecf28c8d8dd888baccd37d65223336b0b1",
+      "digest": "sha256:70078d51b3223f6c3c742b2dec3a672054bfe7d8449fd22ec9722d72338a17c1",
       "file": "game-document.schema.json"
     },
     "game-manifest": {

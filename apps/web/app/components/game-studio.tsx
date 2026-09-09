@@ -1,4 +1,5 @@
 'use client'
+import { CreatorEconomySettings } from './creator-economy-settings'
 import { AccountMenu } from './account-menu'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -963,7 +964,38 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 () => setLeftOpen(false),
               )}
             </div>
-            <div className="studio-section">
+            <CreatorEconomySettings
+              value={document.monetization}
+              onChange={(monetization) => update({ monetization })}
+              disabled={!isOwner}
+            />
+            {project?.unresolvedRemixRoyalty && (
+              <p className="studio-help">
+                This source has legacy royalty terms without payout addresses.
+                Free remix publication is available; paid publication is blocked
+                until the source terms can be resolved.
+              </p>
+            )}
+            {project?.inheritedEconomy?.mode === 'revenue-share' && (
+              <details className="studio-section">
+                <summary>Inherited source royalties</summary>
+                {Object.entries(
+                  project.inheritedEconomy.royalties ?? {},
+                ).flatMap(([network, shares]) =>
+                  shares.map((share) => (
+                    <p
+                      key={`${network}:${share.recipient}`}
+                      className="studio-help"
+                      style={{ overflowWrap: 'anywhere' }}
+                    >
+                      {network}: {share.bps / 100}% of creator earnings →{' '}
+                      {share.recipient}
+                    </p>
+                  )),
+                )}
+              </details>
+            )}
+            <div className="studio-section economy-settings">
               <div className="studio-section-label">
                 <Share2 size={13} />
                 Publishing & remixes
@@ -1017,7 +1049,22 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 </select>
               </label>
               <label>
-                Future creator share
+                <input
+                  type="checkbox"
+                  checked={document.distribution?.commercialUse ?? false}
+                  onChange={(event) =>
+                    update({
+                      distribution: {
+                        ...(document.distribution ?? defaultGameDistribution),
+                        commercialUse: event.target.checked,
+                      },
+                    })
+                  }
+                />{' '}
+                Allow remixes to earn money
+              </label>
+              <label>
+                Royalty from new remixes
                 <select
                   value={
                     document.distribution?.revenueShareBps ??
@@ -1034,14 +1081,18 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 >
                   {[0, 500, 1000, 2000, 3000, 5000].map((bps) => (
                     <option key={bps} value={bps}>
-                      {bps / 100}%
+                      {bps === 0
+                        ? 'Free remixes · no new royalty'
+                        : `${bps / 100}% of remaining creator earnings`}
                     </option>
                   ))}
                 </select>
               </label>
               <p className="studio-help">
                 Remixes are isolated projects with immutable source attribution.
-                Creator-share terms are recorded now; settlement is not active.
+                Choose 0% for free remixes. Royalties come from creator
+                earnings, never an extra player fee. Existing inherited
+                royalties remain.
               </p>
             </div>
             {project && isOwner ? (
