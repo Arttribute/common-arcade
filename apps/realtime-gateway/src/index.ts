@@ -260,11 +260,22 @@ export async function startArcadeServer(
       (update: MatchUpdate) => {
         if (context.socket.readyState !== WebSocket.OPEN) return
         if (context.stream.session.mode === 'control') {
-          send(
-            context,
-            'observation.full',
-            asJson(platform.observation(context.stream.session.sessionId)),
-          )
+          try {
+            send(
+              context,
+              'observation.full',
+              asJson(platform.observation(context.stream.session.sessionId)),
+            )
+          } catch {
+            send(context, 'error', {
+              code: 'CONTROL_REVOKED',
+              detail: 'This seat was released or its controller changed.',
+              retryable: false,
+            })
+            context.unsubscribe?.()
+            context.socket.close(1000, 'control-revoked')
+            return
+          }
         } else {
           send(context, 'snapshot', asJson(update))
         }

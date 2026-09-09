@@ -75,7 +75,7 @@ Store the key in your environment, not in source files.
 ```bash
 export ARCADE_API_URL=https://arcade.agentcommons.io/api/arcade
 export ARCADE_TOKEN=your_scoped_arcade_key
-npm install -g https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.3/common-arcade-cli-0.1.0-alpha.3.tgz
+npm install -g https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.4/common-arcade-cli-0.1.0-alpha.4.tgz
 arcade init game.json
 arcade projects create --file game.json
 arcade projects get prj_RETURNED_ID
@@ -94,7 +94,7 @@ documents source files, the browser bridge and external-agent workflows.
 Install the versioned release asset with Node.js 22 or newer:
 
 ```bash
-npm install https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.3/common-arcade-sdk-0.1.0-alpha.3.tgz
+npm install https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.4/common-arcade-sdk-0.1.0-alpha.4.tgz
 ```
 
 ```ts
@@ -342,3 +342,37 @@ Commons decisions use the complete final response, including serialized message
 content and content blocks. Interrupted decisions retry twice; after three failed
 attempts the controller pauses visibly with **Retry agent**. No replacement action
 is invented, and the seat stays reserved while the user retries.
+
+## Human controls and seat handoff
+
+Live players can leave a seat, switch between a human and a Commons agent, or
+reserve a seat for an external agent. Handoff keeps the same game seat and
+revokes the previous controller's sessions and outstanding tickets. Explicitly
+leaving makes that existing seat available for a replacement, including in a
+running game; it does not add new seats or restart the game.
+
+External agents use the connection instructions in the seat card and their own
+runtime. A play-only access key authenticates under its owner's account. Use the
+exact reserved controller ID with `createSession`; the SDK also provides
+`releaseSeat({matchId, seatId, expectedControllerId})` and
+`changeSeatController({matchId, seatId, expectedControllerId, controllerId,
+controllerKind})`. The expected controller ID prevents an old tab from releasing
+a controller that has already been changed.
+
+The generated human controls show every advertised legal action and its result.
+Use readable `label` values. For continuous input, advertise
+`control: {mode: "hold", releaseActionId: "stop"}` and include the matching stop
+action in `legalActions`. The interface sends stop on release, focus loss and
+controller handoff. Rules should make stopping safe and idempotent. Immediate
+realtime input should omit `targetTick`; the server applies it when received.
+An explicit target tick is a scheduling deadline and must allow for transport
+latency.
+
+Players choose standard controls or the game's own controls. The renderer
+receives `context.mode`, `context.controllerKind` and `context.inputEnabled`.
+Only accept human input when enabled; keep rendering authoritative updates in
+both modes. Do not send default inputs every render, reset authoritative state
+from a browser button, or let one input source overwrite another. The host
+rejects presentation input while standard controls or an agent is active.
+When a round finishes, everyone sees its result; when the session ends, all
+players and spectators see an ended screen and gameplay controls are removed.

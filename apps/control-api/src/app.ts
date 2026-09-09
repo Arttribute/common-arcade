@@ -691,6 +691,44 @@ export function createApp(options: ControlApiOptions = {}) {
     )
   })
 
+  for (const operation of ['release', 'controller'] as const) {
+    app.post(
+      `/v1/matches/:matchId/seats/:seatId/${operation}`,
+      async (context) => {
+        const actor = await authenticate(
+          context.req.header('Authorization'),
+          'matches:play',
+        )
+        const binding = z.object({
+          expectedControllerId: z.string().min(1).max(200),
+        })
+        const raw = await context.req.json()
+        const request = {
+          matchId: context.req.param('matchId'),
+          seatId: context.req.param('seatId'),
+          actorId: actor.id,
+        }
+        if (operation === 'release')
+          return context.json(
+            await requirePlatform().releaseSeat({
+              ...request,
+              ...binding.strict().parse(raw),
+            }),
+          )
+        const body = binding
+          .extend({
+            controllerId: z.string().min(1).max(200),
+            controllerKind: z.enum(['human', 'agent']),
+          })
+          .strict()
+          .parse(raw)
+        return context.json(
+          await requirePlatform().changeSeatController({ ...request, ...body }),
+        )
+      },
+    )
+  }
+
   app.post('/v1/matches/:matchId/join', async (context) => {
     const actorId = (
       await authenticate(context.req.header('Authorization'), 'matches:play')
@@ -1012,6 +1050,18 @@ function openApiDocument(serverUrl: string) {
       '/v1/matches/{matchId}': {
         get: { summary: 'Inspect a match' },
         delete: { summary: 'End a match owned by the caller' },
+      },
+      '/v1/matches/{matchId}/seats/{seatId}/release': {
+        post: {
+          summary:
+            'Release your seat, cancel held input and revoke its control sessions',
+        },
+      },
+      '/v1/matches/{matchId}/seats/{seatId}/controller': {
+        post: {
+          summary:
+            'Atomically switch your seat between human and agent controllers',
+        },
       },
       '/v1/matches/{matchId}/seats/{seatId}/claim': {
         post: { summary: 'Claim a seat for the authenticated actor' },

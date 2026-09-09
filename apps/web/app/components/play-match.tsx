@@ -11,15 +11,21 @@ import type {
 import { useEffect, useRef, useState } from 'react'
 import { Check, RotateCcw, Share2, User, Bot, Circle } from 'lucide-react'
 
-const apiUrl = process.env.NEXT_PUBLIC_ARCADE_API_URL ?? 'http://localhost:4100'
+import { LiveControls, actionLabel } from './live-controls'
+import { ExternalSeatAgent } from './external-seat-agent'
 
-function actionLabel(action: JsonValue, index: number): string {
-  if (action && typeof action === 'object' && !Array.isArray(action)) {
-    if (typeof action.label === 'string') return action.label
-    if (typeof action.type === 'string') return action.type
+function resultLabel(
+  result: JsonValue,
+  seats: MatchDescriptor['seats'],
+): string {
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    if (typeof result.message === 'string') return result.message
+    const winner = result.winner ?? result.winnerSeatId
+    if (typeof winner === 'string')
+      return `Winner: ${seats.find((seat) => seat.id === winner)?.label ?? winner}`
+    if (result.draw === true || result.winner === null) return 'Draw'
   }
-  const encoded = JSON.stringify(action)
-  return encoded.length <= 80 ? encoded : `Action ${index + 1}`
+  return typeof result === 'string' ? result : JSON.stringify(result)
 }
 
 export function PlayMatch({
@@ -47,6 +53,15 @@ export function PlayMatch({
   const [agents, setAgents] = useState<{ agentId: string; name: string }[]>([])
   const [selectedAgent, setSelectedAgent] = useState('')
   const [activeAgent, setActiveAgent] = useState<string>()
+  const [externalSetup, setExternalSetup] = useState<{
+    seatId: string
+    controllerId: string
+  }>()
+  const [controlFeedback, setControlFeedback] = useState('')
+  const [inputMode, setInputMode] = useState<'standard' | 'game'>('standard')
+  const submittedActions = useRef(new Map<string, string>())
+  const presentationIntent = useRef<string | undefined>(undefined)
+  const presentationRelease = useRef<JsonValue | undefined>(undefined)
   const [agentPaused, setAgentPaused] = useState(false)
   const [agentStatus, setAgentStatus] = useState('')
   const agentFailures = useRef(0)
@@ -59,6 +74,14 @@ export function PlayMatch({
   const clientRef = useRef<RealtimeClient | undefined>(undefined)
   const presentationRef = useRef<HTMLIFrameElement | null>(null)
   const actionSequence = useRef(0)
+  const terminal = Boolean(
+    match &&
+    ['completed', 'canceled', 'expired', 'failed', 'invalidated'].includes(
+      match.status,
+    ),
+  )
+  const ended = terminal && match?.series?.status !== 'awaiting-restart'
+  const localControllerKind = activeAgent ? 'agent' : 'human'
 
   useEffect(() => {
     let alive = true
@@ -141,15 +164,38 @@ export function PlayMatch({
       setMatch(message.payload as unknown as MatchDescriptor)
     if (message.type === 'action.result') {
       const payload = message.payload as {
+        actionId?: string
         disposition?: string
         detail?: string
       }
       setLastResult(
         `${payload.disposition ?? 'unknown'}${payload.detail ? ` · ${payload.detail}` : ''}`,
       )
+      const label = payload.actionId
+        ? submittedActions.current.get(payload.actionId)
+        : undefined
+      if (payload.actionId) submittedActions.current.delete(payload.actionId)
+      if (
+        payload.disposition !== 'accepted' &&
+        payload.disposition !== 'duplicate'
+      )
+        presentationIntent.current = undefined
+      if (label)
+        setControlFeedback(
+          payload.disposition === 'accepted'
+            ? `${label} applied. The game is up to date.`
+            : `${label} was not applied: ${payload.detail ?? payload.disposition ?? 'try again'}`,
+        )
     }
     if (message.type === 'error') {
-      const payload = message.payload as { detail?: string }
+      const payload = message.payload as { detail?: string; code?: string }
+      if (payload.code === 'CONTROL_REVOKED') {
+        setLease(undefined)
+        setControlledSeat(undefined)
+        setObservation(undefined)
+        setActiveAgent(undefined)
+        setControlFeedback('Control of this seat has changed.')
+      }
       setError(payload.detail ?? 'Realtime protocol error')
     }
   }
@@ -160,6 +206,14 @@ export function PlayMatch({
     agentId?: string,
   ) {
     setError(undefined)
+    if (mode === 'control') setExternalSetup(undefined)
+    clientRef.current?.close()
+    clientRef.current = undefined
+    setConnection('idle')
+    submittedActions.current.clear()
+    presentationIntent.current = undefined
+    presentationRelease.current = undefined
+    setControlFeedback('')
     setLease(undefined)
     setControlledSeat(undefined)
     setConnecting(true)
@@ -178,13 +232,22 @@ export function PlayMatch({
         : `browser-${actorId}`
       const control = browserControlClient()
       if (mode === 'control' && seatId !== undefined) {
+        const seat = match?.seats.find((candidate) => candidate.id === seatId)
+        const input = {
+          matchId,
+          seatId,
+          controllerId,
+          controllerKind: agentId ? ('agent' as const) : ('human' as const),
+        }
         setMatch(
-          await control.claimSeat({
-            matchId,
-            seatId,
-            controllerId,
-            controllerKind: agentId ? 'agent' : 'human',
-          }),
+          seat?.actorId === viewer?.id &&
+            seat?.controllerId &&
+            seat.controllerId !== controllerId
+            ? await control.changeSeatController({
+                ...input,
+                expectedControllerId: seat.controllerId,
+              })
+            : await control.claimSeat(input),
         )
       }
       const session = await control.createSession({
@@ -203,7 +266,6 @@ export function PlayMatch({
       realtime.onStateChange((state) => {
         if (generation === connectionGeneration.current) setConnection(state)
       })
-      clientRef.current?.close()
       clientRef.current = realtime
       await realtime.connect(session.ticket)
       if (generation === connectionGeneration.current) setRosterOnline(true)
@@ -235,9 +297,15 @@ export function PlayMatch({
       observation === undefined
     )
       return
+    if (connection !== 'connected' || activeAgent) return
     actionSequence.current += 1
+    const actionId = `act_${crypto.randomUUID().replaceAll('-', '')}`
+    const label = actionLabel(payload)
+    if (submittedActions.current.size >= 100) submittedActions.current.clear()
+    submittedActions.current.set(actionId, label)
+    setControlFeedback(`${label} sent…`)
     clientRef.current?.submitAction({
-      actionId: `act_${crypto.randomUUID().replaceAll('-', '')}`,
+      actionId,
       matchId,
       seatId,
       controlLease: lease,
@@ -246,9 +314,6 @@ export function PlayMatch({
       ...(observation.turn === undefined
         ? {}
         : { targetTurn: observation.turn }),
-      ...(observation.tick === undefined
-        ? {}
-        : { targetTick: observation.tick + 1 }),
       payload,
     })
   }
@@ -342,10 +407,70 @@ export function PlayMatch({
     const receivePresentationAction = (event: MessageEvent) => {
       if (
         event.source !== presentationRef.current?.contentWindow ||
-        event.data?.type !== 'arcade.action'
+        activeAgent ||
+        inputMode !== 'game'
       )
         return
-      if (!activeAgent) submit(event.data.action as JsonValue)
+      if (event.data?.type === 'arcade.release-input') {
+        if (presentationRelease.current !== undefined)
+          submit(presentationRelease.current)
+        presentationIntent.current = undefined
+        presentationRelease.current = undefined
+        return
+      }
+      if (event.data?.type !== 'arcade.action') return
+      const action = event.data.action as JsonValue
+      const id =
+        action && typeof action === 'object' && !Array.isArray(action)
+          ? action.id
+          : undefined
+      const legal = observation?.legalActions ?? []
+      const advertised = legal.find(
+        (candidate) =>
+          JSON.stringify(candidate) === JSON.stringify(action) ||
+          (typeof id === 'string' &&
+            candidate &&
+            typeof candidate === 'object' &&
+            !Array.isArray(candidate) &&
+            candidate.id === id),
+      )
+      const control =
+        advertised &&
+        typeof advertised === 'object' &&
+        !Array.isArray(advertised)
+          ? (advertised.control as
+              { mode?: string; releaseActionId?: string } | undefined)
+          : undefined
+      const release =
+        control?.mode === 'hold'
+          ? legal.find(
+              (candidate) =>
+                candidate &&
+                typeof candidate === 'object' &&
+                !Array.isArray(candidate) &&
+                candidate.id === control.releaseActionId,
+            )
+          : undefined
+      const isRelease =
+        typeof id === 'string' &&
+        legal.some(
+          (candidate) =>
+            candidate &&
+            typeof candidate === 'object' &&
+            !Array.isArray(candidate) &&
+            (candidate.control as { releaseActionId?: string } | undefined)
+              ?.releaseActionId === id,
+        )
+      if (release !== undefined || isRelease) {
+        const intent = JSON.stringify(action)
+        if (presentationIntent.current === intent) return
+        presentationIntent.current = intent
+        presentationRelease.current = release
+      } else {
+        presentationIntent.current = undefined
+        presentationRelease.current = undefined
+      }
+      submit(action)
     }
     window.addEventListener('message', receivePresentationAction)
     return () =>
@@ -359,12 +484,107 @@ export function PlayMatch({
         state: observation?.visibleState ?? publicState ?? null,
         observation,
         match,
+        mode: controlledSeat ? 'control' : 'spectate',
+        controllerKind: controlledSeat ? localControllerKind : undefined,
+        inputEnabled: Boolean(
+          lease &&
+          !activeAgent &&
+          inputMode === 'game' &&
+          match?.status === 'running',
+        ),
       },
       '*',
     )
   }
 
-  useEffect(renderPresentation, [match, observation, publicState])
+  useEffect(renderPresentation, [
+    match,
+    observation,
+    publicState,
+    controlledSeat,
+    lease,
+    activeAgent,
+    inputMode,
+  ])
+
+  async function leaveSeat(seatId: string) {
+    const seat = match?.seats.find((candidate) => candidate.id === seatId)
+    if (!seat?.controllerId) return
+    setConnecting(true)
+    setError(undefined)
+    ++connectionGeneration.current
+    clientRef.current?.close()
+    clientRef.current = undefined
+    setConnection('idle')
+    setControlledSeat(undefined)
+    setObservation(undefined)
+    setActiveAgent(undefined)
+    setLease(undefined)
+    try {
+      setMatch(
+        await browserControlClient().releaseSeat({
+          matchId,
+          seatId,
+          expectedControllerId: seat.controllerId,
+        }),
+      )
+      setExternalSetup(undefined)
+      if (match?.lobby?.spectating !== 'disabled') await connect('spectate')
+      else {
+        setConnection('idle')
+        setControlledSeat(undefined)
+        setObservation(undefined)
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  async function reserveExternal(seatId: string) {
+    const seat = match?.seats.find((candidate) => candidate.id === seatId)
+    if (!seat) return
+    setConnecting(true)
+    setError(undefined)
+    ++connectionGeneration.current
+    clientRef.current?.close()
+    clientRef.current = undefined
+    setConnection('idle')
+    setControlledSeat(undefined)
+    setObservation(undefined)
+    setActiveAgent(undefined)
+    setLease(undefined)
+    try {
+      const controllerId = `external-${crypto.randomUUID()}`
+      const input = {
+        matchId,
+        seatId,
+        controllerId,
+        controllerKind: 'agent' as const,
+      }
+      const control = browserControlClient()
+      setMatch(
+        seat.actorId === viewer?.id && seat.controllerId
+          ? await control.changeSeatController({
+              ...input,
+              expectedControllerId: seat.controllerId,
+            })
+          : await control.claimSeat(input),
+      )
+      setExternalSetup({ seatId, controllerId })
+      if (match?.lobby?.spectating !== 'disabled') await connect('spectate')
+      else {
+        setConnection('idle')
+        setControlledSeat(undefined)
+        setObservation(undefined)
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setConnecting(false)
+    }
+  }
 
   async function abandon() {
     try {
@@ -406,11 +626,15 @@ export function PlayMatch({
             / {match?.seats.length ?? 0} seats taken
           </strong>
           <span>
-            {connection === 'connected'
-              ? '● Live seat updates'
-              : rosterOnline
-                ? 'Seat availability refreshes automatically'
-                : 'Reconnecting — availability may be out of date'}
+            {terminal
+              ? ended
+                ? 'Session ended'
+                : 'Round complete'
+              : connection === 'connected'
+                ? '● Live seat updates'
+                : rosterOnline
+                  ? 'Seat availability refreshes automatically'
+                  : 'Reconnecting — availability may be out of date'}
           </span>
         </p>
         <p className="match-rule-note">
@@ -420,7 +644,7 @@ export function PlayMatch({
               ? 'Private · in Your sessions'
               : 'Unlisted · link only · in Your sessions'}
         </p>
-        {!viewer ? (
+        {!viewer && !terminal ? (
           <a
             className="seat-sign-in"
             href={`/api/auth/login?next=/play/${encodeURIComponent(matchId)}`}
@@ -539,13 +763,15 @@ export function PlayMatch({
                 </div>
                 {!open ? (
                   <small className="seat-connection">
-                    {controlling
-                      ? 'You are controlling this seat'
-                      : seat.status === 'connected'
-                        ? 'Connected'
-                        : seat.status === 'disconnected'
-                          ? 'Disconnected · seat reserved'
-                          : 'Claimed · waiting to connect'}
+                    {terminal
+                      ? 'Played in this session'
+                      : controlling
+                        ? 'You are controlling this seat'
+                        : seat.status === 'connected'
+                          ? 'Connected'
+                          : seat.status === 'disconnected'
+                            ? 'Disconnected · seat reserved'
+                            : 'Claimed · waiting to connect'}
                   </small>
                 ) : null}
                 <details className="seat-identity">
@@ -568,8 +794,8 @@ export function PlayMatch({
                   </dl>
                 </details>
                 {viewer &&
-                !controlling &&
-                (joinable || (own && humanController)) &&
+                (!controlling || localControllerKind === 'agent') &&
+                (joinable || own) &&
                 match.lobby?.allowedControllers.includes('human') ? (
                   <button
                     disabled={disabled}
@@ -577,15 +803,17 @@ export function PlayMatch({
                   >
                     {connectingSeat === seat.id
                       ? 'Connecting…'
-                      : own && humanController
-                        ? 'Reconnect to seat'
+                      : own
+                        ? humanController
+                          ? 'Reconnect as human'
+                          : 'Play myself'
                         : `Take seat ${index + 1}`}
                   </button>
                 ) : null}
                 {viewer &&
                 selectedAgent &&
-                !controlling &&
-                (joinable || (own && agentController)) &&
+                (!controlling || !agentController) &&
+                (joinable || own) &&
                 match.lobby?.allowedControllers.includes('agent') ? (
                   <button
                     disabled={disabled}
@@ -598,6 +826,34 @@ export function PlayMatch({
                       : `Assign ${agents.find((agent) => agent.agentId === selectedAgent)?.name ?? 'agent'}`}
                   </button>
                 ) : null}
+                {viewer &&
+                !terminal &&
+                (joinable || own) &&
+                match.lobby?.allowedControllers.includes('agent') ? (
+                  <button
+                    className="secondary"
+                    disabled={disabled}
+                    onClick={() => {
+                      if (own && seat.controllerId?.startsWith('external-'))
+                        setExternalSetup({
+                          seatId: seat.id,
+                          controllerId: seat.controllerId,
+                        })
+                      else void reserveExternal(seat.id)
+                    }}
+                  >
+                    Connect external agent
+                  </button>
+                ) : null}
+                {own && !terminal ? (
+                  <button
+                    className="secondary"
+                    disabled={connecting}
+                    onClick={() => void leaveSeat(seat.id)}
+                  >
+                    Leave seat
+                  </button>
+                ) : null}
               </article>
             )
           })}
@@ -605,21 +861,43 @@ export function PlayMatch({
         <button
           className="secondary compact"
           disabled={
+            terminal ||
             connecting ||
             (connection === 'connected' && !controlledSeat) ||
             match?.lobby?.spectating === 'disabled'
           }
-          onClick={() => void connect('spectate')}
+          onClick={() =>
+            controlledSeat
+              ? void leaveSeat(controlledSeat)
+              : void connect('spectate')
+          }
         >
-          {match?.lobby?.spectating === 'disabled'
-            ? 'Spectating disabled'
-            : connection === 'connected' && !controlledSeat
-              ? 'Watching live'
-              : 'Watch live'}
+          {terminal
+            ? 'Session ended'
+            : match?.lobby?.spectating === 'disabled'
+              ? 'Spectating disabled'
+              : connection === 'connected' && !controlledSeat
+                ? 'Watching live'
+                : controlledSeat
+                  ? 'Leave seat and watch'
+                  : 'Watch live'}
         </button>
-        <button className="secondary compact" onClick={() => void abandon()}>
-          End match
-        </button>
+        {externalSetup && !terminal ? (
+          <ExternalSeatAgent
+            matchId={matchId}
+            {...externalSetup}
+            connected={
+              match?.seats.find((seat) => seat.id === externalSetup.seatId)
+                ?.status === 'connected'
+            }
+            onClose={() => setExternalSetup(undefined)}
+          />
+        ) : null}
+        {!terminal ? (
+          <button className="secondary compact" onClick={() => void abandon()}>
+            End session
+          </button>
+        ) : null}
         <p className="match-rule-note">
           {match?.lobby?.joinPolicy === 'invite-only'
             ? 'Invite-only lobby'
@@ -639,7 +917,38 @@ export function PlayMatch({
             {match?.series?.maximumRounds ?? 1} · {connection}
           </span>
         </div>
-        {match?.releaseId ? (
+        {terminal ? (
+          <div className="session-ended" role="status" aria-live="assertive">
+            <span className="eyebrow">
+              {ended ? 'SESSION ENDED' : 'ROUND COMPLETE'}
+            </span>
+            <h2>
+              {ended ? 'This live session has ended' : 'This round is complete'}
+            </h2>
+            <p>
+              {match?.status === 'canceled'
+                ? 'The host ended this session.'
+                : match?.status === 'expired'
+                  ? 'This session expired.'
+                  : ['failed', 'invalidated'].includes(match?.status ?? '')
+                    ? 'The session stopped before it could finish.'
+                    : ended
+                      ? 'The final result is in. Play has stopped for everyone.'
+                      : 'Waiting for the next round. Play is paused for everyone.'}
+            </p>
+            {match?.result !== undefined ? (
+              <div className="session-outcome">
+                <strong>Final result</strong>
+                <p>{resultLabel(match.result, match.seats)}</p>
+              </div>
+            ) : null}
+            <p>You are no longer sending game actions.</p>
+            <div className="session-next">
+              <a href="/live">Find another live session</a>
+              <a href="/">Browse games</a>
+            </div>
+          </div>
+        ) : match?.releaseId ? (
           <iframe
             ref={presentationRef}
             className="live-game-frame"
@@ -653,26 +962,36 @@ export function PlayMatch({
             {error ? 'The game could not be loaded.' : 'Loading game…'}
           </p>
         )}
-        {observation?.legalActions.length ? (
-          <div className="live-action-strip" aria-label="Available actions">
-            {observation.legalActions.slice(0, 12).map((action, index) => (
-              <button
-                key={index}
-                disabled={Boolean(activeAgent) || !lease}
-                onClick={() => submit(action)}
-              >
-                {actionLabel(action, index)}
-              </button>
-            ))}
-          </div>
+        {!terminal && observation && !activeAgent ? (
+          <LiveControls
+            inputMode={inputMode}
+            onInputMode={(mode) => {
+              if (presentationRelease.current !== undefined)
+                submit(presentationRelease.current)
+              presentationIntent.current = undefined
+              presentationRelease.current = undefined
+              setInputMode(mode)
+              if (mode === 'game') presentationRef.current?.focus()
+            }}
+            observation={observation}
+            disabled={
+              !lease ||
+              connection !== 'connected' ||
+              match?.status !== 'running'
+            }
+            feedback={controlFeedback}
+            onAction={submit}
+          />
         ) : null}
-        <strong className="game-outcome">
-          {match?.result !== undefined
-            ? `Result: ${JSON.stringify(match.result)}`
-            : connection === 'connected' && publicState !== undefined
-              ? 'Live game connected'
-              : 'Connect to watch or play'}
-        </strong>
+        {!terminal ? (
+          <strong className="game-outcome">
+            {match?.result !== undefined
+              ? `Result: ${JSON.stringify(match.result)}`
+              : connection === 'connected' && publicState !== undefined
+                ? 'Live game connected'
+                : 'Connect to watch or play'}
+          </strong>
+        ) : null}
         {match?.series?.status === 'awaiting-restart' ? (
           <button className="round-restart" onClick={() => void restart()}>
             <RotateCcw size={13} />
@@ -706,7 +1025,7 @@ export function PlayMatch({
           <dt>Restart rule</dt>
           <dd>{match?.series?.restartPolicy ?? 'owner'}</dd>
         </dl>
-        {connection === 'disconnected' ? (
+        {connection === 'disconnected' && !terminal ? (
           <button
             className="secondary compact"
             onClick={() => void clientRef.current?.resume()}

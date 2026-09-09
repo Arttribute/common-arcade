@@ -86,6 +86,7 @@ export const realtimeTicketClaimsSchema = z
     sessionId: sessionIdSchema,
     actorId: z.string().min(1).max(200),
     controllerId: z.string().min(1).max(200).optional(),
+    controlGeneration: z.number().int().nonnegative().optional(),
     scopes: z.array(z.string().min(1).max(300)).min(1).max(20),
     issuedAt: z.number().int().nonnegative(),
     expiresAt: z.number().int().positive(),
@@ -117,6 +118,7 @@ export interface RealtimeTicketRequest {
   readonly sessionId: string
   readonly actorId: string
   readonly controllerId?: string
+  readonly controlGeneration?: number
   readonly scopes: readonly string[]
   readonly ttlSeconds?: number
 }

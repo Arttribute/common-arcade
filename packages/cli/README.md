@@ -4,7 +4,7 @@ Create, validate, publish, and play managed live games of any genre.
 The alpha CLI is distributed as a self-contained GitHub release asset.
 
 ```bash
-npm install -g https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.3/common-arcade-cli-0.1.0-alpha.3.tgz
+npm install -g https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.4/common-arcade-cli-0.1.0-alpha.4.tgz
 export ARCADE_API_URL=https://arcade.agentcommons.io/api/arcade
 export ARCADE_TOKEN=your_scoped_arcade_key
 
