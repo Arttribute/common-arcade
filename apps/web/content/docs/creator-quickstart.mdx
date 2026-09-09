@@ -228,6 +228,20 @@ Use serialized state and the seed for randomness, and `context.deltaMs` and
 `window.arcade.render(state, context)`; human controls call the host-installed
 `window.arcade.submit(action)`.
 
+The renderer must support both audiences. For a controlling player, `state` is
+that seat's `observe(...).visibleState` and `context.observation` identifies the
+seat and its legal actions. For a spectator, `state` is the public runtime state
+and `context.observation` is absent. These shapes can differ: explicitly map
+both to your presentation. A renderer that only recognizes a player-specific
+field can silently leave spectators in a local preview.
+
+Switch off local simulation when authoritative state arrives, including while
+watching. Spectators must not drive a seat or locally restart the displayed
+match. Test a second browser with no controlled seat during selection, active
+play, and after the result; its canvas must follow the server state in every
+phase. This applies equally to races, card games, strategy games and other
+genres.
+
 For expensive immutable level data, implement optional `prepare(context)`.
 Arcade runs it at initialization and caches its JSON result for that match.
 Other methods can read the deeply frozen `globalThis.arcadePrepared` value.
