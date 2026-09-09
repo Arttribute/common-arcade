@@ -398,7 +398,7 @@ export function PlayMatch({
         <strong className="game-outcome">
           {match?.result !== undefined
             ? `Result: ${JSON.stringify(match.result)}`
-            : observation
+            : connection === 'connected' && publicState !== undefined
               ? 'Live game connected'
               : 'Connect to watch or play'}
         </strong>

@@ -21,7 +21,7 @@ on:
         type: string
 
 concurrency:
-  group: common-arcade-aws-${{ inputs.stage }}
+  group: common-arcade-aws-${{ inputs.stage }}${{ inputs.operation == 'diagnose' && '-diagnostics' || '' }}
   cancel-in-progress: false
 
 permissions:
