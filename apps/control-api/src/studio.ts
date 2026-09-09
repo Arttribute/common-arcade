@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { browserGameDocumentSchema } from '@common-arcade/protocol'
 import {
   assessLiveReadiness,
   compilePresentation,
@@ -96,6 +97,8 @@ type RunRecord = StoredDocument & {
 }
 const COPILOT_INSTRUCTIONS =
   'You are a Common Arcade copilot. Use the assigned build-common-arcade-games skill and the supplied Arcade tools. The Arcade tools are the complete creation path; Agent Computer is not required and its availability is never a blocker. Read the current project before editing. Build the game the creator actually requested—never substitute a grid, line-building, or tic-tac-toe game unless they explicitly asked for one. If older skill text says live-managed games are grid-only, that statement is obsolete and this contract supersedes it. arcade_write_live_game accepts any genre through a custom web presentation plus a sandboxed authoritative server module, including realtime action, racing, sports, strategy, cards, simulations, teams, and 2D/3D games. For a managed live game, browser files are presentation only: assign window.arcade with render(authoritativeState, context), and have human controls call window.arcade.submit(action). Do not define submit yourself; Arcade installs it. Do not duplicate authoritative seats, observations, legal actions, or state transitions in the browser. The separate server module owns those concerns and assigns globalThis.arcadeGame with pure synchronous initialize(context), validateAction(state, action, context), applyAction(state, action, context), observe(state, seatId, context), result(state), and—for realtime/hybrid games—tick(state, context). Every state, action, observation, event, and result must be JSON-serializable. Server functions receive only their arguments; use context.elapsedMs, context.deltaMs, and the initialization seed, never Date, network, filesystem, process, or Math.random. Each transition returns {state,events}; each event has a dotted type, visibility, and payload. result returns null until terminal. Realtime observations should include actionable derived timing such as time-to-impact. Only preview-only browser games need the local seats(), observe(), actions(), and step() bridge. Use arcade_write_preview_game only when the creator explicitly asks for a local non-live prototype. Declare persistent worlds, teams, 3D presentation, and future payment hooks when relevant. Blender assets must be exported to glTF/GLB. After every write, run arcade_test_game and repair failures. Use arcade_publish_game only when asked to publish or make live. Report only actions confirmed by tools.'
+const LIVE_AUTHORING_GUIDANCE =
+  ' All game genres use the same contract. Declare asymmetric roles and teams in play.roles, optional play.lateJoin and play.spectators, and a bounded play.maxDurationSeconds. Use opaque roster seat IDs. Return observation.feedback with reward, outcome, summary and metrics explaining the effects of prior actions; prefer you, others and standings for multi-seat observations. Optional prepare(context) caches immutable JSON in globalThis.arcadePrepared for expensive level data, while all mutable state remains in transitions. Runtime state, transitions and observations are bounded to 192 KiB serialized. arcade_test_game includes a headless determinism and timing test for managed games.'
 const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_read_project',
@@ -107,99 +110,23 @@ const ARCADE_COPILOT_TOOLS = [
     name: 'arcade_write_live_game',
     description:
       'Create any genre as a live-ready Arcade game. Supply complete browser presentation files with window.arcade.render and human controls that call window.arcade.submit, plus a separate deterministic server rules file. The server file runs authoritatively in a bounded no-I/O WebAssembly sandbox and owns seats, observations, legal actions, state and results for every live session.',
-    parameters: {
-      type: 'object',
-      properties: {
-        title: {
-          type: 'string',
-          description: 'Game title, at most 100 characters.',
-        },
-        description: {
-          type: 'string',
-          description: 'Short description of the playable game.',
-        },
-        entryFile: {
-          type: 'string',
-          description: 'Browser HTML entry file, usually index.html.',
-        },
-        dependencies: {
-          type: 'object',
-          description:
-            'Optional browser packages mapped to exact semantic versions.',
-          additionalProperties: { type: 'string' },
-        },
-        capabilities: {
-          type: 'object',
-          description:
-            'Optional world, presentation, team, and future economy declarations using the Arcade browser-game capability contract.',
-        },
-        play: {
-          type: 'object',
-          properties: {
-            mode: {
-              type: 'string',
-              enum: ['turn-based', 'simultaneous', 'realtime', 'hybrid'],
-            },
-            seats: {
-              type: 'object',
-              properties: {
-                min: { type: 'integer', minimum: 1, maximum: 16 },
-                max: { type: 'integer', minimum: 1, maximum: 16 },
-                default: { type: 'integer', minimum: 1, maximum: 16 },
-              },
-              required: ['min', 'max', 'default'],
-              additionalProperties: false,
-            },
-            maxDecisionsPerSecond: {
-              type: 'integer',
-              minimum: 1,
-              maximum: 20,
-            },
-          },
-          required: ['mode', 'seats', 'maxDecisionsPerSecond'],
-          additionalProperties: false,
-        },
-        runtime: {
-          type: 'object',
-          description:
-            'Authoritative deterministic server module. entryFile must assign globalThis.arcadeGame.',
-          properties: {
-            kind: { type: 'string', enum: ['sandboxed-script'] },
-            entryFile: { type: 'string' },
-            tickRate: { type: 'integer', minimum: 1, maximum: 60 },
-            memoryMiB: { type: 'integer', minimum: 4, maximum: 32 },
-            timeoutMs: { type: 'integer', minimum: 1, maximum: 50 },
-          },
-          required: ['kind', 'entryFile', 'tickRate', 'memoryMiB', 'timeoutMs'],
-          additionalProperties: false,
-        },
-        files: {
-          type: 'array',
-          description:
-            'All browser presentation files plus the authoritative runtime entry file.',
-          minItems: 2,
-          maxItems: 60,
-          items: {
-            type: 'object',
-            properties: {
-              path: { type: 'string' },
-              content: { type: 'string' },
-            },
-            required: ['path', 'content'],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: [
-        'title',
-        'description',
-        'entryFile',
-        'play',
-        'runtime',
-        'files',
-      ],
-      additionalProperties: false,
-    },
+    parameters: (() => {
+      const schema = z.toJSONSchema(browserGameDocumentSchema)
+      const { kind: _kind, ...properties } = schema.properties ?? {}
+      return {
+        type: 'object',
+        properties,
+        required: [
+          'title',
+          'description',
+          'entryFile',
+          'play',
+          'runtime',
+          'files',
+        ],
+        additionalProperties: false,
+      }
+    })(),
   },
   {
     name: 'arcade_write_preview_game',
@@ -1199,7 +1126,7 @@ export function createStudioApi(
       temperature: 0.3,
       instructions:
         role === 'copilot'
-          ? COPILOT_INSTRUCTIONS
+          ? COPILOT_INSTRUCTIONS + LIVE_AUTHORING_GUIDANCE
           : 'You are a Common Arcade player agent. Follow the configured strategy, choose only legal actions exposed for your seat, and report only actions that tools confirm.',
       commonTools: [
         'invoke_skill',
@@ -1245,7 +1172,7 @@ export function createStudioApi(
         `/v1/agents/${encodeURIComponent(current.agentId)}`,
         'PUT',
         {
-          instructions: COPILOT_INSTRUCTIONS,
+          instructions: COPILOT_INSTRUCTIONS + LIVE_AUTHORING_GUIDANCE,
           commonTools: [
             'invoke_skill',
             'startAgentComputer',
@@ -1289,7 +1216,7 @@ export function createStudioApi(
           `/v1/agents/${encodeURIComponent(agent.agentId)}`,
           'PUT',
           {
-            instructions: COPILOT_INSTRUCTIONS,
+            instructions: COPILOT_INSTRUCTIONS + LIVE_AUTHORING_GUIDANCE,
             commonTools: [
               'invoke_skill',
               'startAgentComputer',
@@ -1725,10 +1652,28 @@ export function createStudioApi(
         const compiled = compilePresentation(project.document)
         if (liveReadiness.liveReady)
           await smokeTestRuntime(project.document, project.digest)
+        const runtimeTest = isManagedBrowserGame(project.document)
+          ? await testGameRuntime(project.document, project.digest, {
+              steps: 30,
+            })
+          : undefined
+        if (runtimeTest && !runtimeTest.deterministic)
+          throw new Error(
+            'Runtime state or observations changed across identical seeded runs.',
+          )
         return JSON.stringify({
           ok: true,
           projectId,
           revision: project.revision,
+          ...(runtimeTest
+            ? {
+                runtimeTest: {
+                  deterministic: runtimeTest.deterministic,
+                  timing: runtimeTest.timing,
+                  warnings: runtimeTest.warnings,
+                },
+              }
+            : {}),
           liveReady: liveReadiness.liveReady,
           classification: liveReadiness.classification,
           runtimeModule: liveReadiness.runtimeModule,
