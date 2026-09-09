@@ -44,7 +44,7 @@ describe('control API foundation', () => {
     const games = (await gamesResponse.json()) as {
       games: { metadata: { id: string }; spec: unknown }[]
     }
-    expect(games.games[0]?.metadata.id).toBe('gam_tictactoe1')
+    expect(games.games).toEqual([])
     expect(
       await (await app.request('/v1/games/gam_tictactoe1/releases')).json(),
     ).toMatchObject({

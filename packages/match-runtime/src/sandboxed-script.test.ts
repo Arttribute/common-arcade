@@ -58,3 +58,36 @@ describe('sandboxed creator rules', () => {
     ).toThrow(/interrupted|failed/i)
   })
 })
+
+it('caches prepared data while isolating mutable globals between calls', async () => {
+  const game = await createSandboxedScriptGame({
+    releaseId: 'rel_prepared',
+    releaseDigest: `sha256:${'c'.repeat(64)}`,
+    mode: 'realtime',
+    memoryMiB: 8,
+    timeoutMs: 20,
+    source: `let hidden=0; globalThis.arcadeGame={
+      prepare:c=>({seed:c.seed,values:[1,2,3]}),
+      initialize:()=>({n:0,seed:arcadePrepared.seed}),
+      validateAction:()=>null,applyAction:s=>({state:s,events:[]}),
+      tick:s=>({state:{...s,n:s.n+arcadePrepared.values.length+(hidden++)},events:[]}),
+      observe:s=>({visibleState:s,legalActions:[]}),result:()=>null
+    }`,
+  })
+  let state = game.initialize({
+    matchId: 'mat_prepared',
+    seed: 'static',
+    configuration: {},
+    roster: [{ seatId: 'sea_one', role: 'player' }],
+  })
+  for (let tick = 0; tick < 3; tick++)
+    state = game.advanceTick!(state, {
+      matchId: 'mat_prepared',
+      tick,
+      stateSequence: tick,
+      eventSequence: 0,
+      elapsedMs: tick * 33,
+      deltaMs: 33,
+    }).state
+  expect(state).toEqual({ n: 9, seed: 'static' })
+})

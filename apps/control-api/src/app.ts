@@ -252,7 +252,10 @@ function problem(
         detail: error.message,
         code: error.code,
         requestId: requestIdValue,
-        retryable: error instanceof ApiError ? error.retryable : false,
+        retryable:
+          error instanceof ApiError
+            ? error.retryable
+            : error.status === 429 || error.status >= 500,
       },
     }
   }
@@ -324,6 +327,15 @@ export function createApp(options: ControlApiOptions = {}) {
     }),
   )
 
+  app.on(
+    'GET',
+    ['/v1/schemas/game-document', '/v1/schemas/v0alpha1/game-document'],
+    (c) =>
+      c.json({
+        ...z.toJSONSchema(gameDocumentSchema),
+        $id: 'https://arcade.agentcommons.io/api/arcade/v1/schemas/v0alpha1/game-document',
+      }),
+  )
   app.use('/v1/matches*', async (c, next) => {
     if (options.platform || !process.env.ARCADE_REALTIME_CONTROL_URL)
       return next()
@@ -345,6 +357,18 @@ export function createApp(options: ControlApiOptions = {}) {
       redirect: 'error',
       signal: AbortSignal.timeout(20000),
     })
+    if (!response.ok && !response.headers.get('content-type')?.includes('json'))
+      return c.json(
+        {
+          type: 'https://arcade.agentcommons.io/problems/service-unavailable',
+          title: 'Match service unavailable',
+          status: response.status,
+          detail: 'The match service is temporarily unavailable. Please retry.',
+          code: 'SERVICE_UNAVAILABLE',
+          retryable: true,
+        },
+        response.status as ContentfulStatusCode,
+      )
     return new Response(response.body, {
       status: response.status,
       headers: {
@@ -374,6 +398,18 @@ export function createApp(options: ControlApiOptions = {}) {
       redirect: 'error',
       signal: AbortSignal.timeout(20000),
     })
+    if (!response.ok && !response.headers.get('content-type')?.includes('json'))
+      return c.json(
+        {
+          type: 'https://arcade.agentcommons.io/problems/service-unavailable',
+          title: 'Match service unavailable',
+          status: response.status,
+          detail: 'The match service is temporarily unavailable. Please retry.',
+          code: 'SERVICE_UNAVAILABLE',
+          retryable: true,
+        },
+        response.status as ContentfulStatusCode,
+      )
     return new Response(response.body, {
       status: response.status,
       headers: {
@@ -466,7 +502,6 @@ export function createApp(options: ControlApiOptions = {}) {
   app.get('/v1/games', async (context) =>
     context.json({
       games: [
-        await getTicTacToeManifest(),
         ...(
           await store.list<{ version: number; release: StudioRelease }>(
             'releases',
@@ -594,6 +629,18 @@ export function createApp(options: ControlApiOptions = {}) {
     )
   })
 
+  app.delete('/v1/matches/:matchId', async (context) => {
+    const actor = await authenticate(
+      context.req.header('Authorization'),
+      'matches:play',
+    )
+    return context.json(
+      await requirePlatform().abandonMatch(
+        context.req.param('matchId'),
+        actor.id,
+      ),
+    )
+  })
   app.get('/v1/matches/:matchId', async (context) =>
     context.json(
       await requirePlatform().getMatch(
@@ -863,7 +910,9 @@ function openApiDocument(serverUrl: string) {
         post: { summary: 'Publish the If-Match revision' },
       },
       '/v1/projects/{id}/runs': {
-        post: { summary: 'Create a pinned two-player test run' },
+        post: {
+          summary: 'Run a bounded authoritative determinism and timing test',
+        },
       },
       '/v1/projects/{id}/copilot': {
         post: { summary: 'Request a validated proposal from a Commons agent' },
@@ -945,7 +994,10 @@ function openApiDocument(serverUrl: string) {
         get: { summary: 'List public live and lobby matches' },
         post: { summary: 'Create an idempotent match' },
       },
-      '/v1/matches/{matchId}': { get: { summary: 'Inspect a match' } },
+      '/v1/matches/{matchId}': {
+        get: { summary: 'Inspect a match' },
+        delete: { summary: 'End a match owned by the caller' },
+      },
       '/v1/matches/{matchId}/seats/{seatId}/claim': {
         post: { summary: 'Claim a seat for the authenticated actor' },
       },

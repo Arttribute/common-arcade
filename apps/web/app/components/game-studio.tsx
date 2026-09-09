@@ -2529,6 +2529,48 @@ function transitionFeedback(
   actionId: string,
   observedAfterMs: number,
 ): BrowserFeedback {
+  const supplied =
+    after && typeof after === 'object'
+      ? (after as Record<string, unknown>).feedback
+      : undefined
+  if (supplied && typeof supplied === 'object') {
+    const feedback = supplied as Record<string, unknown>
+    if (
+      typeof feedback.reward === 'number' &&
+      Number.isFinite(feedback.reward) &&
+      typeof feedback.summary === 'string'
+    ) {
+      const outcome =
+        feedback.outcome === 'good'
+          ? 'positive'
+          : feedback.outcome === 'poor'
+            ? 'negative'
+            : feedback.outcome
+      const metrics =
+        feedback.metrics && typeof feedback.metrics === 'object'
+          ? (Object.fromEntries(
+              Object.entries(feedback.metrics)
+                .filter(
+                  ([, value]) =>
+                    typeof value === 'number' && Number.isFinite(value),
+                )
+                .slice(0, 32),
+            ) as Record<string, number>)
+          : {}
+      return {
+        actionId,
+        reward: Math.max(-100, Math.min(100, feedback.reward)),
+        summary: feedback.summary.slice(0, 500),
+        observedAfterMs,
+        outcome: ['positive', 'negative', 'neutral', 'unknown'].includes(
+          String(outcome),
+        )
+          ? (outcome as BrowserFeedback['outcome'])
+          : 'unknown',
+        metrics,
+      }
+    }
+  }
   const metrics: Record<string, number> = {}
   let reward = 0
   const measure = (

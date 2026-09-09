@@ -1,4 +1,4 @@
-import type { StudioRelease } from '@common-arcade/studio'
+import { assessLiveReadiness, type StudioRelease } from '@common-arcade/studio'
 import { compileGame } from '@common-arcade/studio/runtime'
 import {
   LocalRealtimeTicketAuthority,
@@ -26,6 +26,7 @@ export type LocalMatchRuntime = AuthoritativeMatch<any, any>
 interface MutableSeat {
   readonly id: string
   readonly role: string
+  readonly team?: string
   status: 'open' | 'claimed' | 'connected' | 'disconnected'
   actorId?: string
   controllerId?: string
@@ -81,6 +82,7 @@ interface MatchRecord {
   readonly lobby: MatchLobbyRules
   readonly series: MatchSeriesState
   readonly completedRounds: Replay[]
+  lastActiveAt: number
 }
 
 interface SessionRecord {
@@ -236,6 +238,7 @@ export class LocalArcadePlatform {
   private readonly matches = new Map<string, MatchRecord>()
   private readonly idempotency = new Map<string, string>()
   private readonly sessions = new Map<string, SessionRecord>()
+  private maintenance?: ReturnType<typeof setInterval>
   private readonly clocks = new Map<string, ReturnType<typeof setInterval>>()
   private readonly listeners = new Map<
     string,
@@ -279,55 +282,68 @@ export class LocalArcadePlatform {
       options.persistMatch,
     )
     for (const saved of options.savedMatches ?? []) {
-      const release = await options.loadRelease?.(saved.replay.releaseId)
-      const game = release
-        ? await compileGame(release.document, release.id, release.digest)
-        : ticTacToeGame
-      const runtime = await AuthoritativeMatch.recover(
-        game,
-        saved.replay,
-        saved.status,
-        saved.ownershipEpoch + 1,
-        now,
-      )
-      const record: MatchRecord = {
-        runtime,
-        version: saved.version,
-        idempotencyKey: saved.idempotencyKey,
-        manifest: saved.manifest,
-        seats: saved.seats.map((s) => ({
-          ...s,
-          status: s.status === 'open' ? 'open' : 'disconnected',
-        })),
-        createdAt: saved.createdAt,
-        updatedAt: saved.updatedAt,
-        ownerId: saved.ownerId,
-        visibility: saved.visibility ?? 'unlisted',
-        lobby:
-          saved.lobby ??
-          lobbyRules({
-            releaseId: saved.replay.releaseId,
-            idempotencyKey: saved.idempotencyKey,
-          }),
-        series: saved.series ?? {
-          ...seriesState({
-            releaseId: saved.replay.releaseId,
-            idempotencyKey: saved.idempotencyKey,
-          }),
-          status: saved.status === 'completed' ? 'complete' : 'active',
-        },
-        completedRounds: saved.completedRounds ?? [],
+      try {
+        const release = await options.loadRelease?.(saved.replay.releaseId)
+        if (!release && saved.replay.releaseId !== ticTacToeGame.releaseId)
+          throw new Error(
+            'The saved release is unavailable; refusing to substitute another game.',
+          )
+        const game = release
+          ? await compileGame(release.document, release.id, release.digest)
+          : ticTacToeGame
+        const runtime = await AuthoritativeMatch.restoreCheckpoint(
+          game,
+          saved.replay,
+          saved.status,
+          saved.ownershipEpoch + 1,
+          now,
+        )
+        const record: MatchRecord = {
+          runtime,
+          version: saved.version,
+          idempotencyKey: saved.idempotencyKey,
+          manifest: saved.manifest,
+          seats: saved.seats.map((s) => ({
+            ...s,
+            status: s.status === 'open' ? 'open' : 'disconnected',
+          })),
+          createdAt: saved.createdAt,
+          updatedAt: saved.updatedAt,
+          ownerId: saved.ownerId,
+          visibility: saved.visibility ?? 'unlisted',
+          lobby:
+            saved.lobby ??
+            lobbyRules({
+              releaseId: saved.replay.releaseId,
+              idempotencyKey: saved.idempotencyKey,
+            }),
+          series: saved.series ?? {
+            ...seriesState({
+              releaseId: saved.replay.releaseId,
+              idempotencyKey: saved.idempotencyKey,
+            }),
+            status: saved.status === 'completed' ? 'complete' : 'active',
+          },
+          completedRounds: saved.completedRounds ?? [],
+          lastActiveAt: now().getTime(),
+        }
+        await platform.persist(record)
+        platform.matches.set(saved.replay.matchId, record)
+        platform.idempotency.set(
+          JSON.stringify([saved.ownerId ?? null, saved.idempotencyKey]),
+          saved.replay.matchId,
+        )
+        if (runtime.getStatus() === 'running') platform.startClock(record)
+      } catch (error) {
+        console.error('Match recovery failed', saved.replay.matchId, error)
       }
-      await platform.persist(record)
-      platform.matches.set(saved.replay.matchId, record)
-      platform.idempotency.set(saved.idempotencyKey, saved.replay.matchId)
-      if (runtime.getStatus() === 'running') platform.startClock(record)
     }
+    platform.startMaintenance()
     return platform
   }
 
   async listGames(): Promise<readonly GameManifest[]> {
-    return [await getTicTacToeManifest()]
+    return []
   }
 
   async getGame(gameId: string): Promise<GameManifest> {
@@ -370,6 +386,13 @@ export class LocalArcadePlatform {
   }
 
   async createMatch(request: CreateMatchRequest): Promise<MatchDescriptor> {
+    return this.exclusive('create-match', () =>
+      this.createMatchInternal(request),
+    )
+  }
+  private async createMatchInternal(
+    request: CreateMatchRequest,
+  ): Promise<MatchDescriptor> {
     if (
       request.idempotencyKey.length < 8 ||
       request.idempotencyKey.length > 200
@@ -380,10 +403,38 @@ export class LocalArcadePlatform {
         'An idempotency key between 8 and 200 characters is required',
       )
     }
-    const existingId = this.idempotency.get(request.idempotencyKey)
+    const requestKey = JSON.stringify([
+      request.ownerId ?? null,
+      request.idempotencyKey,
+    ])
+    const existingId = this.idempotency.get(requestKey)
     if (existingId !== undefined) return this.describe(this.record(existingId))
 
+    const active = [...this.matches.values()].filter((record) =>
+      ['lobby', 'ready', 'running', 'paused'].includes(
+        record.runtime.getStatus(),
+      ),
+    )
+    if (
+      active.length >= 24 ||
+      active.filter((record) => record.ownerId === request.ownerId).length >=
+        4 ||
+      active.filter(
+        (record) => record.runtime.game.releaseId === request.releaseId,
+      ).length >= 12
+    )
+      throw new LocalPlatformError(
+        'CONFLICT',
+        429,
+        'Active match capacity reached. End an existing match before creating another.',
+      )
     const custom = await this.loadRelease?.(request.releaseId)
+    if (custom && !assessLiveReadiness(custom.document).liveReady)
+      throw new LocalPlatformError(
+        'INVALID_REQUEST',
+        422,
+        'This release has no authoritative runtime. Open it in Studio and publish a live-ready release.',
+      )
     const manifest = custom?.manifest ?? (await getTicTacToeManifest())
     if (!custom && request.releaseId !== ticTacToeGame.releaseId) {
       throw new LocalPlatformError(
@@ -395,7 +446,7 @@ export class LocalArcadePlatform {
     const matchId = `mat_${Buffer.from(
       await crypto.subtle.digest(
         'SHA-256',
-        new TextEncoder().encode(request.idempotencyKey),
+        new TextEncoder().encode(requestKey),
       ),
     )
       .toString('hex')
@@ -410,6 +461,7 @@ export class LocalArcadePlatform {
     const seats: MutableSeat[] = declaredRoles.map((seat, index) => ({
       id: `sea_${suffix}_${index + 1}`,
       role: seat.role,
+      ...(seat.team === undefined ? {} : { team: seat.team }),
       status: 'open',
     }))
     const game = custom
@@ -420,7 +472,11 @@ export class LocalArcadePlatform {
       game,
       seed: request.seed ?? opaqueId('seed'),
       configuration: request.configuration ?? {},
-      roster: seats.map((seat) => ({ seatId: seat.id, role: seat.role })),
+      roster: seats.map((seat) => ({
+        seatId: seat.id,
+        role: seat.role,
+        ...(seat.team === undefined ? {} : { team: seat.team }),
+      })),
       now: this.now,
     })
     const timestamp = this.now().toISOString()
@@ -434,13 +490,20 @@ export class LocalArcadePlatform {
       seats,
       ownerId: request.ownerId,
       visibility: request.visibility ?? 'unlisted',
-      lobby: lobbyRules(request),
+      lobby: {
+        ...lobbyRules(request),
+        ...(manifest.spec.seats.spectators
+          ? {}
+          : { spectating: 'disabled' as const }),
+      },
       series: seriesState(request),
       completedRounds: [],
+      lastActiveAt: this.now().getTime(),
     }
     await this.persist(record)
     this.matches.set(matchId, record)
-    this.idempotency.set(request.idempotencyKey, matchId)
+    this.startMaintenance()
+    this.idempotency.set(requestKey, matchId)
     return this.describe(record)
   }
 
@@ -574,11 +637,17 @@ export class LocalArcadePlatform {
       seat.controllerId === request.controllerId
     )
       return this.describe(record)
-    if (record.runtime.getStatus() !== 'lobby')
+    if (
+      record.runtime.getStatus() !== 'lobby' &&
+      !(
+        record.manifest.spec.seats.lateJoin &&
+        record.runtime.getStatus() === 'running'
+      )
+    )
       throw new LocalPlatformError(
         'CONFLICT',
         409,
-        'Seats can only be claimed while the match is in its lobby.',
+        'This match does not allow joining after the lobby.',
       )
     if (
       seat.status !== 'open' &&
@@ -596,7 +665,10 @@ export class LocalArcadePlatform {
     seat.controllerKind = request.controllerKind ?? 'human'
     seat.status = 'claimed'
     if (
-      record.seats.every((candidate) => candidate.status !== 'open') &&
+      (record.manifest.spec.seats.lateJoin
+        ? record.seats.filter((candidate) => candidate.status !== 'open')
+            .length >= record.manifest.spec.seats.min
+        : record.seats.every((candidate) => candidate.status !== 'open')) &&
       record.runtime.getStatus() === 'lobby'
     ) {
       record.runtime.start()
@@ -739,7 +811,15 @@ export class LocalArcadePlatform {
       const seat = record.seats.find(
         (candidate) => candidate.id === session.seatId,
       )
-      if (seat !== undefined) seat.status = 'disconnected'
+      if (seat !== undefined) {
+        seat.status = 'disconnected'
+        if (record.manifest.spec.seats.lateJoin) {
+          seat.status = 'open'
+          delete seat.actorId
+          delete seat.controllerId
+          delete seat.controllerKind
+        }
+      }
       record.updatedAt = this.now().toISOString()
       void this.notify(session.matchId)
     }
@@ -984,6 +1064,94 @@ export class LocalArcadePlatform {
     }
   }
 
+  async abandonMatch(
+    matchId: string,
+    actorId: string,
+  ): Promise<MatchDescriptor> {
+    return this.exclusive(matchId, async () => {
+      const record = this.record(matchId)
+      if (record.ownerId !== actorId)
+        throw new LocalPlatformError(
+          'CONTROL_REVOKED',
+          403,
+          'Only the match owner can end this match.',
+        )
+      record.runtime.end('canceled', 'Ended by the match owner.')
+      record.series.status = 'complete'
+      this.stopClock(matchId)
+      record.updatedAt = this.now().toISOString()
+      await this.persist(record)
+      await this.notify(matchId)
+      return this.describe(record)
+    })
+  }
+
+  close(): void {
+    if (this.maintenance) clearInterval(this.maintenance)
+    this.maintenance = undefined
+    for (const matchId of this.clocks.keys()) this.stopClock(matchId)
+  }
+
+  private startMaintenance(): void {
+    if (this.maintenance) return
+    const timer = setInterval(() => {
+      if (
+        ![...this.matches.values()].some((record) =>
+          ['lobby', 'ready', 'running', 'paused'].includes(
+            record.runtime.getStatus(),
+          ),
+        )
+      ) {
+        clearInterval(timer)
+        this.maintenance = undefined
+        return
+      }
+      for (const record of this.matches.values()) {
+        if (
+          !['lobby', 'ready', 'running', 'paused'].includes(
+            record.runtime.getStatus(),
+          )
+        )
+          continue
+        const connected = [...this.sessions.values()].some(
+          (session) =>
+            session.matchId === record.runtime.matchId &&
+            session.connected &&
+            session.mode === 'control',
+        )
+        if (connected) record.lastActiveAt = this.now().getTime()
+        const idle = this.now().getTime() - record.lastActiveAt
+        const age = this.now().getTime() - Date.parse(record.createdAt)
+        const maxDuration =
+          (record.manifest.spec.clock.maxDurationSeconds ?? 600) *
+          1000 *
+          record.series.maximumRounds
+        if (
+          idle < (record.runtime.getStatus() === 'lobby' ? 300_000 : 60_000) &&
+          age < maxDuration
+        )
+          continue
+        void this.exclusive(record.runtime.matchId, async () => {
+          record.runtime.end(
+            'expired',
+            idle >= 60_000
+              ? 'No connected players.'
+              : 'Maximum match duration reached.',
+          )
+          record.series.status = 'complete'
+          this.stopClock(record.runtime.matchId)
+          record.updatedAt = this.now().toISOString()
+          await this.persist(record)
+          await this.notify(record.runtime.matchId)
+        }).catch((error) =>
+          console.error('Match cleanup failed', record.runtime.matchId, error),
+        )
+      }
+    }, 5000)
+    this.maintenance = timer
+    timer.unref()
+  }
+
   private startClock(record: MatchRecord): void {
     this.stopClock(record.runtime.matchId)
     const hz = record.manifest.spec.clock.simulationHz
@@ -997,7 +1165,10 @@ export class LocalArcadePlatform {
     const networkHz = Math.min(hz, record.manifest.spec.clock.networkHz ?? hz)
     const broadcastEvery = Math.max(1, Math.round(hz / networkHz))
     let ticks = 0
+    let pending = false
     const timer = setInterval(() => {
+      if (pending) return
+      pending = true
       void this.exclusive(record.runtime.matchId, async () => {
         if (!(await record.runtime.advanceTick(deltaMs))) {
           this.stopClock(record.runtime.matchId)
@@ -1020,7 +1191,22 @@ export class LocalArcadePlatform {
           ticks % broadcastEvery === 0
         )
           await this.notify(record.runtime.matchId)
-      }).catch(() => this.stopClock(record.runtime.matchId))
+      })
+        .catch(async (error) => {
+          console.error('Match clock failed', record.runtime.matchId, error)
+          this.stopClock(record.runtime.matchId)
+          record.runtime.end(
+            'failed',
+            'The runtime could not continue. Inspect the replay and runtime diagnostics.',
+          )
+          await this.persist(record).catch((error) =>
+            console.error('Failed to persist match failure', error),
+          )
+          await this.notify(record.runtime.matchId).catch(() => {})
+        })
+        .finally(() => {
+          pending = false
+        })
     }, deltaMs)
     timer.unref()
     this.clocks.set(record.runtime.matchId, timer)
@@ -1053,7 +1239,8 @@ export class LocalArcadePlatform {
       await this.persistMatch(saved, record.version || undefined)
       record.version = saved.version
     } catch (error) {
-      this.matches.delete(record.runtime.matchId)
+      this.stopClock(record.runtime.matchId)
+      if (record.runtime.getStatus() === 'running') record.runtime.pause()
       throw error
     }
   }
@@ -1215,6 +1402,7 @@ export class LocalArcadePlatform {
       seats: record.seats.map((seat) => ({
         id: seat.id,
         role: seat.role,
+        ...(seat.team === undefined ? {} : { team: seat.team }),
         status: seat.status,
         ...(seat.actorId === undefined ? {} : { actorId: seat.actorId }),
         ...(seat.controllerKind === undefined

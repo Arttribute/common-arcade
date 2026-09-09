@@ -89,6 +89,7 @@ export interface GameDefinition<State, Action> {
     context: GameActionContext,
   ): GameTransition<State>
   advanceTick?(state: State, context: GameTickContext): GameTransition<State>
+  restoreState?(state: JsonValue): State
   serializeState(state: State): JsonValue
   projectObservation(
     state: State,
@@ -226,6 +227,66 @@ export class AuthoritativeMatch<State, Action> {
     for (const command of replay.commands)
       match.actionResults.set(command.action.actionId, command.result)
     return match
+  }
+
+  /** Restore a hash-checked checkpoint from trusted platform storage, without replaying the entire game at startup. */
+  static async restoreCheckpoint<State, Action>(
+    game: GameDefinition<State, Action>,
+    replay: Replay,
+    status: MatchStatus,
+    ownershipEpoch: number,
+    now?: () => Date,
+  ): Promise<AuthoritativeMatch<State, Action>> {
+    if (!game.restoreState)
+      return this.recover(game, replay, status, ownershipEpoch, now)
+    const last = replay.checkpoints.at(-1)
+    if (
+      game.releaseDigest !== replay.releaseDigest ||
+      !last ||
+      last.stateHash !== replay.finalStateHash ||
+      (await sha256(canonicalJson(last.state))) !== last.stateHash
+    )
+      throw new Error(
+        'Persisted match checkpoint failed integrity verification',
+      )
+    const match = await this.create({
+      game,
+      matchId: replay.matchId,
+      seed: replay.seed,
+      configuration: replay.configuration,
+      roster: replay.roster,
+      ownershipEpoch,
+      now,
+    })
+    match.state = game.restoreState(last.state)
+    match.stateHash = last.stateHash
+    match.stateSequence = last.stateSequence
+    match.eventSequence = replay.events.at(-1)?.sequence ?? last.eventSequence
+    match.status = status
+    match.result = game.getResult(match.state)
+    for (const step of replay.timeline ?? [])
+      if (step.kind === 'tick') {
+        match.tickSequence += 1
+        match.elapsedMs += step.deltaMs
+      }
+    match.events.push(...replay.events)
+    match.commands.push(...replay.commands)
+    for (const checkpoint of replay.checkpoints) {
+      if (checkpoint.stateSequence !== 0) match.checkpoints.push(checkpoint)
+    }
+    for (const step of replay.timeline ?? []) match.timeline.push(step)
+    for (const command of replay.commands)
+      match.actionResults.set(command.action.actionId, command.result)
+    return match
+  }
+
+  end(status: 'canceled' | 'expired' | 'failed', reason: string): void {
+    if (['completed', 'canceled', 'expired', 'failed'].includes(this.status))
+      return
+    this.status = status
+    this.appendEvents([
+      { type: `match.${status}`, visibility: 'public', payload: { reason } },
+    ])
   }
 
   getOwnershipEpoch(): number {
@@ -518,7 +579,18 @@ export class AuthoritativeMatch<State, Action> {
       commands: [...this.commands],
       timeline: [...this.timeline],
       events: [...this.events],
-      checkpoints: [...this.checkpoints],
+      checkpoints:
+        this.checkpoints.at(-1)?.stateSequence === this.stateSequence
+          ? [...this.checkpoints]
+          : [
+              ...this.checkpoints,
+              {
+                stateSequence: this.stateSequence,
+                eventSequence: this.eventSequence,
+                state: this.game.serializeState(this.state),
+                stateHash: this.stateHash,
+              },
+            ],
       finalStateHash: this.stateHash,
       createdAt: this.now().toISOString(),
     }
@@ -576,6 +648,15 @@ export class AuthoritativeMatch<State, Action> {
   private async recordCheckpoint(): Promise<void> {
     const serialized = this.game.serializeState(this.state)
     this.stateHash = await sha256(canonicalJson(serialized))
+    // Keep periodic snapshots; the replay timeline retains every action and tick.
+    // exportReplay always adds the current snapshot for exact recovery.
+    if (
+      this.game.advanceTick &&
+      this.stateSequence !== 0 &&
+      this.stateSequence % 300 !== 0 &&
+      this.status !== 'completed'
+    )
+      return
     this.checkpoints.push({
       stateSequence: this.stateSequence,
       eventSequence: this.eventSequence,

@@ -60,6 +60,14 @@ async function proxy(
         signal: AbortSignal.timeout(110_000),
       },
     )
+    if (!response.ok && !response.headers.get('content-type')?.includes('json'))
+      return NextResponse.json(
+        {
+          detail: `Arcade is temporarily unavailable (HTTP ${response.status}). Please retry.`,
+          retryable: response.status >= 500,
+        },
+        { status: response.status, headers: { 'Cache-Control': 'no-store' } },
+      )
     const output = new NextResponse(response.body, {
       status: response.status,
       headers: {
