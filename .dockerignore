@@ -18,3 +18,13 @@ node_modules
 **/out
 **/cache
 **/broadcast
+
+# Exclude workspace-local build output and injected environment files too.
+**/.next
+**/.turbo
+**/.source
+**/cdk.out
+**/coverage
+**/*.tsbuildinfo
+**/.env*
+!**/.env.example
