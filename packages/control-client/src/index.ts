@@ -275,8 +275,14 @@ export class ControlClient {
     }
   }
 
-  async listLiveMatches(signal?: AbortSignal): Promise<readonly LiveMatch[]> {
-    const body = (await this.request('/v1/matches', { signal })) as {
+  async listLiveMatches(
+    signal?: AbortSignal,
+    scope: 'public' | 'mine' = 'public',
+  ): Promise<readonly LiveMatch[]> {
+    const body = (await this.request(
+      scope === 'mine' ? '/v1/matches?scope=mine' : '/v1/matches',
+      { signal },
+    )) as {
       matches: Array<{
         gameId: string
         gameTitle: string

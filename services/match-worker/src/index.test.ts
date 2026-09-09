@@ -470,3 +470,57 @@ it('quarantines an unavailable release without preventing other matches from rec
   platform.close()
   recovered.close()
 })
+
+it('keeps exact seat controller identity and connection status through overlapping reconnects', async () => {
+  const platform = await LocalArcadePlatform.create()
+  try {
+    const match = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      ownerId: 'seat_host',
+      idempotencyKey: 'seat-identity-test',
+    })
+    const seatId = match.seats[0]!.id
+    await platform.claimSeat({
+      matchId: match.id,
+      seatId,
+      actorId: 'seat_host',
+      controllerId: 'agent_one',
+      controllerKind: 'agent',
+    })
+    const connect = async () => {
+      const ticket = await platform.createSession({
+        matchId: match.id,
+        seatId,
+        actorId: 'seat_host',
+        controllerId: 'agent_one',
+        mode: 'control',
+      })
+      return platform.connectWithTicket(ticket.ticket, match.id)
+    }
+    const first = await connect(),
+      second = await connect()
+    platform.suspendSession(first.sessionId)
+    platform.disconnectSession(first.sessionId)
+    expect((await platform.getMatch(match.id)).seats[0]).toMatchObject({
+      id: seatId,
+      controllerId: 'agent_one',
+      controllerKind: 'agent',
+      status: 'connected',
+      joinable: false,
+    })
+    expect((await platform.getMatch(match.id)).seats[1]).toMatchObject({
+      status: 'open',
+      joinable: true,
+    })
+    platform.suspendSession(second.sessionId)
+    expect((await platform.getMatch(match.id)).seats[0]?.status).toBe(
+      'disconnected',
+    )
+    platform.resumeSession(second.sessionId, match.id)
+    expect((await platform.getMatch(match.id)).seats[0]?.status).toBe(
+      'connected',
+    )
+  } finally {
+    platform.close()
+  }
+})

@@ -271,3 +271,68 @@ describe('control API foundation', () => {
     expect(forbidden.status).toBe(403)
   })
 })
+
+it('lists unlisted and private sessions only for their authenticated host or participant', async () => {
+  const platform = await LocalArcadePlatform.create()
+  const app = createApp({ platform, allowLocalAuth: true, logRequests: false })
+  try {
+    const hidden = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      ownerId: 'host_one',
+      idempotencyKey: 'hidden-one',
+      visibility: 'unlisted',
+    })
+    const privateMatch = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      ownerId: 'host_two',
+      idempotencyKey: 'private-two',
+      visibility: 'private',
+    })
+    const listed = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      ownerId: 'host_one',
+      idempotencyKey: 'public-three',
+      visibility: 'public',
+    })
+    await platform.claimSeat({
+      matchId: hidden.id,
+      seatId: hidden.seats[0]!.id,
+      actorId: 'player_one',
+      controllerId: 'agent-one',
+      controllerKind: 'agent',
+    })
+    const read = async (path: string, actor?: string) =>
+      (
+        await app.request(
+          path,
+          actor ? { headers: { Authorization: `Bearer local:${actor}` } } : {},
+        )
+      ).json()
+    expect((await read('/v1/matches')).matches.map((m: any) => m.id)).toEqual([
+      listed.id,
+    ])
+    expect((await app.request('/v1/matches?scope=mine')).status).toBe(401)
+    expect(
+      (await read('/v1/matches?scope=mine', 'host_one')).matches
+        .map((m: any) => m.id)
+        .sort(),
+    ).toEqual([hidden.id, listed.id].sort())
+    expect(
+      (await read('/v1/matches?scope=mine', 'player_one')).matches.map(
+        (m: any) => m.id,
+      ),
+    ).toEqual([hidden.id])
+    expect((await read('/v1/matches?scope=mine', 'unrelated')).matches).toEqual(
+      [],
+    )
+    expect(
+      (await read('/v1/matches?scope=mine', 'host_two')).matches[0].id,
+    ).toBe(privateMatch.id)
+    await platform.abandonMatch(hidden.id, 'host_one')
+    expect(
+      (await read('/v1/matches?scope=mine', 'player_one')).matches,
+    ).toEqual([])
+  } finally {
+    platform.close()
+  }
+})
