@@ -93,6 +93,16 @@ export interface ClaimSeatInput {
   readonly controllerKind?: 'human' | 'agent'
 }
 
+export interface ReleaseSeatInput {
+  readonly matchId: string
+  readonly seatId: string
+  readonly expectedControllerId: string
+}
+export interface ChangeSeatControllerInput extends ReleaseSeatInput {
+  readonly controllerId: string
+  readonly controllerKind: 'human' | 'agent'
+}
+
 export interface JoinMatchInput {
   readonly matchId: string
   readonly controllerId: string
@@ -337,6 +347,32 @@ export class ControlClient {
           },
           signal,
         },
+      ),
+    )
+  }
+
+  async releaseSeat(
+    input: ReleaseSeatInput,
+    signal?: AbortSignal,
+  ): Promise<MatchDescriptor> {
+    const { matchId, seatId, ...body } = input
+    return matchDescriptorSchema.parse(
+      await this.request(
+        `/v1/matches/${encodeURIComponent(matchId)}/seats/${encodeURIComponent(seatId)}/release`,
+        { method: 'POST', body, signal },
+      ),
+    )
+  }
+
+  async changeSeatController(
+    input: ChangeSeatControllerInput,
+    signal?: AbortSignal,
+  ): Promise<MatchDescriptor> {
+    const { matchId, seatId, ...body } = input
+    return matchDescriptorSchema.parse(
+      await this.request(
+        `/v1/matches/${encodeURIComponent(matchId)}/seats/${encodeURIComponent(seatId)}/controller`,
+        { method: 'POST', body, signal },
       ),
     )
   }

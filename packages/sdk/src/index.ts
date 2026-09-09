@@ -3,6 +3,8 @@ export type {
   ArcadeBootstrapStatus,
   ArcadeStatus,
   ClaimSeatInput,
+  ReleaseSeatInput,
+  ChangeSeatControllerInput,
   ControlClientOptions,
   CreateMatchInput,
   CreateSessionInput,

@@ -28,7 +28,7 @@ Commands:
   projects update <id> --file <file>   Update (requires --revision N)
   projects publish <id> --revision N  Publish immutable revision
   projects test <id>                  Run a pinned game to completion
-  play <match-id> --seat <seat-id>     Join and play a bounded legal policy
+  play <match-id> --seat <seat-id>     Run a bounded test policy; --controller reuses a reserved agent seat
   status                              Inspect the control plane
   doctor                              Check API and runtime prerequisites
   games search [query]                Discover compatible games
@@ -221,8 +221,14 @@ export async function runCli(options: RunCliOptions): Promise<number> {
       const seatId = option(options.args, '--seat')
       if (!seatId) throw new Error('play requires --seat <seat-id>')
       const matchId = subcommand,
-        controllerId = `cli-${crypto.randomUUID()}`
-      await client.claimSeat({ matchId, seatId, controllerId })
+        controllerId =
+          option(options.args, '--controller') ?? `cli-${crypto.randomUUID()}`
+      await client.claimSeat({
+        matchId,
+        seatId,
+        controllerId,
+        controllerKind: 'agent',
+      })
       const session = await client.createSession({
         matchId,
         mode: 'control',

@@ -336,3 +336,64 @@ it('lists unlisted and private sessions only for their authenticated host or par
     platform.close()
   }
 })
+
+it('authenticates controller handoff and rejects stale or foreign release requests', async () => {
+  const platform = await LocalArcadePlatform.create()
+  const app = createApp({ platform })
+  try {
+    const match = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      idempotencyKey: 'handoff-api',
+      ownerId: 'owner',
+    })
+    const seatId = match.seats[0]!.id
+    await platform.claimSeat({
+      matchId: match.id,
+      seatId,
+      actorId: 'owner',
+      controllerId: 'human',
+    })
+    const request = (operation: string, body: unknown, actor?: string) =>
+      app.request(`/v1/matches/${match.id}/seats/${seatId}/${operation}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(actor ? { Authorization: `Bearer local:${actor}` } : {}),
+        },
+        body: JSON.stringify(body),
+      })
+    expect(
+      (await request('release', { expectedControllerId: 'human' })).status,
+    ).toBe(401)
+    expect(
+      (await request('release', { expectedControllerId: 'human' }, 'other'))
+        .status,
+    ).toBe(403)
+    const changed = await request(
+      'controller',
+      {
+        expectedControllerId: 'human',
+        controllerId: 'external-test',
+        controllerKind: 'agent',
+      },
+      'owner',
+    )
+    expect(changed.status).toBe(200)
+    expect((await changed.json()).seats[0].controllerId).toBe('external-test')
+    expect(
+      (await request('release', { expectedControllerId: 'human' }, 'owner'))
+        .status,
+    ).toBe(409)
+    expect(
+      (
+        await request(
+          'release',
+          { expectedControllerId: 'external-test' },
+          'owner',
+        )
+      ).status,
+    ).toBe(200)
+  } finally {
+    platform.close()
+  }
+})

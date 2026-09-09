@@ -31,6 +31,9 @@ interface MutableSeat {
   actorId?: string
   controllerId?: string
   controllerKind?: 'human' | 'agent'
+  controlGeneration?: number
+  released?: boolean
+  heldReleaseAction?: JsonValue
 }
 
 export interface MatchLobbyRules {
@@ -114,6 +117,18 @@ export interface ClaimSeatRequest {
   readonly actorId: string
   readonly controllerId: string
   readonly controllerKind?: 'human' | 'agent'
+}
+
+export interface SeatControlRequest {
+  readonly matchId: string
+  readonly seatId: string
+  readonly actorId: string
+  readonly expectedControllerId: string
+}
+
+export interface ChangeSeatControllerRequest extends SeatControlRequest {
+  readonly controllerId: string
+  readonly controllerKind: 'human' | 'agent'
 }
 
 export interface JoinMatchRequest {
@@ -643,7 +658,7 @@ export class LocalArcadePlatform {
     if (
       record.runtime.getStatus() !== 'lobby' &&
       !(
-        record.manifest.spec.seats.lateJoin &&
+        (record.manifest.spec.seats.lateJoin || seat.released) &&
         record.runtime.getStatus() === 'running'
       )
     )
@@ -667,6 +682,7 @@ export class LocalArcadePlatform {
     seat.controllerId = request.controllerId
     seat.controllerKind = request.controllerKind ?? 'human'
     seat.status = 'claimed'
+    seat.released = false
     if (
       (record.manifest.spec.seats.lateJoin
         ? record.seats.filter((candidate) => candidate.status !== 'open')
@@ -682,6 +698,103 @@ export class LocalArcadePlatform {
     const descriptor = await this.describe(record)
     await this.notify(request.matchId)
     return descriptor
+  }
+
+  async releaseSeat(request: SeatControlRequest): Promise<MatchDescriptor> {
+    return this.exclusive(request.matchId, async () => {
+      const record = this.record(request.matchId)
+      const seat = this.ownedSeat(record, request)
+      await this.stopSeatInput(record, seat)
+      this.revokeSeatSessions(record, seat)
+      seat.status = 'open'
+      seat.released = true
+      delete seat.actorId
+      delete seat.controllerId
+      delete seat.controllerKind
+      record.updatedAt = this.now().toISOString()
+      await this.persist(record)
+      await this.notify(request.matchId)
+      return this.describe(record)
+    })
+  }
+
+  async changeSeatController(
+    request: ChangeSeatControllerRequest,
+  ): Promise<MatchDescriptor> {
+    return this.exclusive(request.matchId, async () => {
+      const record = this.record(request.matchId)
+      const seat = this.ownedSeat(record, request)
+      this.assertJoinAccess(record, request.actorId, request.controllerKind)
+      if (!['lobby', 'running'].includes(record.runtime.getStatus()))
+        throw new LocalPlatformError('CONFLICT', 409, 'This round has ended.')
+      await this.stopSeatInput(record, seat)
+      this.revokeSeatSessions(record, seat)
+      seat.controllerId = request.controllerId
+      seat.controllerKind = request.controllerKind
+      seat.status = 'claimed'
+      record.updatedAt = this.now().toISOString()
+      await this.persist(record)
+      await this.notify(request.matchId)
+      return this.describe(record)
+    })
+  }
+
+  private ownedSeat(
+    record: MatchRecord,
+    request: SeatControlRequest,
+  ): MutableSeat {
+    const seat = record.seats.find(
+      (candidate) => candidate.id === request.seatId,
+    )
+    if (!seat) throw new LocalPlatformError('NOT_FOUND', 404, 'Seat not found.')
+    if (seat.actorId !== request.actorId)
+      throw new LocalPlatformError(
+        'CONTROL_REVOKED',
+        403,
+        'Only the seat owner can release it or change its controller.',
+      )
+    if (seat.controllerId !== request.expectedControllerId)
+      throw new LocalPlatformError(
+        'CONFLICT',
+        409,
+        'The seat controller changed. Refresh before trying again.',
+      )
+    return seat
+  }
+
+  private revokeSeatSessions(record: MatchRecord, seat: MutableSeat): void {
+    seat.controlGeneration = (seat.controlGeneration ?? 0) + 1
+    for (const [id, session] of this.sessions)
+      if (
+        session.matchId === record.runtime.matchId &&
+        session.seatId === seat.id
+      )
+        this.sessions.delete(id)
+  }
+
+  private async stopSeatInput(
+    record: MatchRecord,
+    seat: MutableSeat,
+  ): Promise<void> {
+    if (
+      seat.heldReleaseAction !== undefined &&
+      record.runtime.getStatus() === 'running'
+    ) {
+      const observation = record.runtime.observation(seat.id)
+      await record.runtime.submitAction(
+        {
+          actionId: opaqueId('act'),
+          matchId: record.runtime.matchId,
+          seatId: seat.id,
+          controlLease: opaqueId('lease'),
+          clientSequence: 1,
+          basedOnStateSequence: observation.stateSequence,
+          payload: seat.heldReleaseAction,
+        },
+        record.runtime.getOwnershipEpoch(),
+      )
+    }
+    delete seat.heldReleaseAction
   }
 
   async joinMatch(request: JoinMatchRequest): Promise<JoinedMatch> {
@@ -756,6 +869,13 @@ export class LocalArcadePlatform {
         ? {}
         : { controllerId: request.controllerId }),
       scopes,
+      ...(request.mode === 'control'
+        ? {
+            controlGeneration:
+              record.seats.find((seat) => seat.id === request.seatId)
+                ?.controlGeneration ?? 0,
+          }
+        : {}),
       ttlSeconds: 30,
     })
     return { sessionId, ticket, expiresInSeconds: 30 }
@@ -926,12 +1046,47 @@ export class LocalArcadePlatform {
       )
     }
     const record = this.record(session.matchId)
+    const before = record.runtime.observation(session.seatId)
     const result = await record.runtime.submitAction(
       action,
       session.ownershipEpoch,
     )
     record.updatedAt = this.now().toISOString()
     if (result.disposition === 'accepted') {
+      const seat = record.seats.find(
+        (candidate) => candidate.id === session.seatId,
+      )!
+      const payload = action.payload as { id?: string } | null
+      const advertised = before.legalActions.find(
+        (candidate) =>
+          JSON.stringify(candidate) === JSON.stringify(action.payload) ||
+          (payload &&
+            typeof payload === 'object' &&
+            payload.id !== undefined &&
+            candidate &&
+            typeof candidate === 'object' &&
+            !Array.isArray(candidate) &&
+            candidate.id === payload.id),
+      )
+      const control =
+        advertised &&
+        typeof advertised === 'object' &&
+        !Array.isArray(advertised)
+          ? (advertised.control as
+              { mode?: string; releaseActionId?: string } | undefined)
+          : undefined
+      const release =
+        control?.mode === 'hold'
+          ? before.legalActions.find(
+              (candidate) =>
+                candidate &&
+                typeof candidate === 'object' &&
+                !Array.isArray(candidate) &&
+                candidate.id === control.releaseActionId,
+            )
+          : undefined
+      if (release !== undefined) seat.heldReleaseAction = release
+      else delete seat.heldReleaseAction
       if (record.runtime.getStatus() === 'completed') {
         this.finishRound(record)
         if (
@@ -1421,7 +1576,7 @@ export class LocalArcadePlatform {
           seat.status === 'open' &&
           (snapshot.status === 'lobby' ||
             (snapshot.status === 'running' &&
-              record.manifest.spec.seats.lateJoin)),
+              (record.manifest.spec.seats.lateJoin || seat.released === true))),
         ...(seat.controllerId === undefined
           ? {}
           : { controllerId: seat.controllerId }),
@@ -1447,7 +1602,8 @@ export class LocalArcadePlatform {
     if (
       seat === undefined ||
       seat.actorId !== claims.actorId ||
-      seat.controllerId !== claims.controllerId
+      seat.controllerId !== claims.controllerId ||
+      (seat.controlGeneration ?? 0) !== (claims.controlGeneration ?? 0)
     ) {
       throw new LocalPlatformError(
         'CONTROL_REVOKED',
