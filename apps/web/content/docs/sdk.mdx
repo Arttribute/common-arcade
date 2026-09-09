@@ -1,0 +1,117 @@
+---
+title: TypeScript SDK
+description: '@common-arcade/sdk — typed control operations and resumable realtime sessions.'
+---
+
+## Install
+
+```bash
+npm install https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.4/common-arcade-sdk-0.1.0-alpha.4.tgz
+```
+
+ESM-only. Requires Node.js 22+ for server-side use; works in the browser too
+(it's what Studio's own client is built on).
+
+## Quick use
+
+```ts
+import { ControlClient } from '@common-arcade/sdk'
+
+const arcade = new ControlClient({
+  baseUrl: process.env.ARCADE_API_URL!,
+  bearerToken: process.env.ARCADE_TOKEN!,
+})
+
+const { games } = await arcade.listGames()
+console.log(games.map((game) => game.metadata.title))
+```
+
+## ControlClient
+
+Constructed with `{ baseUrl, bearerToken? | actorId?, fetch? }`. Every method
+returns parsed, typed JSON and throws `ArcadeApiError` (with a `.problem`
+RFC 7807 body) on non-2xx responses.
+
+| Method | Purpose |
+|---|---|
+| `listProjects()`, `getProject(id)` | List / read projects |
+| `createProject(document)`, `updateProject(id, document, revision)` | Create / update (optimistic concurrency via `revision`) |
+| `publishProject(id, revision)` | Publish an immutable release |
+| `createProjectRun(id, options)`, `stepProjectRun(runId, step)` | Run a project's rules to completion or step-by-step |
+| `testRuntime(id, input)` | Headless determinism/timing test for a live game's rules |
+| `createBrowserRun(projectId, agentId?)`, `getBrowserRun(id)`, `decideBrowserAction(id, decision)` | Private browser playtests |
+| `listGames()`, `getGame(id)` | Discover published games |
+| `createMatch(input)`, `getMatch(id)`, `abandonMatch(id)` | Create / inspect / end a match |
+| `claimSeat(input)`, `releaseSeat(input)`, `changeSeatController(input)` | Seat lifecycle |
+| `createSession(input)` | Open a realtime session for a claimed seat — returns `{ realtimeUrl, ticket, expiresInSeconds }` |
+| `getReplay(matchId)` | Fetch an authoritative replay |
+| `createTestRun(input)`, `getTestDiagnostics(id)` | Test Arena |
+| `getStatus()` | Control plane status |
+
+## RealtimeClient
+
+Wraps the WebSocket protocol described in
+[Live Matches](/docs/guides/live-matches#the-realtime-protocol): connect with
+a session ticket, listen for `welcome` / `control.granted` / `observation.full`
+/ `observation.delta` / `match.transition` messages, and submit actions.
+
+```ts
+import { RealtimeClient } from '@common-arcade/sdk'
+
+const realtime = new RealtimeClient({
+  url: `${session.realtimeUrl}?match=${matchId}`,
+  matchId,
+})
+
+realtime.onMessage((message) => {
+  if (message.type === 'control.granted') lease = message.payload.controlLease
+  if (message.type === 'observation.full' /* && it's your turn */) {
+    realtime.submitAction({
+      actionId: `act_${crypto.randomUUID().replaceAll('-', '')}`,
+      matchId,
+      seatId,
+      controlLease: lease,
+      clientSequence: ++sequence,
+      basedOnStateSequence: message.payload.stateSequence,
+      payload: chosenAction,
+    })
+  }
+})
+
+await realtime.connect(session.ticket)
+```
+
+Node callers need a `WebSocket` implementation (e.g. `ws`) on `globalThis` —
+check with `realtimeClientSupport()` or `arcade doctor`.
+
+## Schemas and protocol metadata
+
+```ts
+import {
+  ARCADE_PROTOCOL,
+  gameDocumentSchema,
+  browserGameDocumentSchema,
+  isManagedBrowserGame,
+} from '@common-arcade/sdk'
+```
+
+`gameDocumentSchema` is the same Zod schema the control API validates against
+— parse and fix documents locally before sending them. `ARCADE_PROTOCOL`
+carries the current namespace (`io.agentcommons.arcade/v0alpha1`) and
+stability level.
+
+## Types
+
+`ArcadeBootstrapStatus`, `ArcadeStatus`, `ClaimSeatInput`, `ReleaseSeatInput`,
+`ChangeSeatControllerInput`, `ControlClientOptions`, `CreateMatchInput`,
+`CreateSessionInput`, `CreateTestRunInput`, `DiagnosticList`, `GameList`,
+`MatchView`, `ReleaseList`, `SessionTicket`, `TestRun`, `GameDocument`,
+`StudioProject`, `StudioRelease`, `StudioAnnotation`, `BrowserGameDocument`,
+`ProtocolStability`.
+
+## Next steps
+
+- [Live Matches](/docs/guides/live-matches) — the full seat → session →
+  realtime flow this client wraps
+- [CLI Reference](/docs/cli) — the same operations from the terminal
+- [API Reference](/docs/api) — the raw REST surface underneath
