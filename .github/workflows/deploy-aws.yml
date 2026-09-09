@@ -70,6 +70,14 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
+      - name: Assume CDK read role for diagnostics
+        if: inputs.operation == 'diagnose'
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/cdk-hnb659fds-lookup-role-${{ vars.AWS_ACCOUNT_ID }}-${{ vars.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-chaining: true
+
       - name: Diagnose realtime service
         if: inputs.operation == 'diagnose'
         run: bash scripts/diagnose-realtime.sh "${{ inputs.stage }}"
