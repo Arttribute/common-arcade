@@ -1,6 +1,6 @@
 'use client'
 
-import { browserControlClient } from '../../lib/api'
+import { arcade, browserControlClient } from '../../lib/api'
 import { RealtimeClient } from '@common-arcade/realtime-client'
 import type {
   JsonValue,
@@ -12,24 +12,6 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, RotateCcw, Share2 } from 'lucide-react'
 
 const apiUrl = process.env.NEXT_PUBLIC_ARCADE_API_URL ?? 'http://localhost:4100'
-
-interface BoardState {
-  board: Array<string | null>
-  currentSeatId: string
-  winnerSeatId: string | null
-  draw: boolean
-}
-
-function isBoardState(value: JsonValue | undefined): value is JsonValue & {
-  board: JsonValue[]
-} {
-  return Boolean(
-    value &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    Array.isArray(value.board),
-  )
-}
 
 function actionLabel(action: JsonValue, index: number): string {
   if (action && typeof action === 'object' && !Array.isArray(action)) {
@@ -55,12 +37,25 @@ export function PlayMatch({
   const [connection, setConnection] = useState('idle')
   const [lastResult, setLastResult] = useState<string>()
   const [error, setError] = useState<string>()
+  const [agents, setAgents] = useState<{ agentId: string; name: string }[]>([])
+  const [selectedAgent, setSelectedAgent] = useState('')
+  const [activeAgent, setActiveAgent] = useState<string>()
+  const agentPending = useRef(false)
+  const latestObservation = useRef<Observation | undefined>(undefined)
+  const connectionGeneration = useRef(0)
   const [copied, setCopied] = useState(false)
   const clientRef = useRef<RealtimeClient | undefined>(undefined)
   const presentationRef = useRef<HTMLIFrameElement | null>(null)
   const actionSequence = useRef(0)
 
   useEffect(() => {
+    void arcade<{ agents: { agentId: string; name: string }[] }>(
+      'commons/agents',
+    )
+      .then((result) => {
+        if (Array.isArray(result.agents)) setAgents(result.agents)
+      })
+      .catch(() => {})
     const client = browserControlClient()
     void client
       .getMatch(matchId)
@@ -106,13 +101,31 @@ export function PlayMatch({
     }
   }
 
-  async function connect(mode: 'control' | 'spectate', seatId?: string) {
+  async function connect(
+    mode: 'control' | 'spectate',
+    seatId?: string,
+    agentId?: string,
+  ) {
     setError(undefined)
+    setLease(undefined)
+    setObservation(undefined)
+    latestObservation.current = undefined
+    connectionGeneration.current += 1
+    setActiveAgent(agentId)
     try {
-      const controllerId = `browser-${actorId}`
+      const controllerId = agentId
+        ? `commons-agent-${agentId}`
+        : `browser-${actorId}`
       const control = browserControlClient()
       if (mode === 'control' && seatId !== undefined) {
-        setMatch(await control.claimSeat({ matchId, seatId, controllerId }))
+        setMatch(
+          await control.claimSeat({
+            matchId,
+            seatId,
+            controllerId,
+            controllerKind: agentId ? 'agent' : 'human',
+          }),
+        )
       }
       const session = await control.createSession({
         matchId,
@@ -136,6 +149,7 @@ export function PlayMatch({
   function submit(payload: JsonValue) {
     const seatId = observation?.seatId
     if (
+      match?.status !== 'running' ||
       seatId === undefined ||
       lease === undefined ||
       observation === undefined
@@ -159,6 +173,60 @@ export function PlayMatch({
     })
   }
 
+  latestObservation.current = observation
+  useEffect(() => {
+    if (
+      !activeAgent ||
+      !lease ||
+      connection !== 'connected' ||
+      match?.status !== 'running'
+    )
+      return
+    const generation = connectionGeneration.current
+    const timer = window.setInterval(() => {
+      const current = latestObservation.current
+      if (agentPending.current || !current?.legalActions.length) return
+      agentPending.current = true
+      void arcade<{
+        action: JsonValue
+        reason?: string
+        basedOnStateSequence: number
+      }>('commons/live-decisions', {
+        agentId: activeAgent,
+        observation: current,
+      })
+        .then((decision) => {
+          const latest = latestObservation.current
+          if (
+            connectionGeneration.current !== generation ||
+            !latest ||
+            (latest.turn !== undefined &&
+              latest.stateSequence !== decision.basedOnStateSequence)
+          )
+            return
+          clientRef.current?.submitAction({
+            actionId: `act_${crypto.randomUUID().replaceAll('-', '')}`,
+            matchId,
+            seatId: current.seatId,
+            controlLease: lease,
+            clientSequence: ++actionSequence.current,
+            basedOnStateSequence: current.stateSequence,
+            ...(current.turn === undefined ? {} : { targetTurn: current.turn }),
+            payload: decision.action,
+          })
+          setLastResult(decision.reason)
+        })
+        .catch((cause) => {
+          setError(cause instanceof Error ? cause.message : String(cause))
+          setActiveAgent(undefined)
+        })
+        .finally(() => {
+          agentPending.current = false
+        })
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [activeAgent, lease, connection, matchId, match?.status])
+
   useEffect(() => {
     const receivePresentationAction = (event: MessageEvent) => {
       if (
@@ -166,7 +234,7 @@ export function PlayMatch({
         event.data?.type !== 'arcade.action'
       )
         return
-      submit(event.data.action as JsonValue)
+      if (!activeAgent) submit(event.data.action as JsonValue)
     }
     window.addEventListener('message', receivePresentationAction)
     return () =>
@@ -187,6 +255,14 @@ export function PlayMatch({
 
   useEffect(renderPresentation, [match, observation, publicState])
 
+  async function abandon() {
+    try {
+      setMatch(await browserControlClient().abandonMatch(matchId))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
   async function restart() {
     setError(undefined)
     try {
@@ -203,17 +279,6 @@ export function PlayMatch({
     window.setTimeout(() => setCopied(false), 1400)
   }
 
-  const boardState = isBoardState(observation?.visibleState ?? publicState)
-    ? ((observation?.visibleState ?? publicState) as unknown as BoardState)
-    : undefined
-  const legalCells = new Set(
-    (observation?.legalActions ?? []).map((action) =>
-      typeof action === 'object' && action !== null && 'cell' in action
-        ? Number(action.cell)
-        : -1,
-    ),
-  )
-
   return (
     <div className="match-shell">
       <aside className="match-panel">
@@ -227,10 +292,28 @@ export function PlayMatch({
         <p style={{ fontSize: 11, color: '#78716c' }}>
           Sign in with Commons to claim a seat, or watch as a spectator.
         </p>
+        {agents.length > 0 ? (
+          <label>
+            Commons agent
+            <select
+              value={selectedAgent}
+              onChange={(event) => setSelectedAgent(event.target.value)}
+            >
+              <option value="">Choose an agent</option>
+              {agents.map((agent) => (
+                <option key={agent.agentId} value={agent.agentId}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <div className="seat-list">
           {match?.seats.map((seat, index) => (
             <article key={seat.id}>
-              <strong>Player {index + 1}</strong>
+              <strong>
+                {seat.role} {index + 1}
+              </strong>
               <small>
                 {seat.status} · {seat.actorId ?? 'unclaimed'}
                 {seat.controllerKind ? ` · ${seat.controllerKind}` : ''}
@@ -241,6 +324,16 @@ export function PlayMatch({
               >
                 Claim & control
               </button>
+              {selectedAgent ? (
+                <button
+                  disabled={connection === 'connected'}
+                  onClick={() =>
+                    void connect('control', seat.id, selectedAgent)
+                  }
+                >
+                  Play with agent
+                </button>
+              ) : null}
             </article>
           ))}
         </div>
@@ -252,6 +345,9 @@ export function PlayMatch({
           {match?.lobby?.spectating === 'disabled'
             ? 'Spectating disabled'
             : 'Watch live'}
+        </button>
+        <button className="secondary compact" onClick={() => void abandon()}>
+          End match
         </button>
         <p className="match-rule-note">
           {match?.lobby?.joinPolicy === 'invite-only'
@@ -272,7 +368,7 @@ export function PlayMatch({
             {match?.series?.maximumRounds ?? 1} · {connection}
           </span>
         </div>
-        {match?.releaseId && !boardState ? (
+        {match?.releaseId ? (
           <iframe
             ref={presentationRef}
             className="live-game-frame"
@@ -282,45 +378,29 @@ export function PlayMatch({
             onLoad={renderPresentation}
           />
         ) : (
-          <div
-            className="tic-grid"
-            aria-label="Game board"
-            style={{
-              gridTemplateColumns: `repeat(${Math.sqrt(boardState?.board.length ?? 9)}, 1fr)`,
-            }}
-          >
-            {Array.from(
-              { length: boardState?.board.length ?? 9 },
-              (_, cell) => (
-                <button
-                  key={cell}
-                  disabled={!legalCells.has(cell)}
-                  onClick={() => submit({ type: 'place', cell })}
-                  aria-label={`Cell ${cell + 1}`}
-                >
-                  {boardState?.board[cell] ?? ''}
-                </button>
-              ),
-            )}
-          </div>
+          <p role="status">
+            {error ? 'The game could not be loaded.' : 'Loading game…'}
+          </p>
         )}
-        {!boardState && observation?.legalActions.length ? (
+        {observation?.legalActions.length ? (
           <div className="live-action-strip" aria-label="Available actions">
             {observation.legalActions.slice(0, 12).map((action, index) => (
-              <button key={index} onClick={() => submit(action)}>
+              <button
+                key={index}
+                disabled={Boolean(activeAgent) || !lease}
+                onClick={() => submit(action)}
+              >
                 {actionLabel(action, index)}
               </button>
             ))}
           </div>
         ) : null}
         <strong className="game-outcome">
-          {boardState?.winnerSeatId
-            ? `Winner: ${boardState.winnerSeatId}`
-            : boardState?.draw
-              ? 'Draw'
-              : boardState?.currentSeatId
-                ? `Turn: ${boardState.currentSeatId}`
-                : 'Connect to watch or play'}
+          {match?.result !== undefined
+            ? `Result: ${JSON.stringify(match.result)}`
+            : observation
+              ? 'Live game connected'
+              : 'Connect to watch or play'}
         </strong>
         {match?.series?.status === 'awaiting-restart' ? (
           <button className="round-restart" onClick={() => void restart()}>

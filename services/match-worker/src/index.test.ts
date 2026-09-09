@@ -401,3 +401,72 @@ describe('durable match recovery', () => {
     expect(saved?.replay.commands).toHaveLength(0)
   })
 })
+
+it('bounds concurrent creation and allows owners to abandon matches', async () => {
+  const platform = await LocalArcadePlatform.create()
+  const results = await Promise.allSettled(
+    Array.from({ length: 6 }, (_, index) =>
+      platform.createMatch({
+        releaseId: 'rel_tictactoe1',
+        ownerId: 'limited_owner',
+        idempotencyKey: `capacity-test-${index}`,
+      }),
+    ),
+  )
+  expect(
+    results.filter((result) => result.status === 'fulfilled'),
+  ).toHaveLength(4)
+  const first = results.find((result) => result.status === 'fulfilled')!
+  if (first.status !== 'fulfilled') throw new Error('Missing match')
+  await expect(
+    platform.abandonMatch(first.value.id, 'someone_else'),
+  ).rejects.toThrow('owner')
+  expect(
+    (await platform.abandonMatch(first.value.id, 'limited_owner')).status,
+  ).toBe('canceled')
+  expect(
+    (
+      await platform.createMatch({
+        releaseId: 'rel_tictactoe1',
+        ownerId: 'limited_owner',
+        idempotencyKey: 'capacity-after-end',
+      })
+    ).status,
+  ).toBe('lobby')
+  platform.close()
+})
+
+it('expires unattended lobbies without making their descriptors disappear', async () => {
+  vi.useFakeTimers()
+  const platform = await LocalArcadePlatform.create()
+  const match = await platform.createMatch({
+    releaseId: 'rel_tictactoe1',
+    ownerId: 'idle_owner',
+    idempotencyKey: 'idle-lobby-test',
+  })
+  await vi.advanceTimersByTimeAsync(305_000)
+  expect((await platform.getMatch(match.id)).status).toBe('expired')
+  platform.close()
+})
+
+it('quarantines an unavailable release without preventing other matches from recovering', async () => {
+  let saved: import('./index.js').PersistedMatch | undefined
+  const platform = await LocalArcadePlatform.create({
+    persistMatch: async (record) => {
+      saved = structuredClone(record)
+    },
+  })
+  const match = await platform.createMatch({
+    releaseId: 'rel_tictactoe1',
+    idempotencyKey: 'healthy-recovery-test',
+  })
+  const damaged = structuredClone(saved!)
+  damaged.replay.matchId = 'mat_unavailable'
+  damaged.replay.releaseId = 'rel_unavailable'
+  const recovered = await LocalArcadePlatform.create({
+    savedMatches: [damaged, saved!],
+  })
+  expect((await recovered.getMatch(match.id)).status).toBe('lobby')
+  platform.close()
+  recovered.close()
+})

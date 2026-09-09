@@ -1,3 +1,4 @@
+import { DurableMatchStore } from './match-store.js'
 import { serve } from '@hono/node-server'
 import {
   createApp,
@@ -9,7 +10,6 @@ import {
   LocalPlatformError,
   type ConnectedSession,
   type MatchUpdate,
-  type PersistedMatch,
 } from '@common-arcade/match-worker-service'
 import {
   ARCADE_WIRE_VERSION,
@@ -31,6 +31,8 @@ interface SessionStream {
   readonly session: ConnectedSession
   nextSequence: number
   readonly history: RealtimeEnvelope[]
+  historyBytes: number
+  readonly historySizes: number[]
   resumeToken: string
   expiresAt: number
   activeSocket?: WebSocket
@@ -40,6 +42,7 @@ interface SocketContext {
   readonly socket: WebSocket
   readonly stream: SessionStream
   acknowledgedSequence: number
+  lastEventSequence?: number
   unsubscribe?: () => void
 }
 
@@ -109,25 +112,13 @@ export async function startArcadeServer(
   const store = process.env.ARCADE_STUDIO_TABLE
     ? new DynamoDocumentStore(process.env.ARCADE_STUDIO_TABLE)
     : new MemoryDocumentStore()
+  const matchStore = new DurableMatchStore(store)
   const platform =
     options.platform ??
     (await LocalArcadePlatform.create({
-      savedMatches: store
-        ? (
-            await store.list<{ version: number; match: PersistedMatch }>(
-              'matches',
-            )
-          ).map((r) => r.match)
-        : undefined,
-      persistMatch: store
-        ? (match, expectedVersion) =>
-            store.put(
-              'matches',
-              match.replay.matchId,
-              { version: match.version, match },
-              expectedVersion,
-            )
-        : undefined,
+      savedMatches: await matchStore.load(),
+      persistMatch: (match, expectedVersion) =>
+        matchStore.save(match, expectedVersion),
       loadRelease: store
         ? async (id) =>
             (
@@ -202,7 +193,17 @@ export async function startArcadeServer(
     }
     stream.nextSequence += 1
     stream.history.push(message)
-    if (stream.history.length > MAX_RETAINED_MESSAGES) stream.history.shift()
+    const size = Buffer.byteLength(JSON.stringify(message))
+    stream.historySizes.push(size)
+    stream.historyBytes += size
+    while (
+      stream.history.length > 1 &&
+      (stream.history.length > MAX_RETAINED_MESSAGES ||
+        stream.historyBytes > 512 * 1024)
+    ) {
+      stream.history.shift()
+      stream.historyBytes -= stream.historySizes.shift() ?? 0
+    }
     return message
   }
 
@@ -212,6 +213,10 @@ export async function startArcadeServer(
     payload: JsonValue,
   ): void {
     if (context.socket.readyState !== WebSocket.OPEN) return
+    if (context.socket.bufferedAmount > 1024 * 1024) {
+      context.socket.close(1013, 'slow-consumer')
+      return
+    }
     context.socket.send(JSON.stringify(envelope(context.stream, type, payload)))
   }
 
@@ -239,7 +244,13 @@ export async function startArcadeServer(
     send(
       context,
       type,
-      asJson(await platform.getMatchView(context.stream.session.matchId)),
+      asJson(
+        await platform.getMatchView(
+          context.stream.session.matchId,
+          0,
+          context.stream.session.actorId,
+        ),
+      ),
     )
   }
 
@@ -257,8 +268,12 @@ export async function startArcadeServer(
         } else {
           send(context, 'snapshot', asJson(update))
         }
-        if (update.events.length > 0) {
-          send(context, 'event.batch', asJson(update.events))
+        const events = update.events.filter(
+          (event) => event.sequence > (context.lastEventSequence ?? 0),
+        )
+        if (events.length > 0) {
+          context.lastEventSequence = events.at(-1)!.sequence
+          send(context, 'event.batch', asJson(events))
         }
         send(context, 'match.transition', asJson(update.match))
       },
@@ -461,6 +476,8 @@ export async function startArcadeServer(
             session,
             nextSequence: 1,
             history: [],
+            historyBytes: 0,
+            historySizes: [],
             resumeToken: '',
             expiresAt: Date.now() + RESUME_WINDOW_MS,
           }
@@ -534,6 +551,7 @@ export async function startArcadeServer(
     platform,
     async close() {
       clearInterval(cleanup)
+      platform.close()
       for (const socket of wss.clients) socket.close(1001, 'server-shutdown')
       wss.close()
       await closeServer(server)

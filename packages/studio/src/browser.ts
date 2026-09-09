@@ -86,7 +86,7 @@ function installArcadeSeats(){
     const safe=(sourceId.replace(/[^A-Za-z0-9_-]/g,'_').slice(0,40)||'seat')+'-'+(index+1);
     return{id:safe,label:String(typeof seat==='string'?('Player '+(index+1)):(seat.label??('Player '+(index+1)))),sourceId};
   });
-  const publicSeats=seats.map(({id,label})=>({id,label}));
+  const publicSeats=seats.map(({id,label,sourceId},index)=>({id,label,sourceId,index}));
   const observe=typeof api.observe==='function'?api.observe.bind(api):()=>({text:document.body.innerText.slice(0,8000)});
   const actions=typeof api.actions==='function'?api.actions.bind(api):()=>[];
   const step=typeof api.step==='function'?api.step.bind(api):undefined;

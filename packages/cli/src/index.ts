@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { RealtimeClient } from '@common-arcade/realtime-client'
 import {
   gameDocumentSchema,
-  starterDocument,
+  exampleDocument,
   emptyBrowserDocument,
 } from '@common-arcade/protocol'
 import { ARCADE_PROTOCOL } from '@common-arcade/protocol'
@@ -18,7 +18,7 @@ export interface RunCliOptions {
 const HELP = `Common Arcade CLI (${ARCADE_PROTOCOL.stability})
 
 Commands:
-  init [file] [--template grid]       Write a browser game project (or grid template)
+  init [file] [--template preview]    Write a live-ready game project
   browser-run create <projectId>      Create a portable browser playtest
   browser-run decide <id> --file JSON  Record a decision from an observation
   browser-run inspect <id>            Inspect browser decisions and observations
@@ -35,6 +35,8 @@ Commands:
   games info <game-id>                Print a canonical game manifest
   matches create --release <id>       Create a match
   matches inspect <match-id>          Inspect lifecycle and roster
+  matches abandon <match-id>          End a match you own
+  projects test-runtime <id>          Headless determinism and timing test
   replay show <match-id>              Print an authoritative replay
   test run [--seed value] [--step]    Run two policies in Test Arena
   test logs <test-run-id>             Query structured agent diagnostics
@@ -95,9 +97,9 @@ export async function runCli(options: RunCliOptions): Promise<number> {
       await writeFile(
         path,
         json(
-          option(options.args, '--template') === 'grid'
-            ? starterDocument
-            : emptyBrowserDocument,
+          option(options.args, '--template') === 'preview'
+            ? emptyBrowserDocument
+            : exampleDocument,
         ) + '\n',
         { flag: 'wx' },
       )
@@ -135,6 +137,22 @@ export async function runCli(options: RunCliOptions): Promise<number> {
         throw new Error(
           'Use browser-run create <projectId>, inspect <runId>, or decide <runId> --file decision.json',
         )
+      return 0
+    }
+    if (command === 'matches' && subcommand === 'abandon' && subject) {
+      write(json(await client.abandonMatch(subject)))
+      return 0
+    }
+    if (command === 'projects' && subcommand === 'test-runtime' && subject) {
+      const script = option(options.args, '--file')
+      write(
+        json(
+          await client.testRuntime(
+            subject,
+            script ? JSON.parse(await readFile(script, 'utf8')) : {},
+          ),
+        ),
+      )
       return 0
     }
     if (command === 'projects') {
@@ -216,7 +234,8 @@ export async function runCli(options: RunCliOptions): Promise<number> {
         matchId,
       })
       let lease = '',
-        sequence = 0
+        sequence = 0,
+        lastDecisionAt = 0
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
           realtime.close()
@@ -234,8 +253,10 @@ export async function runCli(options: RunCliOptions): Promise<number> {
             message.type === 'observation.full' &&
             Array.isArray(payload.legalActions) &&
             payload.legalActions.length &&
-            lease
+            lease &&
+            Date.now() - lastDecisionAt >= 1000
           ) {
+            lastDecisionAt = Date.now()
             realtime.submitAction({
               actionId: `act_${crypto.randomUUID().replaceAll('-', '')}`,
               matchId,
@@ -249,9 +270,13 @@ export async function runCli(options: RunCliOptions): Promise<number> {
           }
           if (
             (message.type === 'match.transition' &&
-              payload.status === 'completed') ||
+              ['completed', 'canceled', 'expired', 'failed'].includes(
+                payload.status,
+              )) ||
             (message.type === 'snapshot' &&
-              payload.match?.status === 'completed')
+              ['completed', 'canceled', 'expired', 'failed'].includes(
+                payload.match?.status,
+              ))
           ) {
             write(json(payload))
             clearTimeout(timeout)

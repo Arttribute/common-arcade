@@ -1,0 +1,503 @@
+{
+  "$id": "https://arcade.agentcommons.io/schemas/v0alpha1/game-document.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "accent": {
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "type": "string"
+        },
+        "background": {
+          "pattern": "^#[0-9a-fA-F]{6}$",
+          "type": "string"
+        },
+        "boardSize": {
+          "maximum": 8,
+          "minimum": 3,
+          "type": "integer"
+        },
+        "description": {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        "distribution": {
+          "additionalProperties": false,
+          "properties": {
+            "attributionRequired": {
+              "type": "boolean"
+            },
+            "commercialUse": {
+              "type": "boolean"
+            },
+            "customLicenseUrl": {
+              "format": "uri",
+              "type": "string"
+            },
+            "license": {
+              "enum": [
+                "all-rights-reserved",
+                "cc-by-4.0",
+                "cc-by-sa-4.0",
+                "cc0-1.0",
+                "custom"
+              ],
+              "type": "string"
+            },
+            "remixing": {
+              "enum": ["disabled", "allowed"],
+              "type": "string"
+            },
+            "revenueShareBps": {
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "license",
+            "remixing",
+            "attributionRequired",
+            "commercialUse",
+            "revenueShareBps"
+          ],
+          "type": "object"
+        },
+        "kind": {
+          "const": "grid",
+          "type": "string"
+        },
+        "marks": {
+          "items": false,
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "maxLength": 3,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "maxLength": 3,
+              "minLength": 1,
+              "type": "string"
+            }
+          ],
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "winLength": {
+          "maximum": 8,
+          "minimum": 3,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "title",
+        "description",
+        "boardSize",
+        "winLength",
+        "marks",
+        "accent",
+        "background"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "economy": {
+              "additionalProperties": false,
+              "properties": {
+                "hooks": {
+                  "items": {
+                    "enum": [
+                      "entry-authorization",
+                      "escrow-reservation",
+                      "settlement-proposal",
+                      "refund-proposal",
+                      "ledger-export"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 8,
+                  "type": "array"
+                },
+                "payments": {
+                  "enum": ["disabled", "integration-ready"],
+                  "type": "string"
+                },
+                "valueMode": {
+                  "enum": ["none", "virtual", "regulated"],
+                  "type": "string"
+                }
+              },
+              "required": ["payments", "valueMode", "hooks"],
+              "type": "object"
+            },
+            "genres": {
+              "default": [],
+              "items": {
+                "pattern": "^[a-z][a-z0-9-]{0,39}$",
+                "type": "string"
+              },
+              "maxItems": 12,
+              "type": "array"
+            },
+            "presentation": {
+              "additionalProperties": false,
+              "properties": {
+                "contentPipeline": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "authoringTools": {
+                      "items": {
+                        "enum": ["blender", "procedural", "other"],
+                        "type": "string"
+                      },
+                      "maxItems": 8,
+                      "type": "array"
+                    },
+                    "runtimeFormats": {
+                      "items": {
+                        "enum": [
+                          "html",
+                          "svg",
+                          "png",
+                          "webp",
+                          "spritesheet",
+                          "gltf",
+                          "glb",
+                          "ktx2",
+                          "basis"
+                        ],
+                        "type": "string"
+                      },
+                      "maxItems": 12,
+                      "type": "array"
+                    }
+                  },
+                  "required": ["authoringTools", "runtimeFormats"],
+                  "type": "object"
+                },
+                "dimension": {
+                  "enum": ["2d", "3d", "mixed"],
+                  "type": "string"
+                },
+                "engine": {
+                  "enum": [
+                    "dom",
+                    "canvas",
+                    "phaser",
+                    "pixi",
+                    "three",
+                    "react-three-fiber",
+                    "babylon",
+                    "playcanvas",
+                    "custom-webgl"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": ["dimension", "engine"],
+              "type": "object"
+            },
+            "teams": {
+              "additionalProperties": false,
+              "properties": {
+                "control": {
+                  "enum": ["individual", "centralized", "hybrid"],
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "maxTeams": {
+                  "maximum": 32,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "membersPerTeam": {
+                  "maximum": 64,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "sharedStrategy": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "enabled",
+                "maxTeams",
+                "membersPerTeam",
+                "control",
+                "sharedStrategy"
+              ],
+              "type": "object"
+            },
+            "world": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "enum": [
+                    "browser-preview",
+                    "arcade-managed",
+                    "external-conformant-host"
+                  ],
+                  "type": "string"
+                },
+                "cadence": {
+                  "enum": ["turn", "window", "fixed-tick", "event-driven"],
+                  "type": "string"
+                },
+                "checkpointing": {
+                  "enum": ["end-only", "periodic", "event-and-periodic"],
+                  "type": "string"
+                },
+                "persistence": {
+                  "enum": ["session", "campaign", "persistent-world"],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "persistence",
+                "authority",
+                "cadence",
+                "checkpointing"
+              ],
+              "type": "object"
+            }
+          },
+          "required": ["genres", "world", "presentation", "teams", "economy"],
+          "type": "object"
+        },
+        "dependencies": {
+          "additionalProperties": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[a-zA-Z0-9.-]+)?$",
+            "type": "string"
+          },
+          "propertyNames": {
+            "pattern": "^(?:@[a-z0-9-]+\\/)?[a-z0-9._-]+$",
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "description": {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        "distribution": {
+          "additionalProperties": false,
+          "properties": {
+            "attributionRequired": {
+              "type": "boolean"
+            },
+            "commercialUse": {
+              "type": "boolean"
+            },
+            "customLicenseUrl": {
+              "format": "uri",
+              "type": "string"
+            },
+            "license": {
+              "enum": [
+                "all-rights-reserved",
+                "cc-by-4.0",
+                "cc-by-sa-4.0",
+                "cc0-1.0",
+                "custom"
+              ],
+              "type": "string"
+            },
+            "remixing": {
+              "enum": ["disabled", "allowed"],
+              "type": "string"
+            },
+            "revenueShareBps": {
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "license",
+            "remixing",
+            "attributionRequired",
+            "commercialUse",
+            "revenueShareBps"
+          ],
+          "type": "object"
+        },
+        "entryFile": {
+          "maxLength": 160,
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "maxLength": 120000,
+                "type": "string"
+              },
+              "path": {
+                "maxLength": 160,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9_./-]+$",
+                "type": "string"
+              }
+            },
+            "required": ["path", "content"],
+            "type": "object"
+          },
+          "maxItems": 60,
+          "minItems": 1,
+          "type": "array"
+        },
+        "kind": {
+          "const": "browser",
+          "type": "string"
+        },
+        "play": {
+          "additionalProperties": false,
+          "properties": {
+            "lateJoin": {
+              "type": "boolean"
+            },
+            "maxDecisionsPerSecond": {
+              "default": 2,
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "maxDurationSeconds": {
+              "maximum": 3600,
+              "minimum": 10,
+              "type": "integer"
+            },
+            "mode": {
+              "default": "turn-based",
+              "enum": ["turn-based", "simultaneous", "realtime", "hybrid"],
+              "type": "string"
+            },
+            "roles": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "count": {
+                    "maximum": 16,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "id": {
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$",
+                    "type": "string"
+                  },
+                  "team": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "title": {
+                    "maxLength": 80,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": ["id", "title", "count"],
+                "type": "object"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "type": "array"
+            },
+            "seats": {
+              "additionalProperties": false,
+              "properties": {
+                "default": {
+                  "maximum": 16,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "max": {
+                  "maximum": 16,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "min": {
+                  "maximum": 16,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": ["min", "max", "default"],
+              "type": "object"
+            },
+            "spectators": {
+              "type": "boolean"
+            }
+          },
+          "required": ["mode", "seats", "maxDecisionsPerSecond"],
+          "type": "object"
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "entryFile": {
+              "maxLength": 160,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_./-]+$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "sandboxed-script",
+              "type": "string"
+            },
+            "memoryMiB": {
+              "default": 16,
+              "maximum": 32,
+              "minimum": 4,
+              "type": "integer"
+            },
+            "tickRate": {
+              "default": 30,
+              "maximum": 60,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "timeoutMs": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "entryFile",
+            "tickRate",
+            "memoryMiB",
+            "timeoutMs"
+          ],
+          "type": "object"
+        },
+        "title": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["kind", "title", "description", "entryFile", "files"],
+      "type": "object"
+    }
+  ],
+  "title": "Common Arcade game-document"
+}
