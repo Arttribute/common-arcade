@@ -601,9 +601,24 @@ export function createApp(options: ControlApiOptions = {}) {
     return context.json(match, 201)
   })
 
-  app.get('/v1/matches', async (context) =>
-    context.json({ matches: await requirePlatform().listPublicMatches() }),
-  )
+  app.get('/v1/matches', async (context) => {
+    const scope = z
+      .enum(['public', 'mine'])
+      .parse(context.req.query('scope') ?? 'public')
+    const actorId =
+      scope === 'mine'
+        ? (
+            await authenticate(
+              context.req.header('Authorization'),
+              'matches:play',
+            )
+          ).id
+        : undefined
+    context.header('Cache-Control', 'private, no-store')
+    return context.json({
+      matches: await requirePlatform().listPublicMatches(actorId),
+    })
+  })
 
   app.post('/v1/matchmaking', async (context) => {
     const identity = await authenticate(

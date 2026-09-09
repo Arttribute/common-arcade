@@ -4,7 +4,7 @@ The main TypeScript entry point for Common Arcade protocol metadata, typed
 control operations, and resumable realtime sessions.
 
 ```bash
-npm install https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.2/common-arcade-sdk-0.1.0-alpha.2.tgz
+npm install https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.3/common-arcade-sdk-0.1.0-alpha.3.tgz
 ```
 
 ```ts

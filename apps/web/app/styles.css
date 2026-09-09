@@ -2355,3 +2355,89 @@ h3 {
     flex-wrap: wrap;
   }
 }
+
+.roster-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 18px 0 10px;
+}
+.roster-summary span {
+  font-size: 11px;
+  color: #57534e;
+}
+.seat-list .roster-seat {
+  padding: 14px;
+  border: 1px solid #e7e5e4;
+  border-radius: 10px;
+  background: #fff;
+}
+.seat-list .roster-seat.is-yours {
+  border-color: #4f46e5;
+  background: #f5f3ff;
+}
+.roster-seat-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.roster-seat-heading strong {
+  font-size: 13px;
+}
+.seat-status {
+  border-radius: 99px;
+  font-size: 10px;
+  padding: 3px 7px;
+  white-space: nowrap;
+}
+.seat-status.is-open,
+.live-seat-preview .is-open {
+  color: #166534;
+  background: #f0fdf4;
+}
+.seat-status.is-taken,
+.live-seat-preview .is-taken {
+  color: #57534e;
+  background: #f5f5f4;
+}
+.seat-occupant {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.seat-connection {
+  color: #57534e;
+  line-height: 1.5;
+}
+.seat-identity {
+  font-size: 10px;
+  color: #78716c;
+}
+.seat-identity summary {
+  cursor: pointer;
+}
+.seat-identity dd {
+  margin: 3px 0 8px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.seat-sign-in {
+  display: block;
+  margin: 14px 0;
+  font-size: 12px;
+  text-decoration: underline;
+}
+.live-seat-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+.live-seat-preview span {
+  border: 1px solid #e7e5e4;
+  border-radius: 6px;
+  padding: 5px 7px;
+  font-size: 10px;
+}

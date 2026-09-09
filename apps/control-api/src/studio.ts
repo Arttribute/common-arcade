@@ -2026,6 +2026,7 @@ type CommonsStreamEvent = {
 async function* commonsAgentStream(
   p: Principal,
   body: unknown,
+  timeoutMs = 570_000,
 ): AsyncGenerator<CommonsStreamEvent> {
   if (p.provider !== 'commons')
     throw new IdentityError(
@@ -2045,7 +2046,7 @@ async function* commonsAgentStream(
           'x-initiator': p.id,
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(570_000),
+        signal: AbortSignal.timeout(timeoutMs),
       },
     )
   } catch (error) {
@@ -2086,19 +2087,34 @@ async function* commonsAgentStream(
     for (;;) {
       const { done, value } = await reader.read()
       buffer += decoder.decode(value, { stream: !done })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() ?? ''
-      for (const line of lines) {
-        if (!line.startsWith('data:')) continue
-        const raw = line.slice(5).trim()
-        if (!raw || raw === '[DONE]') return
+      const frames = buffer.split(/\r?\n\r?\n/)
+      buffer = frames.pop() ?? ''
+      if (done && buffer.trim()) {
+        frames.push(buffer)
+        buffer = ''
+      }
+      for (const frame of frames) {
+        const raw = frame
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart())
+          .join('\n')
+          .trim()
+        if (!raw) continue
+        if (raw === '[DONE]') return
+        let event: CommonsStreamEvent
         try {
-          const event = JSON.parse(raw) as CommonsStreamEvent
-          if (event.type !== 'keepalive') yield event
-          if (event.type === 'final' || event.type === 'completed') return
+          event = JSON.parse(raw) as CommonsStreamEvent
         } catch {
-          // Ignore malformed keepalive/proxy fragments without losing the run.
+          continue
         }
+        if (event.type !== 'keepalive') yield event
+        if (
+          event.type === 'final' ||
+          event.type === 'completed' ||
+          event.type === 'error'
+        )
+          return
       }
       if (done) break
     }
@@ -2107,6 +2123,9 @@ async function* commonsAgentStream(
       502,
       `Commons agent stream ended unexpectedly: ${error instanceof Error ? error.message : 'connection error'}`,
     )
+  } finally {
+    await reader.cancel().catch(() => {})
+    reader.releaseLock()
   }
 }
 
@@ -2117,29 +2136,49 @@ async function* commonsAgentStream(
  */
 export async function commonsAgentText(p: Principal, body: unknown) {
   let text = ''
-  for await (const event of commonsAgentStream(p, body)) {
+  for await (const event of commonsAgentStream(p, body, 90_000)) {
+    if (event.type === 'error')
+      throw new CommonsServiceError(
+        502,
+        `Commons could not finish the decision: ${event.message ?? (agentEventText(event) || 'agent service error')}`,
+      )
     if (
       event.type === 'token' &&
-      typeof event.content === 'string' &&
       (!event.phase || event.phase === 'final_answer')
     )
-      text += event.content
-    else if (event.type === 'final') text = text.trim() || agentEventText(event)
+      text += agentEventText(event)
+    else if (event.type === 'final' || event.type === 'completed') {
+      // Native Commons serializes LangChain messages as {type, data:{content}};
+      // external runtimes use {content}. The complete answer supersedes deltas.
+      text = agentEventText(event).trim() || text
+    }
   }
   if (!text.trim())
     throw new CommonsServiceError(
       502,
-      'Commons finished the agent decision without returning an action.',
+      'The agent returned no decision. Its seat is still reserved; retry the agent decision.',
     )
   return text.trim()
 }
 
 function agentEventText(event: CommonsStreamEvent) {
-  if (typeof event.content === 'string') return event.content
-  if (event.payload && typeof event.payload === 'object') {
-    const payload = event.payload as Record<string, unknown>
-    for (const value of [payload.content, payload.text, payload.message])
-      if (typeof value === 'string') return value
+  const payload =
+    event.payload && typeof event.payload === 'object'
+      ? (event.payload as Record<string, unknown>)
+      : {}
+  const data =
+    payload.data && typeof payload.data === 'object'
+      ? (payload.data as Record<string, unknown>)
+      : {}
+  for (const content of [
+    event.content,
+    payload.content,
+    data.content,
+    payload.text,
+    payload.message,
+  ]) {
+    const text = agentText(content)
+    if (text?.trim()) return text
   }
   return ''
 }

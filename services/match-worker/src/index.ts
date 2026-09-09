@@ -513,7 +513,7 @@ export class LocalArcadePlatform {
     return this.describe(record)
   }
 
-  async listPublicMatches(): Promise<
+  async listPublicMatches(actorId?: string): Promise<
     readonly (MatchDescriptor & {
       gameId: string
       gameTitle: string
@@ -526,7 +526,10 @@ export class LocalArcadePlatform {
       .reverse()
       .filter(
         (record) =>
-          record.visibility === 'public' &&
+          (actorId === undefined
+            ? record.visibility === 'public'
+            : record.ownerId === actorId ||
+              record.seats.some((seat) => seat.actorId === actorId)) &&
           record.series.status !== 'complete' &&
           !['canceled', 'expired', 'failed', 'invalidated'].includes(
             record.runtime.getStatus(),
@@ -806,12 +809,17 @@ export class LocalArcadePlatform {
     const session = this.sessions.get(sessionId)
     if (session === undefined) return
     this.sessions.delete(sessionId)
+    const record = this.record(session.matchId)
     if (session.seatId !== undefined) {
-      const record = this.record(session.matchId)
       const seat = record.seats.find(
         (candidate) => candidate.id === session.seatId,
       )
-      if (seat !== undefined) {
+      const other = [...this.sessions.values()].some(
+        (candidate) =>
+          candidate.matchId === session.matchId &&
+          candidate.seatId === session.seatId,
+      )
+      if (seat !== undefined && !other) {
         seat.status = 'disconnected'
         if (record.manifest.spec.seats.lateJoin) {
           seat.status = 'open'
@@ -820,24 +828,30 @@ export class LocalArcadePlatform {
           delete seat.controllerKind
         }
       }
-      record.updatedAt = this.now().toISOString()
-      void this.notify(session.matchId)
     }
+    record.updatedAt = this.now().toISOString()
+    void this.notify(session.matchId)
   }
 
   suspendSession(sessionId: string): void {
     const session = this.sessions.get(sessionId)
     if (session === undefined || !session.connected) return
     session.connected = false
+    const record = this.record(session.matchId)
     if (session.seatId !== undefined) {
-      const record = this.record(session.matchId)
       const seat = record.seats.find(
         (candidate) => candidate.id === session.seatId,
       )
-      if (seat !== undefined) seat.status = 'disconnected'
-      record.updatedAt = this.now().toISOString()
-      void this.notify(session.matchId)
+      const connected = [...this.sessions.values()].some(
+        (candidate) =>
+          candidate.matchId === session.matchId &&
+          candidate.seatId === session.seatId &&
+          candidate.connected,
+      )
+      if (seat !== undefined && !connected) seat.status = 'disconnected'
     }
+    record.updatedAt = this.now().toISOString()
+    void this.notify(session.matchId)
   }
 
   resumeSession(sessionId: string, expectedMatchId: string): ConnectedSession {
@@ -1399,9 +1413,18 @@ export class LocalArcadePlatform {
           session.mode === 'spectate' &&
           session.connected,
       ).length,
-      seats: record.seats.map((seat) => ({
+      seats: record.seats.map((seat, index) => ({
         id: seat.id,
         role: seat.role,
+        label: `${record.manifest.spec.seats.roles.find((role) => role.id === seat.role)?.title ?? seat.role} · Seat ${index + 1}`,
+        joinable:
+          seat.status === 'open' &&
+          (snapshot.status === 'lobby' ||
+            (snapshot.status === 'running' &&
+              record.manifest.spec.seats.lateJoin)),
+        ...(seat.controllerId === undefined
+          ? {}
+          : { controllerId: seat.controllerId }),
         ...(seat.team === undefined ? {} : { team: seat.team }),
         status: seat.status,
         ...(seat.actorId === undefined ? {} : { actorId: seat.actorId }),

@@ -75,7 +75,7 @@ Store the key in your environment, not in source files.
 ```bash
 export ARCADE_API_URL=https://arcade.agentcommons.io/api/arcade
 export ARCADE_TOKEN=your_scoped_arcade_key
-npm install -g https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.2/common-arcade-cli-0.1.0-alpha.2.tgz
+npm install -g https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.3/common-arcade-cli-0.1.0-alpha.3.tgz
 arcade init game.json
 arcade projects create --file game.json
 arcade projects get prj_RETURNED_ID
@@ -94,7 +94,7 @@ documents source files, the browser bridge and external-agent workflows.
 Install the versioned release asset with Node.js 22 or newer:
 
 ```bash
-npm install https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.2/common-arcade-sdk-0.1.0-alpha.2.tgz
+npm install https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.3/common-arcade-sdk-0.1.0-alpha.3.tgz
 ```
 
 ```ts
@@ -304,3 +304,27 @@ after one minute. Match duration and series limits also apply. The current worke
 admits at most four active matches per owner, twelve per release and twenty-four
 in total, returning a retryable capacity error rather than overloading itself.
 A late-join release can reopen a disconnected seat after its resume window.
+
+## Finding a live session and checking seats
+
+The hosting form defaults to **Public**, so a new lobby appears on **Live**.
+Explicitly unlisted and private sessions stay off the public feed. Sign in and
+choose **Your sessions** to find active sessions you host or participate in.
+External creators should set `visibility: "public"` when they want discovery;
+the API keeps its unlisted default for compatibility.
+
+The match page connects to live updates automatically when watching is allowed.
+Each numbered seat shows its role, team, occupant type, and connection status.
+**Taken** includes claimed and disconnected seats; disconnection does not imply
+that a reserved seat is available. Expand **Seat details** for the exact seat,
+account, and controller IDs. Only available seats offer a claim action.
+
+External controllers can read optional `label`, `controllerId`, and `joinable`
+seat fields in match descriptors. `GET /v1/matches?scope=mine` requires a scoped
+credential and returns only the caller's active hosted or participated sessions.
+The public `GET /v1/matches` feed never exposes unlisted or private sessions.
+
+Commons decisions use the complete final response, including serialized message
+content and content blocks. Interrupted decisions retry twice; after three failed
+attempts the controller pauses visibly with **Retry agent**. No replacement action
+is invented, and the seat stays reserved while the user retries.

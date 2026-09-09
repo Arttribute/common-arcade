@@ -9,7 +9,7 @@ import type {
   RealtimeEnvelope,
 } from '@common-arcade/protocol'
 import { useEffect, useRef, useState } from 'react'
-import { Check, RotateCcw, Share2 } from 'lucide-react'
+import { Check, RotateCcw, Share2, User, Bot, Circle } from 'lucide-react'
 
 const apiUrl = process.env.NEXT_PUBLIC_ARCADE_API_URL ?? 'http://localhost:4100'
 
@@ -30,6 +30,13 @@ export function PlayMatch({
   initialActor: string
 }) {
   const [actorId] = useState(initialActor)
+  const [viewer, setViewer] = useState<{ id: string; name: string } | null>(
+    null,
+  )
+  const [controlledSeat, setControlledSeat] = useState<string>()
+  const [connectingSeat, setConnectingSeat] = useState<string>()
+  const [connecting, setConnecting] = useState(false)
+  const [rosterOnline, setRosterOnline] = useState(true)
   const [match, setMatch] = useState<MatchDescriptor>()
   const [observation, setObservation] = useState<Observation>()
   const [publicState, setPublicState] = useState<JsonValue>()
@@ -40,6 +47,11 @@ export function PlayMatch({
   const [agents, setAgents] = useState<{ agentId: string; name: string }[]>([])
   const [selectedAgent, setSelectedAgent] = useState('')
   const [activeAgent, setActiveAgent] = useState<string>()
+  const [agentPaused, setAgentPaused] = useState(false)
+  const [agentStatus, setAgentStatus] = useState('')
+  const agentFailures = useRef(0)
+  const agentRetryAt = useRef(0)
+  const latestMatch = useRef<MatchDescriptor | undefined>(undefined)
   const agentPending = useRef(false)
   const latestObservation = useRef<Observation | undefined>(undefined)
   const connectionGeneration = useRef(0)
@@ -49,26 +61,67 @@ export function PlayMatch({
   const actionSequence = useRef(0)
 
   useEffect(() => {
+    let alive = true
+    let pending = false
+    let initialized = false
+    const abort = new AbortController()
+    void fetch('/api/auth/session', { signal: abort.signal })
+      .then((r) => r.json())
+      .then((session) => {
+        if (alive) setViewer(session.user)
+      })
+      .catch(() => {})
     void arcade<{ agents: { agentId: string; name: string }[] }>(
       'commons/agents',
     )
       .then((result) => {
-        if (Array.isArray(result.agents)) setAgents(result.agents)
+        if (alive && Array.isArray(result.agents)) setAgents(result.agents)
       })
       .catch(() => {})
-    const client = browserControlClient()
-    void client
-      .getMatch(matchId)
-      .then(setMatch)
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : String(cause))
-      })
-    return () => clientRef.current?.close()
+    const hasStream = () => clientRef.current?.state === 'connected'
+    const refresh = async () => {
+      if (pending || hasStream()) return
+      pending = true
+      try {
+        const next = await browserControlClient().getMatch(
+          matchId,
+          abort.signal,
+        )
+        if (!alive) return
+        setRosterOnline(true)
+        if (!hasStream()) setMatch(next)
+        if (!initialized) {
+          initialized = true
+          if (next.lobby?.spectating !== 'disabled') void connect('spectate')
+        }
+      } catch (cause) {
+        if (alive) {
+          setRosterOnline(false)
+          setError(cause instanceof Error ? cause.message : String(cause))
+        }
+      } finally {
+        pending = false
+      }
+    }
+    void refresh()
+    // Only lobby metadata is polled when no realtime stream is available.
+    const timer = window.setInterval(() => void refresh(), 3000)
+    return () => {
+      alive = false
+      abort.abort()
+      window.clearInterval(timer)
+      connectionGeneration.current += 1
+      clientRef.current?.close()
+    }
   }, [matchId])
 
   function receive(message: RealtimeEnvelope) {
     if (message.type === 'control.granted') {
-      const payload = message.payload as { controlLease?: unknown }
+      const payload = message.payload as {
+        controlLease?: unknown
+        seatId?: string
+      }
+      setControlledSeat(payload.seatId)
       if (typeof payload.controlLease === 'string')
         setLease(payload.controlLease)
     }
@@ -108,10 +161,17 @@ export function PlayMatch({
   ) {
     setError(undefined)
     setLease(undefined)
+    setControlledSeat(undefined)
+    setConnecting(true)
+    setConnectingSeat(seatId)
     setObservation(undefined)
     latestObservation.current = undefined
-    connectionGeneration.current += 1
+    const generation = ++connectionGeneration.current
     setActiveAgent(agentId)
+    setAgentPaused(false)
+    setAgentStatus(agentId ? 'Waiting for the game to start' : '')
+    agentFailures.current = 0
+    agentRetryAt.current = 0
     try {
       const controllerId = agentId
         ? `commons-agent-${agentId}`
@@ -132,17 +192,37 @@ export function PlayMatch({
         mode,
         ...(seatId === undefined ? {} : { seatId, controllerId }),
       })
+      if (generation !== connectionGeneration.current) return
       const realtime = new RealtimeClient({
         url: `${session.realtimeUrl}?match=${encodeURIComponent(matchId)}`,
         matchId,
       })
-      realtime.onMessage(receive)
-      realtime.onStateChange(setConnection)
+      realtime.onMessage((message) => {
+        if (generation === connectionGeneration.current) receive(message)
+      })
+      realtime.onStateChange((state) => {
+        if (generation === connectionGeneration.current) setConnection(state)
+      })
       clientRef.current?.close()
       clientRef.current = realtime
       await realtime.connect(session.ticket)
+      if (generation === connectionGeneration.current) setRosterOnline(true)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      if (generation === connectionGeneration.current) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+        // A claim can race another player. Refresh the authoritative roster.
+        void browserControlClient()
+          .getMatch(matchId)
+          .then((next) => {
+            if (generation === connectionGeneration.current) setMatch(next)
+          })
+          .catch(() => {})
+      }
+    } finally {
+      if (generation === connectionGeneration.current) {
+        setConnecting(false)
+        setConnectingSeat(undefined)
+      }
     }
   }
 
@@ -174,9 +254,11 @@ export function PlayMatch({
   }
 
   latestObservation.current = observation
+  latestMatch.current = match
   useEffect(() => {
     if (
       !activeAgent ||
+      agentPaused ||
       !lease ||
       connection !== 'connected' ||
       match?.status !== 'running'
@@ -185,7 +267,13 @@ export function PlayMatch({
     const generation = connectionGeneration.current
     const timer = window.setInterval(() => {
       const current = latestObservation.current
-      if (agentPending.current || !current?.legalActions.length) return
+      if (
+        agentPending.current ||
+        !current?.legalActions.length ||
+        Date.now() < agentRetryAt.current
+      )
+        return
+      setAgentStatus('Agent is choosing an action…')
       agentPending.current = true
       void arcade<{
         action: JsonValue
@@ -200,10 +288,23 @@ export function PlayMatch({
           if (
             connectionGeneration.current !== generation ||
             !latest ||
+            latestMatch.current?.status !== 'running' ||
             (latest.turn !== undefined &&
               latest.stateSequence !== decision.basedOnStateSequence)
           )
             return
+          if (
+            !latest.legalActions.some(
+              (action) =>
+                JSON.stringify(action) === JSON.stringify(decision.action),
+            )
+          ) {
+            setAgentStatus('The game changed; choosing a fresh action…')
+            return
+          }
+          agentFailures.current = 0
+          setAgentStatus('Agent is playing')
+          setError(undefined)
           clientRef.current?.submitAction({
             actionId: `act_${crypto.randomUUID().replaceAll('-', '')}`,
             matchId,
@@ -217,15 +318,25 @@ export function PlayMatch({
           setLastResult(decision.reason)
         })
         .catch((cause) => {
-          setError(cause instanceof Error ? cause.message : String(cause))
-          setActiveAgent(undefined)
+          if (connectionGeneration.current !== generation) return
+          agentFailures.current += 1
+          const detail = cause instanceof Error ? cause.message : String(cause)
+          if (agentFailures.current >= 3) {
+            setAgentPaused(true)
+            setAgentStatus(`Agent paused: ${detail}`)
+          } else {
+            agentRetryAt.current = Date.now() + 2000 * agentFailures.current
+            setAgentStatus(
+              `Decision interrupted; retrying (${agentFailures.current}/3)…`,
+            )
+          }
         })
         .finally(() => {
           agentPending.current = false
         })
     }, 1000)
     return () => window.clearInterval(timer)
-  }, [activeAgent, lease, connection, matchId, match?.status])
+  }, [activeAgent, agentPaused, lease, connection, matchId, match?.status])
 
   useEffect(() => {
     const receivePresentationAction = (event: MessageEvent) => {
@@ -289,9 +400,34 @@ export function PlayMatch({
             {copied ? 'Copied' : 'Share'}
           </button>
         </div>
-        <p style={{ fontSize: 11, color: '#78716c' }}>
-          Sign in with Commons to claim a seat, or watch as a spectator.
+        <p className="roster-summary" aria-live="polite">
+          <strong>
+            {match?.seats.filter((seat) => seat.status !== 'open').length ?? 0}{' '}
+            / {match?.seats.length ?? 0} seats taken
+          </strong>
+          <span>
+            {connection === 'connected'
+              ? '● Live seat updates'
+              : rosterOnline
+                ? 'Seat availability refreshes automatically'
+                : 'Reconnecting — availability may be out of date'}
+          </span>
         </p>
+        <p className="match-rule-note">
+          {match?.visibility === 'public'
+            ? 'Public · listed on Live'
+            : match?.visibility === 'private'
+              ? 'Private · in Your sessions'
+              : 'Unlisted · link only · in Your sessions'}
+        </p>
+        {!viewer ? (
+          <a
+            className="seat-sign-in"
+            href={`/api/auth/login?next=/play/${encodeURIComponent(matchId)}`}
+          >
+            Sign in to take a seat
+          </a>
+        ) : null}
         {agents.length > 0 ? (
           <label>
             Commons agent
@@ -308,43 +444,178 @@ export function PlayMatch({
             </select>
           </label>
         ) : null}
-        <div className="seat-list">
-          {match?.seats.map((seat, index) => (
-            <article key={seat.id}>
-              <strong>
-                {seat.role} {index + 1}
-              </strong>
-              <small>
-                {seat.status} · {seat.actorId ?? 'unclaimed'}
-                {seat.controllerKind ? ` · ${seat.controllerKind}` : ''}
-              </small>
+        {activeAgent ? (
+          <div className="agent-live-status" role="status">
+            <strong>
+              {agents.find((agent) => agent.agentId === activeAgent)?.name ??
+                'Commons agent'}
+            </strong>
+            <p>
+              {match?.status === 'running'
+                ? agentStatus
+                : match?.status === 'lobby'
+                  ? 'Waiting for the game to start'
+                  : 'Agent stopped — the round has ended'}
+            </p>
+            {agentPaused ? (
               <button
-                disabled={connection === 'connected'}
-                onClick={() => connect('control', seat.id)}
+                onClick={() => {
+                  agentFailures.current = 0
+                  agentRetryAt.current = 0
+                  setAgentPaused(false)
+                  setAgentStatus('Retrying agent decision…')
+                }}
               >
-                Claim & control
+                Retry agent
               </button>
-              {selectedAgent ? (
-                <button
-                  disabled={connection === 'connected'}
-                  onClick={() =>
-                    void connect('control', seat.id, selectedAgent)
-                  }
-                >
-                  Play with agent
-                </button>
-              ) : null}
-            </article>
-          ))}
+            ) : null}
+          </div>
+        ) : null}
+        <div className="seat-list">
+          {match?.seats.map((seat, index) => {
+            const own = seat.actorId === viewer?.id && Boolean(viewer)
+            const controlling =
+              controlledSeat === seat.id && connection === 'connected'
+            const humanController = seat.controllerId === `browser-${actorId}`
+            const agentController =
+              selectedAgent &&
+              seat.controllerId === `commons-agent-${selectedAgent}`
+            const agent = agents.find(
+              (candidate) =>
+                seat.controllerId === `commons-agent-${candidate.agentId}`,
+            )
+            const open = seat.status === 'open'
+            const terminal = [
+              'completed',
+              'canceled',
+              'expired',
+              'failed',
+              'invalidated',
+            ].includes(match.status)
+            const joinable = seat.joinable ?? (open && match.status === 'lobby')
+            const disabled =
+              connecting ||
+              terminal ||
+              Boolean(
+                controlledSeat &&
+                controlledSeat !== seat.id &&
+                connection === 'connected',
+              )
+            return (
+              <article
+                key={seat.id}
+                className={`roster-seat ${open ? 'is-open' : 'is-taken'} ${controlling ? 'is-yours' : ''}`}
+                data-seat-id={seat.id}
+              >
+                <div className="roster-seat-heading">
+                  <strong>
+                    {seat.label ?? `${seat.role} · Seat ${index + 1}`}
+                  </strong>
+                  <span
+                    className={`seat-status ${open ? 'is-open' : 'is-taken'}`}
+                  >
+                    {open ? 'Open' : 'Taken'}
+                  </span>
+                </div>
+                {seat.team ? <small>Team {seat.team}</small> : null}
+                <div className="seat-occupant">
+                  {seat.controllerKind === 'agent' ? (
+                    <Bot size={15} />
+                  ) : open ? (
+                    <Circle size={15} />
+                  ) : (
+                    <User size={15} />
+                  )}
+                  <span>
+                    {open
+                      ? 'Available seat'
+                      : (agent?.name ??
+                        (own
+                          ? `${viewer!.name} (you)`
+                          : seat.controllerKind === 'agent'
+                            ? 'Agent player'
+                            : 'Human player'))}
+                  </span>
+                </div>
+                {!open ? (
+                  <small className="seat-connection">
+                    {controlling
+                      ? 'You are controlling this seat'
+                      : seat.status === 'connected'
+                        ? 'Connected'
+                        : seat.status === 'disconnected'
+                          ? 'Disconnected · seat reserved'
+                          : 'Claimed · waiting to connect'}
+                  </small>
+                ) : null}
+                <details className="seat-identity">
+                  <summary>Seat details</summary>
+                  <dl>
+                    <dt>Seat ID</dt>
+                    <dd>{seat.id}</dd>
+                    {seat.actorId ? (
+                      <>
+                        <dt>Account</dt>
+                        <dd>{seat.actorId}</dd>
+                      </>
+                    ) : null}
+                    {seat.controllerId ? (
+                      <>
+                        <dt>Controller</dt>
+                        <dd>{seat.controllerId}</dd>
+                      </>
+                    ) : null}
+                  </dl>
+                </details>
+                {viewer &&
+                !controlling &&
+                (joinable || (own && humanController)) &&
+                match.lobby?.allowedControllers.includes('human') ? (
+                  <button
+                    disabled={disabled}
+                    onClick={() => void connect('control', seat.id)}
+                  >
+                    {connectingSeat === seat.id
+                      ? 'Connecting…'
+                      : own && humanController
+                        ? 'Reconnect to seat'
+                        : `Take seat ${index + 1}`}
+                  </button>
+                ) : null}
+                {viewer &&
+                selectedAgent &&
+                !controlling &&
+                (joinable || (own && agentController)) &&
+                match.lobby?.allowedControllers.includes('agent') ? (
+                  <button
+                    disabled={disabled}
+                    onClick={() =>
+                      void connect('control', seat.id, selectedAgent)
+                    }
+                  >
+                    {connectingSeat === seat.id
+                      ? 'Connecting…'
+                      : `Assign ${agents.find((agent) => agent.agentId === selectedAgent)?.name ?? 'agent'}`}
+                  </button>
+                ) : null}
+              </article>
+            )
+          })}
         </div>
         <button
           className="secondary compact"
-          disabled={match?.lobby?.spectating === 'disabled'}
-          onClick={() => connect('spectate')}
+          disabled={
+            connecting ||
+            (connection === 'connected' && !controlledSeat) ||
+            match?.lobby?.spectating === 'disabled'
+          }
+          onClick={() => void connect('spectate')}
         >
           {match?.lobby?.spectating === 'disabled'
             ? 'Spectating disabled'
-            : 'Watch live'}
+            : connection === 'connected' && !controlledSeat
+              ? 'Watching live'
+              : 'Watch live'}
         </button>
         <button className="secondary compact" onClick={() => void abandon()}>
           End match

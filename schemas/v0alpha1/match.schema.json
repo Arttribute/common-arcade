@@ -116,12 +116,23 @@
             "minLength": 1,
             "type": "string"
           },
+          "controllerId": {
+            "minLength": 1,
+            "type": "string"
+          },
           "controllerKind": {
             "enum": ["human", "agent"],
             "type": "string"
           },
           "id": {
             "pattern": "^sea_[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+            "type": "string"
+          },
+          "joinable": {
+            "type": "boolean"
+          },
+          "label": {
+            "minLength": 1,
             "type": "string"
           },
           "role": {

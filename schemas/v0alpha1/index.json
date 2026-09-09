@@ -31,7 +31,7 @@
       "file": "game-release.schema.json"
     },
     "match": {
-      "digest": "sha256:002e5606512f55cd0d4da8a1238581dc62597be119e571109c2ca5537f22ef6e",
+      "digest": "sha256:94b812e4d2e1429e191c0f4bd807bae24384b61931174e188884cffc6ce03ee9",
       "file": "match.schema.json"
     },
     "observation": {
