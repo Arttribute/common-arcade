@@ -24,7 +24,8 @@ import {
 import { AgentWalletPanel } from './agent-wallet-panel'
 import { EconomySettings } from './economy-settings'
 const service =
-  process.env.NEXT_PUBLIC_ARCADE_PAYMENTS_URL ?? 'http://localhost:4021'
+  process.env.NEXT_PUBLIC_ARCADE_PAYMENTS_URL ??
+  (process.env.NODE_ENV === 'development' ? 'http://localhost:4021' : '')
 interface Table {
   id: string
   stage: string
@@ -119,11 +120,12 @@ export function GameEconomyTable({ releaseId }: { releaseId?: string } = {}) {
     return { address, expiresAt, signature }
   }
   useEffect(() => {
+    if (!service) return
     request('/v1/economy/config')
       .then((r) => setNetworks(r.networks))
       .catch(() =>
         setMessage(
-          'Payment playground service is not running. Start it to create or watch a table.',
+          'Game tables are temporarily unavailable. Please try again later.',
         ),
       )
     const id = new URL(window.location.href).searchParams.get('matchId')
@@ -303,6 +305,13 @@ export function GameEconomyTable({ releaseId }: { releaseId?: string } = {}) {
       !!table?.state &&
       table.state.turn ===
         (seat === 0 ? 'sea_player_1' : seat === 1 ? 'sea_player_2' : '')
+  if (!service)
+    return (
+      <p role="status">
+        Testnet game tables are not available yet. You can still play games in
+        the arcade.
+      </p>
+    )
   return (
     <div style={{ display: 'grid', gap: 24, maxWidth: 960, marginTop: 28 }}>
       <div>
@@ -419,6 +428,13 @@ export function GameEconomyTable({ releaseId }: { releaseId?: string } = {}) {
           >
             {table.recipients.map((recipient, i) => {
               const id = i === 0 ? 'sea_player_1' : 'sea_player_2'
+              if (!service)
+                return (
+                  <p role="status">
+                    Testnet game tables are not available yet. You can still
+                    play games in the arcade.
+                  </p>
+                )
               return (
                 <section
                   key={id}
