@@ -1,4 +1,7 @@
 import { z } from 'zod'
+/** Platform policy for newly authored paid releases. Published terms stay immutable. */
+export const SUCCESS_FEE_BPS = 250
+export const CREATOR_SHARE_BPS = 7000
 /** Optional release metadata. It never authorizes a charge or enables paid play by default. */
 export const GAME_ECONOMY_EXTENSION =
   'https://arcade.agentcommons.io/extensions/payments/v0alpha1'
@@ -37,6 +40,15 @@ export const gameMonetizationSchema = z.discriminatedUnion('mode', [
     .strict(),
 ])
 export type GameMonetization = z.infer<typeof gameMonetizationSchema>
+
+/** Validate writes separately from historical documents and published releases. */
+export const platformGameMonetizationSchema = z.discriminatedUnion('mode', [
+  gameMonetizationSchema.options[0],
+  gameMonetizationSchema.options[1].extend({
+    feeBps: z.literal(SUCCESS_FEE_BPS).default(SUCCESS_FEE_BPS),
+    creatorShareBps: z.literal(CREATOR_SHARE_BPS).default(CREATOR_SHARE_BPS),
+  }),
+])
 
 export const royaltyShareSchema = z
   .object({

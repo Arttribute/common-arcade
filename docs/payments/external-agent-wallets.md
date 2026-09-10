@@ -142,3 +142,48 @@ execution. An uncertain operation keeps its allowance reservation and blocks
 further wallet operations until an operator verifies the transaction receipts
 and reconciles the record. Do not clear this lock or refund its reservation
 merely because an HTTP request timed out.
+
+## Human wallet approvals and platform earnings
+
+New paid releases use a platform-controlled 2.5% success fee, split 70% to the
+creator pool and 30% to Arcade. Creators cannot change either number through
+the UI, project writes, the earnings tool or publication. Match creation also
+rejects success-fee overrides. Existing immutable releases remain readable and
+keep their original terms. Publishing a remix must not reduce inherited
+royalties; legacy obligations that exceed the current creator pool require
+resolution before a new paid release can be published.
+
+| Action                                                                     | User approval                                               | Onchain transaction                                                                                       |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Browse, spectate, inspect balances                                         | None                                                        | No                                                                                                        |
+| Save a payout address or publish a game                                    | Commons owner action                                        | No                                                                                                        |
+| Create a managed agent wallet, pair, set its allowance, revoke access      | Commons owner approval                                      | No                                                                                                        |
+| Connect a personal wallet with Privy                                       | Wallet connection or Privy login                            | No                                                                                                        |
+| Create a table, start play, read a private observation, submit a game move | Wallet message signature                                    | The signature is offchain; the resolver handles match creation, locking and settlement where applicable   |
+| Stake, fund a bounty, place a spectator bet                                | Review amount/network, then approve in the wallet           | Exact USDC allowance if needed, followed by the deposit                                                   |
+| Claim prizes, creator earnings, spectator payouts or refunds               | Review recipient/network, then approve in the wallet        | Yes; network fees apply                                                                                   |
+| Void an expired match                                                      | Confirm in the wallet                                       | Yes; contract eligibility is checked                                                                      |
+| Add USDC to an agent from a personal wallet                                | Review transfer amount, network and recipient in the wallet | One token transfer; it does not enlarge the agent's approved allowance                                    |
+| Recover funds from an Arcade-managed agent wallet                          | Explicit owner action in Manage funds                       | Backend Privy signer submits the transaction; this is a different wallet from the user's connected wallet |
+
+Human connections use Privy's React SDK (`connectOrCreateWallet`, `useWallets`
+and the selected wallet's EIP-1193 provider). Embedded wallet confirmation
+modals are explicitly enabled. External wallets show their own approval UI.
+Connecting a wallet does not grant an agent spending access or replace Commons
+owner authentication. Message signatures are not represented as gas-paying
+transactions. A submitted hash is retained locally until a confirmed receipt;
+confirmation timeouts require checking that hash instead of rebroadcasting.
+USDC allowance confirmation is separate from deposit confirmation.
+
+Set public `NEXT_PUBLIC_PRIVY_APP_ID` and, where applicable,
+`NEXT_PUBLIC_PRIVY_CLIENT_ID` on the web deployment. Configure the Arcade
+production and approved preview/local origins in that Privy app. These public
+IDs are distinct from the backend Privy secret and authorization key above.
+The human UI supports the configured testnet EVM escrow networks; a Hedera
+wallet still needs a funded account and USDC token association. No native
+Hedera x402 capability is implied by this browser connection.
+
+References: [React setup](https://docs.privy.io/basics/react/setup),
+[wallet connectors](https://docs.privy.io/recipes/react/configuring-external-connectors),
+[viem integration](https://docs.privy.io/wallets/connectors/ethereum/integrations/viem),
+[confirmation modals](https://docs.privy.io/recipes/react/manage-wallet-UIs).

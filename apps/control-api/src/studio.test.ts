@@ -20,6 +20,47 @@ describe('hosted Studio boundary', () => {
       app: createApp({ store, allowLocalAuth: true, logRequests: false }),
     }
   }
+  it('rejects forged creator splits in project creation and updates', async () => {
+    const { app } = setup()
+    const monetization = {
+      mode: 'revenue-share',
+      allowedModes: ['staked'],
+      feeBps: 250,
+      creatorShareBps: 9000,
+      payouts: { 'base-sepolia': '0x1111111111111111111111111111111111111111' },
+      spectatorBets: false,
+    }
+    expect(
+      (
+        await app.request('/v1/projects', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            document: { ...starterDocument, monetization },
+          }),
+        })
+      ).status,
+    ).toBe(422)
+    const created = await (
+      await app.request('/v1/projects', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ document: starterDocument }),
+      })
+    ).json()
+    const update = (share: number) =>
+      app.request(`/v1/projects/${created.id}`, {
+        method: 'PUT',
+        headers: { ...headers, 'If-Match': '1' },
+        body: JSON.stringify({
+          ...starterDocument,
+          monetization: { ...monetization, creatorShareBps: share },
+        }),
+      })
+    expect((await update(9000)).status).toBe(422)
+    expect((await update(0)).status).toBe(422)
+    expect((await update(7000)).status).toBe(200)
+  })
   it('rejects local identity tokens in a hosted deployment', async () => {
     const app = createApp({ allowLocalAuth: false, logRequests: false })
     expect((await app.request('/v1/projects', { headers })).status).toBe(401)

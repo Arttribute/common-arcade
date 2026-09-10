@@ -153,6 +153,7 @@ export function createViemAdapter(
   deployment: EscrowDeployment,
   wallet: WalletClient,
   reader: PublicClient,
+  observer?: { submitted(hash: Hex): void; confirmed(hash: Hex): void },
 ): ArcadeChainAdapter {
   return {
     deployment,
@@ -185,12 +186,14 @@ export function createViemAdapter(
         data: call.data,
         value: 0n,
       })
+      observer?.submitted(hash)
       const receipt = await reader.waitForTransactionReceipt({
         hash,
         confirmations: deployment.confirmations ?? 2,
       })
       if (receipt.status !== 'success')
         throw new Error(`Transaction reverted: ${hash}`)
+      observer?.confirmed(hash)
       return hash
     },
   }

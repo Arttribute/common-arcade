@@ -1,4 +1,5 @@
 'use client'
+import { FundWallet } from './fund-wallet'
 
 import { useEffect, useState } from 'react'
 import {
@@ -235,6 +236,13 @@ function WalletCard({
           <small>of {format(wallet.allowanceUnits)} USDC approved</small>
         </div>
       </div>
+      {wallet.address && wallet.state === 'ready' && (
+        <FundWallet
+          address={wallet.address}
+          network={wallet.network}
+          onFunded={refreshBalance}
+        />
+      )}
       {wallet.address && balance && Number(balance.usdc) === 0 && (
         <p className="aw-funding-note">
           Add test USDC and network gas to this address before paid play.{' '}

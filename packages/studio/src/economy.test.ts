@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   GAME_ECONOMY_EXTENSION,
   GAME_REMIX_EXTENSION,
+  publishedGameEconomySchema,
+  platformGameMonetizationSchema,
   type StudioRelease,
   type GameMonetization,
 } from '@common-arcade/protocol'
@@ -30,6 +32,28 @@ const source = (economy: unknown, rate: number, other: unknown[] = []) =>
     distribution: { revenueShareBps: rate },
   }) as unknown as StudioRelease
 describe('published remix economics', () => {
+  it('fixes new creator splits while preserving immutable historical terms', () => {
+    for (const creatorShareBps of [0, 5000, 9000]) {
+      const historical = { ...policy, creatorShareBps }
+      expect(publishedGameEconomySchema.parse(historical)).toEqual(historical)
+      expect(platformGameMonetizationSchema.safeParse(historical).success).toBe(
+        false,
+      )
+      expect(() => publishGameEconomy(historical, undefined)).toThrow(
+        'platform policy',
+      )
+    }
+    expect(publishGameEconomy(policy, undefined)).toEqual(policy)
+  })
+  it('does not silently reduce inherited royalties from a historical 90% release', () => {
+    const inherited = inheritedRemixEconomy(
+      source({ ...policy, creatorShareBps: 9000 }, 3000),
+    )
+    expect(() => publishGameEconomy(policy, inherited)).toThrow(
+      'reduce inherited',
+    )
+  })
+
   it('retains Celo Sepolia payouts and inherited royalties when publishing a remix', () => {
     const celoPolicy = { ...policy, payouts: { 'celo-sepolia': original } }
     const inherited = inheritedRemixEconomy(source(celoPolicy, 3000))
@@ -90,7 +114,7 @@ describe('published remix economics', () => {
     const inherited = inheritedRemixEconomy(source(policy, 3000))
     expect(() =>
       publishGameEconomy({ ...policy, creatorShareBps: 0 }, inherited),
-    ).toThrow('reduce inherited')
+    ).toThrow('platform policy')
     expect(() =>
       publishGameEconomy(
         { ...policy, payouts: { 'arc-testnet': remixer } },

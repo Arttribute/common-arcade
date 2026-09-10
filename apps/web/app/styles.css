@@ -2619,3 +2619,71 @@ h3 {
   margin-right: 8px;
   margin-top: 4px;
 }
+
+/* Shared wallet approvals: quiet cards with explicit transaction states. */
+.wallet-connection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+.wallet-select {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.wallet-select select {
+  max-width: 100%;
+}
+.wallet-review {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface, #fff);
+  display: grid;
+  gap: 12px;
+}
+.wallet-review h3,
+.wallet-review p {
+  margin: 0;
+}
+.wallet-review label {
+  display: grid;
+  gap: 6px;
+}
+.wallet-review input {
+  width: 100%;
+}
+.wallet-review .actions,
+.wallet-action-status .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.wallet-recipient,
+.wallet-action-status {
+  overflow-wrap: anywhere;
+}
+.wallet-action-status {
+  padding: 12px 0;
+  font-size: 14px;
+}
+.wallet-funding {
+  margin: 16px 0;
+}
+.wallet-funding summary {
+  cursor: pointer;
+  font-size: 14px;
+}
+.wallet-funding[open] summary {
+  margin-bottom: 12px;
+}
+@media (max-width: 540px) {
+  .wallet-review {
+    padding: 14px;
+  }
+  .wallet-select {
+    width: 100%;
+  }
+}
