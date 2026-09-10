@@ -776,6 +776,9 @@ importers:
       '@types/babel__standalone':
         specifier: ^7.1.9
         version: 7.1.9
+      '@types/node':
+        specifier: 'catalog:'
+        version: 22.20.1
       tsup:
         specifier: 'catalog:'
         version: 8.5.1(postcss@8.5.28)(tsx@4.23.13)(typescript@5.9.3)(yaml@2.9.0)

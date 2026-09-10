@@ -59,7 +59,20 @@ window.arcade = {
     { id: 'red', label: 'Red' },
     { id: 'blue', label: 'Blue' },
   ],
-  observe: (seatId) => ({ score, state, playerPosition, seatId }),
+  observe: (seatId) => ({
+    phase: 'active',
+    score,
+    playerPosition,
+    visibleObstacles,
+    seatId,
+    arcadeDecisionContext: {
+      incomingThreats: [{ timeToImpactMs: 750, direction: 'left' }],
+      rewardDelta: 0,
+      actionScores: { left: -4, jump: 12 },
+      preferredActions: ['jump'],
+      avoidActions: [],
+    },
+  }),
   actions: (seatId) => [
     { id: 'left', label: 'Move left' },
     { id: 'jump', label: 'Jump' },
@@ -79,6 +92,16 @@ action instead of applying it. Keep `play.seats.default` aligned with the seats
 returned by the bridge and render the first playable state before initialization
 finishes. Re-observe after every state change. Do not put secrets, prize logic,
 wallet authority, or authoritative competitive outcomes in browser code.
+
+Make observations useful for decisions rather than mirroring render state. At
+minimum expose the current phase, objective/progress, the acting player's status
+and position, visible opponents/obstacles, and derived timing for realtime
+hazards. When an action's outcome becomes attributable, expose a bounded numeric
+`arcadeDecisionContext.rewardDelta`. Games with unusual controls may also expose
+bounded `actionScores` keyed by current legal action ID, plus
+`preferredActions`/`avoidActions`; derive these only from information visible to
+that seat. These semantic hints let the low-latency policy react between slower
+model decisions without parsing pixels or rediscovering the game's physics.
 
 For a live release, presentation assigns `window.arcade` with
 `render(authoritativeState, context)` and calls `window.arcade.submit(action)`

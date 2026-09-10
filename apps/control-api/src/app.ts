@@ -1,8 +1,10 @@
+import { planCoaching } from './coaching.js'
 import { createBrowserTestApi } from './browser-tests.js'
 import { createRecordingApi } from './recordings.js'
 import { bodyLimit } from 'hono/body-limit'
 import {
   CommonsServiceError,
+  commonsRequest,
   createStudioApi,
   type CopilotJobInvocation,
 } from './studio.js'
@@ -675,6 +677,62 @@ export function createApp(options: ControlApiOptions = {}) {
     ),
   )
 
+  app.post('/v1/matches/:matchId/seats/:seatId/coach', async (context) => {
+    const p = await authenticate(
+      context.req.header('Authorization'),
+      'matches:play',
+    )
+    const body = z
+      .object({
+        prompt: z.string().trim().min(1).max(2000),
+        agentId: z.string().min(1).max(200),
+      })
+      .strict()
+      .parse(await context.req.json())
+    const platform = requirePlatform()
+    const matchId = context.req.param('matchId'),
+      seatId = context.req.param('seatId')
+    const prepared = platform.beginCoaching(matchId, seatId, p.id, body.agentId)
+    // The Commons service checks access to the requested agent under this owner's token.
+    await commonsRequest(p, `/v1/agents/${encodeURIComponent(body.agentId)}`)
+    if (
+      prepared.controllerId !== body.agentId &&
+      prepared.controllerId !== `agent:${body.agentId}` &&
+      prepared.controllerId !== `commons-agent-${body.agentId}`
+    )
+      throw new IdentityError(
+        403,
+        'The selected agent does not control this seat.',
+      )
+    const planned = await planCoaching(
+      p,
+      { agentId: body.agentId, strategy: prepared.strategy },
+      body.prompt,
+      prepared.observation,
+    )
+    const applied = await platform.applyCoaching(
+      matchId,
+      seatId,
+      p.id,
+      prepared.requestId,
+      prepared.controllerId,
+      planned,
+    )
+    await store.put(
+      `match-strategy-events:${matchId}`,
+      `${seatId}:${applied.requestId}`,
+      {
+        version: 1,
+        ...applied,
+        prompt: body.prompt,
+        source: 'agent-coaching',
+        type: 'policy.strategy.changed',
+        createdAt: new Date().toISOString(),
+      },
+    )
+    return context.json(applied)
+  })
+
   app.post('/v1/matches/:matchId/seats/:seatId/claim', async (context) => {
     const actorId = (
       await authenticate(context.req.header('Authorization'), 'matches:play')
@@ -1010,9 +1068,26 @@ function openApiDocument(serverUrl: string) {
           summary: 'Choose a legal action for the expected browser test step',
         },
       },
+      '/v1/studio/browser-runs/{id}/controllers/{seatId}/coach': {
+        post: {
+          summary:
+            'Have the owner’s agent prepare and replace its playtest strategy',
+        },
+      },
+      '/v1/matches/{matchId}/seats/{seatId}/coach': {
+        post: {
+          summary: 'Coach an owned agent seat and replace its live controller',
+        },
+      },
       '/v1/studio/browser-runs/{id}/controllers/{seatId}/strategy': {
         post: {
-          summary: 'Schedule a human-authored agent strategy update',
+          summary: 'Replace an agent strategy',
+        },
+      },
+      '/v1/studio/browser-runs/{id}/telemetry/{batchId}': {
+        post: {
+          summary:
+            'Save an idempotent batch of sampled client-observed realtime diagnostics',
         },
       },
       '/v1/projects/{id}/recordings': {

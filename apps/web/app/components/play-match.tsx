@@ -71,6 +71,46 @@ export function PlayMatch({
   const latestObservation = useRef<Observation | undefined>(undefined)
   const connectionGeneration = useRef(0)
   const [copied, setCopied] = useState(false)
+  const coachedSeats = useRef(new Set<string>())
+  const [coaching, setCoaching] = useState<Record<string, string>>({})
+  const [coachingStatus, setCoachingStatus] = useState<Record<string, string>>(
+    {},
+  )
+  const [coachingBusy, setCoachingBusy] = useState<Record<string, boolean>>({})
+  async function coach(seatId: string, controllerId: string) {
+    setCoachingBusy((v) => ({ ...v, [seatId]: true }))
+    setCoachingStatus((v) => ({
+      ...v,
+      [seatId]: 'Agent is processing your coaching…',
+    }))
+    try {
+      const applied = await arcade<{ strategy: string; strategyEpoch: number }>(
+        `matches/${matchId}/seats/${encodeURIComponent(seatId)}/coach`,
+        {
+          prompt: coaching[seatId],
+          agentId: controllerId.replace(/^(?:commons-agent-|agent:)/, ''),
+        },
+      )
+      coachedSeats.current.add(seatId)
+      if (controlledSeat === seatId) {
+        setAgentPaused(true)
+        setAgentStatus('Coached strategy is running on the match worker')
+        if (match?.lobby?.spectating !== 'disabled') await connect('spectate')
+      }
+      setCoachingStatus((v) => ({
+        ...v,
+        [seatId]: `Strategy ${applied.strategyEpoch} active: ${applied.strategy}`,
+      }))
+    } catch (cause) {
+      setCoachingStatus((v) => ({
+        ...v,
+        [seatId]: cause instanceof Error ? cause.message : String(cause),
+      }))
+    } finally {
+      setCoachingBusy((v) => ({ ...v, [seatId]: false }))
+    }
+  }
+
   const clientRef = useRef<RealtimeClient | undefined>(undefined)
   const presentationRef = useRef<HTMLIFrameElement | null>(null)
   const actionSequence = useRef(0)
@@ -221,6 +261,7 @@ export function PlayMatch({
     setObservation(undefined)
     latestObservation.current = undefined
     const generation = ++connectionGeneration.current
+    if (seatId) coachedSeats.current.delete(seatId)
     setActiveAgent(agentId)
     setAgentPaused(false)
     setAgentStatus(agentId ? 'Waiting for the game to start' : '')
@@ -352,6 +393,7 @@ export function PlayMatch({
           const latest = latestObservation.current
           if (
             connectionGeneration.current !== generation ||
+            coachedSeats.current.has(current.seatId) ||
             !latest ||
             latestMatch.current?.status !== 'running' ||
             (latest.turn !== undefined &&
@@ -681,7 +723,7 @@ export function PlayMatch({
                   ? 'Waiting for the game to start'
                   : 'Agent stopped — the round has ended'}
             </p>
-            {agentPaused ? (
+            {agentPaused && !coachedSeats.current.has(controlledSeat ?? '') ? (
               <button
                 onClick={() => {
                   agentFailures.current = 0
@@ -844,6 +886,31 @@ export function PlayMatch({
                   >
                     Connect external agent
                   </button>
+                ) : null}
+                {own && agent && !terminal && seat.controllerId ? (
+                  <div>
+                    <textarea
+                      aria-label={`Coach ${seat.label ?? `Player ${index + 1}`}`}
+                      placeholder="Tell your agent how to change its play…"
+                      maxLength={2000}
+                      value={coaching[seat.id] ?? ''}
+                      onChange={(event) =>
+                        setCoaching((v) => ({
+                          ...v,
+                          [seat.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <button
+                      disabled={
+                        coachingBusy[seat.id] || !coaching[seat.id]?.trim()
+                      }
+                      onClick={() => void coach(seat.id, seat.controllerId!)}
+                    >
+                      Coach agent
+                    </button>
+                    <p role="status">{coachingStatus[seat.id]}</p>
+                  </div>
                 ) : null}
                 {own && !terminal ? (
                   <button

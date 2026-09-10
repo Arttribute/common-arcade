@@ -1,3 +1,9 @@
+import {
+  createBrowserPolicy,
+  livePolicyObservation,
+  coachedStrategySchema,
+  type ExecutableStrategy,
+} from '@common-arcade/studio'
 import { assessLiveReadiness, type StudioRelease } from '@common-arcade/studio'
 import { compileGame } from '@common-arcade/studio/runtime'
 import {
@@ -248,7 +254,38 @@ function seriesState(request: CreateMatchRequest): MatchSeriesState {
   }
 }
 
+type ManagedAgentPolicy = {
+  sessionId: string
+  actorId: string
+  controllerId: string
+  strategy: string
+  executableStrategy: ExecutableStrategy
+  strategyEpoch: number
+  sequence: number
+  nextDecision: number
+  lastStateSequence?: number
+  held?: {
+    id: string
+    payload: JsonValue
+    mode: string
+    refreshMs: number
+    releaseActionId?: string
+  }
+  lastApply?: number
+  prior?: { state: unknown; actionId: string; at: number }
+  policyMemory?: Parameters<
+    ReturnType<typeof createBrowserPolicy>['choose']
+  >[1]['policyMemory']
+}
+
 export class LocalArcadePlatform {
+  private readonly coachingRequests = new Map<string, string>()
+  private readonly agentPolicies = new Map<string, ManagedAgentPolicy>()
+  private readonly agentTimers = new Map<
+    string,
+    ReturnType<typeof setInterval>
+  >()
+  private readonly playerPolicy = createBrowserPolicy()
   private readonly operations = new Map<string, Promise<unknown>>()
   private readonly matches = new Map<string, MatchRecord>()
   private readonly idempotency = new Map<string, string>()
@@ -763,6 +800,8 @@ export class LocalArcadePlatform {
   }
 
   private revokeSeatSessions(record: MatchRecord, seat: MutableSeat): void {
+    this.agentPolicies.delete(`${record.runtime.matchId}/${seat.id}`)
+    this.coachingRequests.delete(`${record.runtime.matchId}/${seat.id}`)
     seat.controlGeneration = (seat.controlGeneration ?? 0) + 1
     for (const [id, session] of this.sessions)
       if (
@@ -1016,6 +1055,326 @@ export class LocalArcadePlatform {
     return this.record(session.matchId).runtime.observation(session.seatId)
   }
 
+  private ownedAgent(matchId: string, seatId: string, actorId: string) {
+    const record = this.record(matchId)
+    const seat = record.seats.find((s) => s.id === seatId)
+    if (
+      !seat ||
+      seat.actorId !== actorId ||
+      seat.controllerKind !== 'agent' ||
+      !seat.controllerId
+    )
+      throw new LocalPlatformError(
+        'CONTROL_REVOKED',
+        403,
+        'Only the owner of this agent seat can coach it.',
+      )
+    if (!['running', 'lobby'].includes(record.runtime.getStatus()))
+      throw new LocalPlatformError(
+        'MATCH_NOT_RUNNING',
+        409,
+        'This match is no longer active.',
+      )
+    return { record, seat }
+  }
+
+  beginCoaching(
+    matchId: string,
+    seatId: string,
+    actorId: string,
+    agentId?: string,
+  ) {
+    const { record, seat } = this.ownedAgent(matchId, seatId, actorId)
+    if (
+      agentId &&
+      seat.controllerId !== agentId &&
+      seat.controllerId !== `agent:${agentId}` &&
+      seat.controllerId !== `commons-agent-${agentId}`
+    )
+      throw new LocalPlatformError(
+        'CONTROL_REVOKED',
+        403,
+        'The selected agent does not control this seat.',
+      )
+    const key = `${matchId}/${seatId}`
+    const requestId = opaqueId('coach')
+    this.coachingRequests.set(key, requestId)
+    const current = this.agentPolicies.get(key)
+    return {
+      requestId,
+      controllerId: seat.controllerId!,
+      strategy: current?.strategy ?? 'Play to win legally.',
+      strategyEpoch: current?.strategyEpoch ?? 0,
+      observation: livePolicyObservation(record.runtime.observation(seatId))
+        .observation,
+    }
+  }
+
+  async applyCoaching(
+    matchId: string,
+    seatId: string,
+    actorId: string,
+    requestId: string,
+    controllerId: string,
+    proposal: unknown,
+  ) {
+    const planned = coachedStrategySchema.parse(proposal)
+    return this.exclusive(matchId, async () => {
+      const { record, seat } = this.ownedAgent(matchId, seatId, actorId)
+      const key = `${matchId}/${seatId}`
+      if (
+        this.coachingRequests.get(key) !== requestId ||
+        seat.controllerId !== controllerId
+      )
+        throw new LocalPlatformError(
+          'CONFLICT',
+          409,
+          'This coaching request was superseded.',
+        )
+      const previous = this.agentPolicies.get(key)
+      // A fresh control lease fences every old runner and queued submission.
+      const ticket = await this.createSession({
+        matchId,
+        seatId,
+        actorId,
+        controllerId,
+        mode: 'control',
+      })
+      const session = await this.connectWithTicket(ticket.ticket, matchId)
+      if (
+        this.coachingRequests.get(key) !== requestId ||
+        seat.controllerId !== controllerId
+      ) {
+        this.sessions.delete(session.sessionId)
+        throw new LocalPlatformError(
+          'CONFLICT',
+          409,
+          'This coaching request was superseded.',
+        )
+      }
+      if (previous?.held?.releaseActionId)
+        await this.releaseAgentInput(record, seat.id, previous)
+      else await this.stopSeatInput(record, seat)
+      if (this.coachingRequests.get(key) !== requestId) {
+        this.sessions.delete(session.sessionId)
+        throw new LocalPlatformError(
+          'CONFLICT',
+          409,
+          'This coaching request was superseded.',
+        )
+      }
+      const epoch = (previous?.strategyEpoch ?? 0) + 1
+      this.agentPolicies.set(key, {
+        sessionId: session.sessionId,
+        actorId,
+        controllerId,
+        strategy: planned.strategy,
+        executableStrategy: planned.executableStrategy,
+        strategyEpoch: epoch,
+        sequence: 0,
+        nextDecision: 0,
+        policyMemory: { actions: {} },
+      })
+      if (previous) this.sessions.delete(previous.sessionId)
+      this.coachingRequests.delete(key)
+      if (!this.agentTimers.has(matchId)) {
+        const timer = setInterval(() => {
+          void this.exclusive(matchId, () =>
+            this.runAgentPolicies(matchId),
+          ).catch(() => {
+            // A failure stops agent control, never the simulation clock.
+            const active = this.agentTimers.get(matchId)
+            if (active) clearInterval(active)
+            this.agentTimers.delete(matchId)
+          })
+        }, 16)
+        timer.unref()
+        this.agentTimers.set(matchId, timer)
+      }
+      // Do not wait for the old decision cadence or for the coaching HTTP response.
+      await this.runAgentPolicies(matchId)
+      return {
+        seatId,
+        strategy: planned.strategy,
+        strategyEpoch: epoch,
+        reason: planned.reason,
+        executableStrategy: planned.executableStrategy,
+        status: 'applied',
+        requestId,
+        stateSequence: record.runtime.observation(seatId).stateSequence,
+      }
+    })
+  }
+
+  private async runAgentPolicies(matchId: string) {
+    const record = this.record(matchId)
+    if (record.runtime.getStatus() === 'completed') {
+      const timer = this.agentTimers.get(matchId)
+      if (timer) clearInterval(timer)
+      this.agentTimers.delete(matchId)
+      return
+    }
+    if (record.runtime.getStatus() !== 'running') return
+    const now = this.now().getTime()
+    for (const seat of record.seats) {
+      const agent = this.agentPolicies.get(`${matchId}/${seat.id}`)
+      if (!agent) continue
+      if (
+        seat.actorId !== agent.actorId ||
+        seat.controllerId !== agent.controllerId ||
+        seat.controllerKind !== 'agent'
+      ) {
+        this.agentPolicies.delete(`${matchId}/${seat.id}`)
+        continue
+      }
+      const observation = record.runtime.observation(seat.id)
+      if (!observation.legalActions.length) {
+        agent.held = undefined
+        continue
+      }
+      if (now < agent.nextDecision) {
+        if (
+          agent.held?.mode === 'pulse' &&
+          now - (agent.lastApply ?? 0) >= agent.held.refreshMs
+        ) {
+          const input = livePolicyObservation(observation)
+          const payload = input.payloads.get(agent.held.id)
+          if (payload !== undefined)
+            await this.submitPolicyAction(record, seat.id, agent, payload)
+          else agent.held = undefined
+        }
+        continue
+      }
+      if (
+        !record.runtime.game.advanceTick &&
+        observation.stateSequence === agent.lastStateSequence
+      )
+        continue
+      const input = livePolicyObservation(observation)
+      const feedback = agent.prior
+        ? this.playerPolicy.feedback(
+            agent.prior.state,
+            input.observation.state,
+            agent.prior.actionId,
+            now - agent.prior.at,
+          )
+        : undefined
+      agent.policyMemory = this.playerPolicy.learn(
+        { seatId: seat.id, ...agent },
+        feedback,
+      ).memory
+      const decision = this.playerPolicy.choose(
+        {
+          ...input.observation,
+          state: this.playerPolicy.enrich(input.observation.state),
+        },
+        { seatId: seat.id, ...agent },
+        agent.sequence,
+      )
+      const payload = input.payloads.get(decision.actionId)
+      if (payload === undefined) continue
+      agent.nextDecision =
+        now +
+        1000 /
+          Math.max(
+            1,
+            Math.min(20, record.manifest.spec.policy.maxDecisionsPerSecond),
+          )
+      agent.lastStateSequence = observation.stateSequence
+      const raw =
+        payload && typeof payload === 'object' && !Array.isArray(payload)
+          ? payload
+          : {}
+      const control =
+        raw.control &&
+        typeof raw.control === 'object' &&
+        !Array.isArray(raw.control)
+          ? raw.control
+          : undefined
+      const changed = agent.held?.id !== decision.actionId
+      if (changed) await this.releaseAgentInput(record, seat.id, agent)
+      if (!changed && agent.held?.mode === 'hold') continue
+      const result = await this.submitPolicyAction(
+        record,
+        seat.id,
+        agent,
+        payload,
+      )
+      if (
+        result.disposition === 'accepted' &&
+        (control?.mode === 'hold' || control?.mode === 'pulse')
+      )
+        agent.held = {
+          id: decision.actionId,
+          payload,
+          mode: control.mode,
+          refreshMs: Math.max(
+            16,
+            Math.min(250, Number(control.refreshMs) || 50),
+          ),
+          ...(typeof control.releaseActionId === 'string'
+            ? { releaseActionId: control.releaseActionId }
+            : {}),
+        }
+      if (result.disposition === 'accepted')
+        agent.prior = {
+          state: structuredClone(input.observation.state),
+          actionId: decision.actionId,
+          at: now,
+        }
+    }
+  }
+
+  private async releaseAgentInput(
+    record: MatchRecord,
+    seatId: string,
+    agent: ManagedAgentPolicy,
+  ) {
+    const releaseId = agent.held?.releaseActionId
+    agent.held = undefined
+    if (!releaseId) return
+    const observation = record.runtime.observation(seatId)
+    const input = livePolicyObservation(observation)
+    const payload =
+      input.payloads.get(releaseId) ??
+      observation.legalActions.find(
+        (action) =>
+          action &&
+          typeof action === 'object' &&
+          !Array.isArray(action) &&
+          action.id === releaseId,
+      )
+    if (payload !== undefined)
+      await this.submitPolicyAction(record, seatId, agent, payload)
+  }
+
+  private async submitPolicyAction(
+    record: MatchRecord,
+    seatId: string,
+    agent: ManagedAgentPolicy,
+    payload: JsonValue,
+  ) {
+    const observation = record.runtime.observation(seatId)
+    const session = this.getSession(agent.sessionId)
+    agent.lastApply = this.now().getTime()
+    return this.submitActionInternal(agent.sessionId, {
+      actionId: opaqueId('act'),
+      matchId: record.runtime.matchId,
+      seatId,
+      controlLease: session.controlLease!,
+      clientSequence: ++agent.sequence,
+      basedOnStateSequence: observation.stateSequence,
+      ...(observation.turn === undefined
+        ? {}
+        : { targetTurn: observation.turn }),
+      ...(observation.tick === undefined
+        ? {}
+        : { targetTick: observation.tick + 1 }),
+      policyExecutionId: `coached-strategy-${agent.strategyEpoch}`,
+      payload,
+    })
+  }
+
   async submitAction(
     sessionId: string,
     action: ActionSubmission,
@@ -1046,6 +1405,15 @@ export class LocalArcadePlatform {
       )
     }
     const record = this.record(session.matchId)
+    const managed = this.agentPolicies.get(
+      `${session.matchId}/${session.seatId}`,
+    )
+    if (managed && managed.sessionId !== sessionId)
+      throw new LocalPlatformError(
+        'CONTROL_REVOKED',
+        403,
+        'This controller was replaced by a coached strategy.',
+      )
     const before = record.runtime.observation(session.seatId)
     const result = await record.runtime.submitAction(
       action,
@@ -1188,12 +1556,18 @@ export class LocalArcadePlatform {
   }
 
   async pauseMatch(matchId: string): Promise<MatchDescriptor> {
-    const record = this.record(matchId)
-    record.runtime.pause()
-    this.stopClock(matchId)
-    record.updatedAt = this.now().toISOString()
-    await this.notify(matchId)
-    return this.describe(record)
+    return this.exclusive(matchId, async () => {
+      const record = this.record(matchId)
+      for (const seat of record.seats) {
+        const agent = this.agentPolicies.get(`${matchId}/${seat.id}`)
+        if (agent) await this.releaseAgentInput(record, seat.id, agent)
+      }
+      record.runtime.pause()
+      this.stopClock(matchId)
+      record.updatedAt = this.now().toISOString()
+      await this.notify(matchId)
+      return this.describe(record)
+    })
   }
 
   async resumeMatch(matchId: string): Promise<MatchDescriptor> {
@@ -1258,6 +1632,10 @@ export class LocalArcadePlatform {
   close(): void {
     if (this.maintenance) clearInterval(this.maintenance)
     this.maintenance = undefined
+    for (const timer of this.agentTimers.values()) clearInterval(timer)
+    this.agentTimers.clear()
+    this.agentPolicies.clear()
+    this.coachingRequests.clear()
     for (const matchId of this.clocks.keys()) this.stopClock(matchId)
   }
 
@@ -1506,6 +1884,17 @@ export class LocalArcadePlatform {
     record.series.currentRound += 1
     record.series.status = 'active'
     record.series.restartVotes = []
+    for (const seat of record.seats) {
+      const agent = this.agentPolicies.get(
+        `${record.runtime.matchId}/${seat.id}`,
+      )
+      if (agent) {
+        agent.held = undefined
+        agent.prior = undefined
+        agent.nextDecision = 0
+        agent.lastStateSequence = undefined
+      }
+    }
     const prior = record.runtime
     record.runtime = await AuthoritativeMatch.create({
       matchId: prior.matchId,
@@ -1583,6 +1972,7 @@ export class LocalArcadePlatform {
         ...(seat.team === undefined ? {} : { team: seat.team }),
         status: seat.status,
         ...(seat.actorId === undefined ? {} : { actorId: seat.actorId }),
+
         ...(seat.controllerKind === undefined
           ? {}
           : { controllerKind: seat.controllerKind }),
