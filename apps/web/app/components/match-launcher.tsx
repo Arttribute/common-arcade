@@ -8,10 +8,12 @@ import {
   Radio,
   Users,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { arcade, browserControlClient } from '../../lib/api'
-import { LivePaymentPanel } from './live-payment-panel'
+import { HostPaymentSettings } from './host-payment-settings'
+import { economyConfigSchema, type EconomyConfig } from '@common-arcade/economy'
+import type { GameMonetization } from '@common-arcade/protocol'
 
 export function MatchLauncher({
   releaseId,
@@ -19,12 +21,16 @@ export function MatchLauncher({
   browserGame = false,
   remixing,
   license,
+  paymentTerms,
+  paidMatchSupported = false,
 }: {
   releaseId: string
   gameId: string
   browserGame?: boolean
   remixing?: 'disabled' | 'allowed'
   license?: string
+  paymentTerms?: GameMonetization
+  paidMatchSupported?: boolean
 }) {
   const router = useRouter()
   const [signedIn, setSignedIn] = useState(false)
@@ -46,6 +52,8 @@ export function MatchLauncher({
     'automatic' | 'owner' | 'unanimous'
   >('owner')
   const [copied, setCopied] = useState(false)
+  const [economy, setEconomy] = useState<EconomyConfig>({ mode: 'free' })
+  const setup = useRef<HTMLDivElement>(null)
   useEffect(() => {
     void fetch('/api/auth/session')
       .then((response) => response.json())
@@ -66,9 +74,19 @@ export function MatchLauncher({
     }
   }
   async function create() {
+    for (const input of setup.current?.querySelectorAll('input') ?? []) {
+      if (!input.reportValidity()) return
+    }
     setBusy(true)
     setError('')
     try {
+      if (economy.mode === 'escrow') {
+        const selection = economyConfigSchema.parse(economy)
+        router.push(
+          `/play/paid/${encodeURIComponent(releaseId)}?economy=${encodeURIComponent(JSON.stringify(selection))}`,
+        )
+        return
+      }
       const match = await browserControlClient().createMatch({
         releaseId,
         visibility,
@@ -168,7 +186,7 @@ export function MatchLauncher({
       </div>
     )
   return (
-    <div className="launch-card agent-launcher">
+    <div className="launch-card agent-launcher" ref={setup}>
       <div className="agent-launcher-title">
         <Bot size={17} />
         <div>
@@ -213,7 +231,13 @@ export function MatchLauncher({
               same live state stream.
             </li>
           </ol>
-          {!browserGame ? (
+          <HostPaymentSettings
+            value={economy}
+            onChange={setEconomy}
+            terms={paymentTerms}
+            supported={paidMatchSupported}
+          />
+          {!browserGame && economy.mode === 'free' ? (
             <div className="match-setup-grid">
               <label>
                 Discoverability
@@ -325,7 +349,11 @@ export function MatchLauncher({
               <button
                 className="primary"
                 disabled={
-                  busy || (!browserGame && !allowHumans && !allowAgents)
+                  busy ||
+                  (economy.mode === 'free' &&
+                    !browserGame &&
+                    !allowHumans &&
+                    !allowAgents)
                 }
                 onClick={create}
               >
@@ -333,9 +361,11 @@ export function MatchLauncher({
                   ? 'Preparing room…'
                   : browserGame
                     ? 'Open creator workspace or remix'
-                    : 'Host a live session'}
+                    : economy.mode === 'escrow'
+                      ? 'Continue to paid lobby'
+                      : 'Host a live session'}
               </button>
-              {!browserGame ? (
+              {!browserGame && economy.mode === 'free' ? (
                 <button
                   className="secondary"
                   disabled={busy}
@@ -374,7 +404,6 @@ export function MatchLauncher({
           </a>
         </div>
       )}
-      <LivePaymentPanel releaseId={releaseId} />
       {error ? <p className="error-text">{error}</p> : null}
     </div>
   )

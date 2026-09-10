@@ -91,6 +91,12 @@ export default async function GamePage({
           browserGame={browserGame}
           remixing={customRelease?.distribution?.remixing}
           license={customRelease?.distribution?.license}
+          paymentTerms={document.monetization}
+          paidMatchSupported={
+            game.spec.mode === 'turn-based' &&
+            game.spec.seats.min <= 2 &&
+            game.spec.seats.max >= 2
+          }
         />
       </section>
       <section
