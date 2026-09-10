@@ -10,7 +10,10 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "dev:facilitator": "tsx src/facilitator-server.ts"
+    "dev:facilitator": "tsx src/facilitator-server.ts",
+    "deploy:testnet": "node scripts/deploy-testnet.mjs",
+    "smoke:testnet": "node scripts/smoke-testnet.mjs",
+    "smoke:x402-testnet": "tsx scripts/smoke-x402-testnet.mjs"
   },
   "dependencies": {
     "@common-arcade/economy": "workspace:^",
