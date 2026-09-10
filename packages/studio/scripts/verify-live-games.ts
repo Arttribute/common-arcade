@@ -5,8 +5,8 @@ import {
   documentDigest,
   createBrowserPolicy,
   livePolicyObservation,
-} from '@common-arcade/studio'
-import { compileGame, testGameRuntime } from '@common-arcade/studio/runtime'
+} from '../src/index.js'
+import { compileGame, testGameRuntime } from '../src/runtime.js'
 import { AuthoritativeMatch } from '@common-arcade/match-runtime'
 const evidence = []
 for (const path of process.argv.slice(2)) {
