@@ -54,6 +54,15 @@ next decision. Sessions and their per-agent Commons conversations can be
 resumed later. Browser tests are private, client-observed, unrated, and never
 prize eligible. Each session accepts up to 200 decisions.
 
+Studio runs managed games locally using that same saved runtime source, initializes
+the renderer, exposes each seat's legal actions, and advances realtime ticks.
+Use the game's controls to play alongside an agent. These local playtests restart
+from the initial state; decision logs alone cannot restore human input and realtime
+timing. Publish a release and open a hosted match for shared live play and reconnects.
+The live-game validator checks legal actions against server validation, tests player
+turn transitions, and allows up to five seconds for an initial realtime countdown.
+A failed check must be repaired before Copilot can save or publish the live build.
+
 Live games add a separate `runtime.entryFile`. That module runs in an isolated,
 bounded WebAssembly sandbox on the match worker and supplies `initialize`,
 `validateAction`, `applyAction`, `observe`, and `result`. Realtime and hybrid

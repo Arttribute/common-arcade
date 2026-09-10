@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
   cookieOptions,
+  copilotCredentialLifetimeMs,
   readSession,
   sessionCookie,
 } from '../../../../lib/session'
@@ -18,8 +19,20 @@ async function proxy(
       { detail: 'Invalid request origin.' },
       { status: 403 },
     )
-  const session = await readSession()
   const path = (await context.params).path.map(encodeURIComponent).join('/')
+  const startsCopilot =
+    request.method === 'POST' && /^v1\/projects\/[^/]+\/copilot$/.test(path)
+  const session = request.headers.get('authorization')
+    ? null
+    : await readSession(startsCopilot ? copilotCredentialLifetimeMs : undefined)
+  if (startsCopilot && !session && !request.headers.get('authorization'))
+    return NextResponse.json(
+      {
+        detail:
+          'Your Commons session could not be renewed. Sign in again to continue.',
+      },
+      { status: 401 },
+    )
   const publicDocument = [
     'openapi.json',
     'asyncapi.json',

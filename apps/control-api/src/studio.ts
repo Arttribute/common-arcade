@@ -1,3 +1,4 @@
+import { smokeTestRuntime } from './runtime-validation.js'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import {
@@ -95,7 +96,7 @@ type RunRecord = StoredDocument & {
   createdAt: string
 }
 const COPILOT_INSTRUCTIONS =
-  'You are a Common Arcade copilot. Use the assigned build-common-arcade-games skill and the supplied Arcade tools. The Arcade tools are the complete creation path; Agent Computer is not required and its availability is never a blocker. Read the current project before editing. Build the game the creator actually requested—never substitute a grid, line-building, or tic-tac-toe game unless they explicitly asked for one. If older skill text says live-managed games are grid-only, that statement is obsolete and this contract supersedes it. arcade_write_live_game accepts any genre through a custom web presentation plus a sandboxed authoritative server module, including realtime action, racing, sports, strategy, cards, simulations, teams, and 2D/3D games. For a managed live game, browser files are presentation only: assign window.arcade with render(authoritativeState, context), and have human controls call window.arcade.submit(action). Do not define submit yourself; Arcade installs it. Do not duplicate authoritative seats, observations, legal actions, or state transitions in the browser. The separate server module owns those concerns and assigns globalThis.arcadeGame with pure synchronous initialize(context), validateAction(state, action, context), applyAction(state, action, context), observe(state, seatId, context), result(state), and—for realtime/hybrid games—tick(state, context). Every state, action, observation, event, and result must be JSON-serializable. Server functions receive only their arguments; use context.elapsedMs, context.deltaMs, and the initialization seed, never Date, network, filesystem, process, or Math.random. Each transition returns {state,events}; each event has a dotted type, visibility, and payload. result returns null until terminal. Realtime observations should include actionable derived timing such as time-to-impact. Only preview-only browser games need the local seats(), observe(), actions(), and step() bridge. Use arcade_write_preview_game only when the creator explicitly asks for a local non-live prototype. Declare persistent worlds, teams, 3D presentation, and future payment hooks when relevant. Blender assets must be exported to glTF/GLB. After every write, run arcade_test_game and repair failures. Use arcade_publish_game only when asked to publish or make live. Report only actions confirmed by tools.'
+  'You are a Common Arcade copilot. Use the assigned build-common-arcade-games skill and the supplied Arcade tools. The Arcade tools are the complete creation path; Agent Computer is not required and its availability is never a blocker. Read the current project before editing. Build the game the creator actually requested—never substitute a grid, line-building, or tic-tac-toe game unless they explicitly asked for one. If older skill text says live-managed games are grid-only, that statement is obsolete and this contract supersedes it. arcade_write_live_game accepts any genre through a custom web presentation plus a sandboxed authoritative server module, including realtime action, racing, sports, strategy, cards, simulations, teams, and 2D/3D games. For a managed live game, browser files are presentation only: assign window.arcade with render(authoritativeState, context), and have human controls call window.arcade.submit(action). Do not define submit yourself; Arcade installs it. Do not duplicate authoritative seats, observations, legal actions, or state transitions in the browser. The separate server module owns those concerns and assigns globalThis.arcadeGame with pure synchronous initialize(context), validateAction(state, action, context), applyAction(state, action, context), observe(state, seatId, context), result(state), and—for realtime/hybrid games—tick(state, context). Every state, action, observation, event, and result must be JSON-serializable. Server functions receive only their arguments; use context.elapsedMs, context.deltaMs, and the initialization seed, never Date, network, filesystem, process, or Math.random. Each transition returns {state,events}; each event has a dotted type, visibility, and payload. result returns null until terminal. Realtime observations should include actionable derived timing such as time-to-impact. observe must return {visibleState, legalActions}, with concrete JSON actions accepted by validateAction for that seat. Use context.roster seat IDs; never hardcode home/away as seat IDs. Ensure every realtime player gets actionable controls after any countdown and ongoing games cannot deadlock with no legal actions. Render players, objectives, goals and the ball from the supplied visible state on the first render. Studio previews run the saved server rules locally; hosted sessions use the authoritative match worker. Only preview-only browser games need the local seats(), observe(), actions(), and step() bridge. Use arcade_write_preview_game only when the creator explicitly asks for a local non-live prototype. Declare persistent worlds, teams, 3D presentation, and future payment hooks when relevant. Blender assets must be exported to glTF/GLB. After every write, run arcade_test_game and repair failures. Use arcade_publish_game only when asked to publish or make live. Report only actions confirmed by tools.'
 const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_read_project',
@@ -1917,13 +1918,15 @@ export async function commonsRequest(
   }
   if (!response.ok)
     throw new CommonsServiceError(
-      response.status === 402
-        ? 402
-        : response.status === 403
-          ? 403
-          : response.status === 429
-            ? 429
-            : 502,
+      response.status === 401
+        ? 401
+        : response.status === 402
+          ? 402
+          : response.status === 403
+            ? 403
+            : response.status === 429
+              ? 429
+              : 502,
       response.status === 402
         ? 'Your Commons account needs credits to run agents. Manage credits in Agent Commons, then retry.'
         : `Commons agent service: ${result.message ?? result.error?.message ?? response.status}`,
@@ -1967,7 +1970,7 @@ async function commonsRequestMethod(
   }
   if (!response.ok)
     throw new CommonsServiceError(
-      response.status === 403 ? 403 : 502,
+      response.status === 401 ? 401 : response.status === 403 ? 403 : 502,
       `Commons agent service: ${result.message ?? result.error?.message ?? response.status}`,
     )
   return result.data ?? result
@@ -2028,13 +2031,15 @@ async function* commonsAgentStream(
       // Preserve the readable proxy response above.
     }
     throw new CommonsServiceError(
-      response.status === 402
-        ? 402
-        : response.status === 403
-          ? 403
-          : response.status === 429
-            ? 429
-            : 502,
+      response.status === 401
+        ? 401
+        : response.status === 402
+          ? 402
+          : response.status === 403
+            ? 403
+            : response.status === 429
+              ? 429
+              : 502,
       `Commons agent service: ${message || response.status}`,
     )
   }
@@ -2175,68 +2180,9 @@ function assertAgentPlayable(
     )
 }
 
-async function smokeTestRuntime(
-  document: StudioProject['document'],
-  digest: string,
-) {
-  const game = await compileGame(document, 'rel_validation', digest)
-  const seatCount = isBrowserGame(document)
-    ? (document.play?.seats.default ?? 2)
-    : 2
-  const roster = Array.from({ length: seatCount }, (_, index) => ({
-    seatId: `sea_validation_${index + 1}`,
-    role: 'player',
-  }))
-  let state = game.initialize({
-    matchId: 'mat_runtime_validation',
-    seed: 'arcade-validation-seed',
-    configuration: {},
-    roster,
-  })
-  game.serializeState(state)
-  game.getResult(state)
-  let stateSequence = 0
-  for (const seat of roster) {
-    const context = {
-      matchId: 'mat_runtime_validation',
-      seatId: seat.seatId,
-      stateSequence,
-      eventSequence: 0,
-      authoritativeTime: '2026-01-01T00:00:00.000Z',
-      elapsedMs: 0,
-    }
-    const observation = game.projectObservation(state, seat.seatId, context)
-    const candidate = observation.legalActions[0]
-    if (candidate === undefined) continue
-    const action = game.parseAction(candidate)
-    if (game.validateAction(state, action, context) !== undefined) continue
-    const applied = game.applyAction(state, action, context)
-    state = applied.state
-    stateSequence += 1
-    game.serializeState(state)
-    game.getResult(state)
-    break
-  }
-  if (game.advanceTick) {
-    const tickRate = isManagedBrowserGame(document)
-      ? document.runtime.tickRate
-      : 30
-    state = game.advanceTick(state, {
-      matchId: 'mat_runtime_validation',
-      tick: 1,
-      stateSequence,
-      eventSequence: 0,
-      elapsedMs: 0,
-      deltaMs: Math.max(1, Math.round(1000 / tickRate)),
-    }).state
-    game.serializeState(state)
-    game.getResult(state)
-  }
-}
-
 export class CommonsServiceError extends Error {
   constructor(
-    public status: 402 | 403 | 429 | 502,
+    public status: 401 | 402 | 403 | 429 | 502,
     message: string,
   ) {
     super(message)
