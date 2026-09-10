@@ -2646,6 +2646,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 its animation clocks run. The sibling shield blocks unlogged
                 pointer input without enabling the frame's freeze mode. */}
             <CompiledArtifactFrame
+              key={previewKey}
               ref={compiledRef}
               onRecording={(recording) =>
                 void saveInteractionRecording(recording)

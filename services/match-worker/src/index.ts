@@ -1178,15 +1178,20 @@ export class LocalArcadePlatform {
       if (previous) this.sessions.delete(previous.sessionId)
       this.coachingRequests.delete(key)
       if (!this.agentTimers.has(matchId)) {
+        let pending = false
         const timer = setInterval(() => {
-          void this.exclusive(matchId, () =>
-            this.runAgentPolicies(matchId),
-          ).catch(() => {
-            // A failure stops agent control, never the simulation clock.
-            const active = this.agentTimers.get(matchId)
-            if (active) clearInterval(active)
-            this.agentTimers.delete(matchId)
-          })
+          if (pending) return
+          pending = true
+          void this.exclusive(matchId, () => this.runAgentPolicies(matchId))
+            .catch(() => {
+              // A failure stops agent control, never the simulation clock.
+              const active = this.agentTimers.get(matchId)
+              if (active) clearInterval(active)
+              this.agentTimers.delete(matchId)
+            })
+            .finally(() => {
+              pending = false
+            })
         }, 16)
         timer.unref()
         this.agentTimers.set(matchId, timer)
@@ -1722,16 +1727,30 @@ export class LocalArcadePlatform {
     const networkHz = Math.min(hz, record.manifest.spec.clock.networkHz ?? hz)
     const broadcastEvery = Math.max(1, Math.round(hz / networkHz))
     let ticks = 0
+    let lastTickAt = this.now().getTime()
+    let lastPersistAt = lastTickAt
     let pending = false
     const timer = setInterval(() => {
       if (pending) return
       pending = true
       void this.exclusive(record.runtime.matchId, async () => {
-        if (!(await record.runtime.advanceTick(deltaMs))) {
-          this.stopClock(record.runtime.matchId)
-          return
+        // Catch up a bounded number of fixed simulation steps after slow I/O.
+        // Replays retain every original delta; observers receive one final frame.
+        const now = this.now().getTime()
+        lastTickAt = Math.max(lastTickAt, now - 1000)
+        const due = Math.min(
+          4,
+          Math.max(1, Math.floor((now - lastTickAt) / deltaMs)),
+        )
+        for (let step = 0; step < due; step++) {
+          if (!(await record.runtime.advanceTick(deltaMs))) {
+            this.stopClock(record.runtime.matchId)
+            break
+          }
+          ticks += 1
+          lastTickAt += deltaMs
+          if (record.runtime.getStatus() !== 'running') break
         }
-        ticks += 1
         record.updatedAt = this.now().toISOString()
         if (record.runtime.getStatus() === 'completed') {
           this.stopClock(record.runtime.matchId)
@@ -1742,7 +1761,10 @@ export class LocalArcadePlatform {
           )
             await this.advanceRound(record)
           await this.persist(record)
-        } else if (ticks % hz === 0) await this.persist(record)
+        } else if (now - lastPersistAt >= 1000) {
+          await this.persist(record)
+          lastPersistAt = now
+        }
         if (
           record.runtime.getStatus() === 'completed' ||
           ticks % broadcastEvery === 0
