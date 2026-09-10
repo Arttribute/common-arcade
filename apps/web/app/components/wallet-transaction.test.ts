@@ -86,6 +86,35 @@ describe('human wallet transaction lifecycle', () => {
     await expect(s.submit()).rejects.toThrow('chain mismatch')
     expect(s.sendTransaction).not.toHaveBeenCalled()
   })
+  it('does not report a wallet cancellation as a successful payment', async () => {
+    const s = setup(),
+      replacementHash = `0x${'b'.repeat(64)}` as Hex
+    s.waitForTransactionReceipt.mockImplementation(async ({ onReplaced }) => {
+      onReplaced({
+        reason: 'cancelled',
+        transactionReceipt: { transactionHash: replacementHash },
+      })
+      return { status: 'success' }
+    })
+    await expect(s.submit()).rejects.toThrow('cancelled or replaced')
+    expect(s.update.mock.calls.at(-1)?.[0]).toBeUndefined()
+    expect(s.update.mock.calls.at(-1)?.[1]).toContain('cancelled or replaced')
+    expect(s.sendTransaction).toHaveBeenCalledOnce()
+  })
+  it('tracks the actual confirmed hash when a user speeds up a transaction', async () => {
+    const s = setup(),
+      replacementHash = `0x${'c'.repeat(64)}` as Hex
+    s.waitForTransactionReceipt.mockImplementation(async ({ onReplaced }) => {
+      onReplaced({
+        reason: 'repriced',
+        transactionReceipt: { transactionHash: replacementHash },
+      })
+      return { status: 'success' }
+    })
+    expect(await s.submit()).toBe(replacementHash)
+    expect(s.update.mock.calls[1]?.[0]).toMatchObject({ hash: replacementHash })
+    expect(s.update.mock.calls.at(-1)?.[1]).toBe('USDC allowance confirmed.')
+  })
   it('reads only well-formed pending hashes from storage', () => {
     expect(readPendingTransaction('null')).toBeUndefined()
     expect(readPendingTransaction('oops')).toBeUndefined()

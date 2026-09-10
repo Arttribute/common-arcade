@@ -28,6 +28,14 @@ export interface ArcadeChainAdapter {
   deployment: EscrowDeployment
   submit(call: ContractCall): Promise<Hex>
 }
+export class TransactionReplacedError extends Error {
+  constructor(readonly replacementHash: Hex) {
+    super(
+      `Transaction was cancelled or replaced in your wallet: ${replacementHash}`,
+    )
+    this.name = 'TransactionReplacedError'
+  }
+}
 export function hashArcadeId(id: string): Hex {
   return keccak256(toBytes(id))
 }
@@ -187,14 +195,22 @@ export function createViemAdapter(
         value: 0n,
       })
       observer?.submitted(hash)
+      let confirmedHash = hash
+      let replacementError: TransactionReplacedError | undefined
       const receipt = await reader.waitForTransactionReceipt({
         hash,
         confirmations: deployment.confirmations ?? 2,
+        onReplaced: ({ reason, transactionReceipt }) => {
+          confirmedHash = transactionReceipt.transactionHash
+          if (reason === 'repriced') observer?.submitted(confirmedHash)
+          else replacementError = new TransactionReplacedError(confirmedHash)
+        },
       })
+      if (replacementError) throw replacementError
       if (receipt.status !== 'success')
-        throw new Error(`Transaction reverted: ${hash}`)
-      observer?.confirmed(hash)
-      return hash
+        throw new Error(`Transaction reverted: ${confirmedHash}`)
+      observer?.confirmed(confirmedHash)
+      return confirmedHash
     },
   }
 }

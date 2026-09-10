@@ -1,5 +1,6 @@
 import {
   createViemAdapter,
+  TransactionReplacedError,
   type ContractCall,
   type EscrowDeployment,
 } from '@common-arcade/economy'
@@ -73,6 +74,13 @@ export async function submitConfirmedCall({
     return await adapter.submit(call)
   } catch (error) {
     if (submitted) {
+      if (error instanceof TransactionReplacedError) {
+        update(
+          undefined,
+          'The transaction was cancelled or replaced in your wallet. Review the replacement before starting another payment.',
+        )
+        throw error
+      }
       if (
         error instanceof Error &&
         error.message === `Transaction reverted: ${submitted.hash}`

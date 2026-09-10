@@ -100,16 +100,27 @@ export function useWalletTransaction() {
       transport: http(),
     })
     try {
+      let replaced = false
       const receipt = await reader.waitForTransactionReceipt({
         hash: pending.hash,
         confirmations: 2,
         timeout: 10000,
+        onReplaced: ({ reason, transactionReceipt }) => {
+          if (reason !== 'repriced') replaced = true
+          else
+            update(
+              { ...pending, hash: transactionReceipt.transactionHash },
+              'Transaction sped up. Checking confirmation…',
+            )
+        },
       })
       update(
         undefined,
-        receipt.status === 'success'
-          ? `${pending.label} confirmed. Refresh the table or balance to see the result.`
-          : `${pending.label} reverted. Network fees may apply.`,
+        replaced
+          ? 'The transaction was cancelled or replaced in your wallet. Review its activity before making another payment.'
+          : receipt.status === 'success'
+            ? `${pending.label} confirmed. Refresh the table or balance to see the result.`
+            : `${pending.label} reverted. Network fees may apply.`,
       )
     } catch {
       setStatus(

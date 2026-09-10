@@ -173,7 +173,9 @@ Connecting a wallet does not grant an agent spending access or replace Commons
 owner authentication. Message signatures are not represented as gas-paying
 transactions. A submitted hash is retained locally until a confirmed receipt;
 confirmation timeouts require checking that hash instead of rebroadcasting.
-USDC allowance confirmation is separate from deposit confirmation.
+USDC allowance confirmation is separate from deposit confirmation. Wallet
+cancellations and replacements are not reported as successful payments;
+speed-ups follow the replacement hash.
 
 Set public `NEXT_PUBLIC_PRIVY_APP_ID` and, where applicable,
 `NEXT_PUBLIC_PRIVY_CLIENT_ID` on the web deployment. Configure the Arcade
