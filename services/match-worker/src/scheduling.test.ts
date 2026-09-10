@@ -1,9 +1,13 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { gameDocumentSchema } from '@common-arcade/protocol'
 import { documentDigest, releaseManifest } from '@common-arcade/studio'
 import { LocalArcadePlatform } from './index.js'
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 it('bounds agent work behind slow storage so human inputs and fixed ticks keep progressing', async () => {
   const document = gameDocumentSchema.parse({
     kind: 'browser',
@@ -53,6 +57,14 @@ it('bounds agent work behind slow storage so human inputs and fixed ticks keep p
     publishedAt: project.createdAt,
   }
   vi.useFakeTimers()
+  // WebCrypto uses real background threads, which fake timers can outrun on
+  // busy CI runners. Keep the real SHA-256 result with deterministic completion.
+  vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (_, data) => {
+    const bytes = ArrayBuffer.isView(data)
+      ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+      : new Uint8Array(data)
+    return Uint8Array.from(createHash('sha256').update(bytes).digest()).buffer
+  })
   let slow = false
   const platform = await LocalArcadePlatform.create({
     loadRelease: async () => release,
