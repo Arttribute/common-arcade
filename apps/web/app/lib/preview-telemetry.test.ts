@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { arcade } from '../../lib/api'
 import { createPreviewTelemetryOutbox } from './use-preview-agents'
 
 describe('preview diagnostics outbox', () => {
@@ -45,4 +46,35 @@ describe('preview diagnostics outbox', () => {
     expect(sent[1]).toEqual(sent[0])
     expect(outbox.pending).toBe(1)
   })
+})
+
+it('skips a permanently rejected batch while continuing to save later diagnostics', async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: 'Invalid sample timing' }), {
+        status: 422,
+      }),
+    )
+    .mockResolvedValue(new Response('{}', { status: 200 }))
+  vi.stubGlobal('fetch', fetch)
+  try {
+    const warn = vi.fn()
+    const outbox = createPreviewTelemetryOutbox(
+      (run, id, body) => arcade(`runs/${run}/${id}`, body),
+      warn,
+    )
+    outbox.add('run', 'first', { step: 0 })
+    outbox.add('run', 'second', { step: 10 })
+    await outbox.flush()
+    expect(outbox.pending).toBe(1)
+    await outbox.flush()
+    expect(outbox.pending).toBe(0)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('rejected and skipped'),
+    )
+  } finally {
+    vi.unstubAllGlobals()
+  }
 })

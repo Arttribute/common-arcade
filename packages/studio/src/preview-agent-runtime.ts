@@ -206,7 +206,7 @@ export function createPreviewAgentRuntime(env: Environment) {
       stop('Five-minute playtest budget reached')
       return
     }
-    const frameDeltaMs = lastFrame ? now - lastFrame : 0
+    const frameDeltaMs = lastFrame ? Math.max(0, now - lastFrame) : 0
     lastFrame = now
     try {
       // One consistent observation snapshot for all seats on this frame.
@@ -315,7 +315,7 @@ export function createPreviewAgentRuntime(env: Environment) {
               observationAgeMs: env.now() - capturedAt,
               frameDeltaMs,
               actionGapMs: gapMs,
-              elapsedMs: now - started,
+              elapsedMs: Math.max(0, now - started),
               applications: seat.applications,
             },
             performance: {
