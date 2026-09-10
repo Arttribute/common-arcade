@@ -133,8 +133,56 @@ addresses are not accepted. Completed replays bind the game release and pool.
 
 ## Public testnet deployment
 
-Safe addresses are requested only after implementation and review are ready for
-launch, as instructed. Nothing in this branch deploys a contract automatically.
+The current temporary testnet administrator, treasury and resolver is
+`0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab`, explicitly selected by the owner.
+The EOA override applies only to Base Sepolia (84532), Arc Testnet (5042002),
+and Hedera Testnet (296). Mainnet remains rejected. The Safe path below remains
+the default when `ARCADE_TESTNET_ADMIN` is unset.
+
+### Temporary EOA deployment
+
+Build contracts with `pnpm --filter @common-arcade/contracts build` and payment
+dependencies with `pnpm --filter @common-arcade/payment-service... build`.
+Inject `ARCADE_DEPLOYER_KEY` into the process from secret storage (0x-prefixed),
+and set the public `ARCADE_TESTNET_ADMIN` address above. From the repository root:
+
+```sh
+pnpm --filter @common-arcade/payment-service deploy:testnet base-sepolia
+pnpm --filter @common-arcade/payment-service deploy:testnet base-sepolia --broadcast
+pnpm --filter @common-arcade/payment-service smoke:testnet base-sepolia --broadcast
+pnpm --filter @common-arcade/payment-service smoke:x402-testnet base-sepolia --broadcast
+```
+
+Use `arc-testnet` or `hedera-testnet` for the other designated networks. The first
+command checks the RPC chain, gas balance and canonical token without sending a
+transaction. Broadcasting checks the signer, deploys escrow, authorizes canonical
+USDC and the resolver, and associates escrow with USDC on Hedera. Fund the
+administrator with native gas first; Hedera recipients also require account
+activation and USDC association. Public network/token references:
+[Arc contracts](https://docs.arc.io/arc/references/contract-addresses) and
+[Circle Hedera USDC](https://www.circle.com/multi-chain-usdc/hedera).
+
+The x402 smoke command supports Arc and Base, using the real in-process service
+and EVM facilitator handlers with canonical public-chain USDC. Hedera x402 requires
+an activated numeric account ID and Blocky402, and is verified separately.
+See [current deployment evidence and outstanding work](testnet-status.md).
+
+Deployment receipts are saved under `packages/contracts/deployments/`, including
+pending transaction hashes before receipt waits. Rerunning deployment reconciles
+those hashes; do not remove a record to retry an uncertain transaction. The smoke
+check uses 0.06 test USDC, exercises stakes, bounties, spectator pools, settlement,
+withdrawal and refunds, and records every transaction. It returns token principal
+to the same test wallet and consumes native gas. On Arc, gas also consumes USDC.
+Separate-recipient fee/royalty accounting is exercised by the local tests. Do not
+rerun a failed smoke check without inspecting its recorded transactions.
+
+`packages/contracts/deployments/testnet-preview.json` is the public deployment map
+for `ARCADE_ESCROW_DEPLOYMENTS`; only verified deployed networks belong in it.
+The map uses `treasury`; the legacy `safe` field is still accepted. Inject each
+configured chain's `ARCADE_RESOLVER_KEY_<chainId>` separately into the service.
+Contract deployment does not deploy the payment worker or rebuild the web app.
+
+### Safe deployment
 
 For each selected testnet, confirm a deployed Safe with at least two owners and
 threshold at least two. Supply funded deployer/resolver accounts via an encrypted
@@ -144,7 +192,7 @@ keystore and secret injection. Run from `packages/contracts`:
 forge script script/Deploy.s.sol:Deploy --rpc-url base-sepolia --account arcade-testnet --broadcast
 ```
 
-Set `ARCADE_SAFE_ADDRESS` to the confirmed Safe for that network. The deploy script
+Set `ARCADE_SAFE_ADDRESS` to the confirmed Safe for that network. The default deploy script path
 refuses production chains and an EOA administrator. Save the contract address,
 chain ID, compiler settings and deployment transaction in a reviewed deployment
 record. Use `safeGovernanceBatch` from `@common-arcade/economy` to export Safe
@@ -200,7 +248,7 @@ See [verified network sources and bounty requirements](integration-plan.md).
 
 Set `NEXT_PUBLIC_ARCADE_PAYMENTS_URL` before building the web app and
 `AGENT_COMMONS_API_URL` for its wallet proxy. Do not enable a rail until its
-contract, Safe, canonical token, resolver, faucet funding and facilitator checks
+contract, administrator, canonical token, resolver, faucet funding and facilitator checks
 pass. Contracts/accounting tests do not prove a public chain integration.
 
 ## Operational limits and remaining launch evidence
@@ -209,7 +257,7 @@ This is a testnet trusted-dealer/resolver preview. A commitment proves the deale
 kept its chosen shoe; it does not prove unbiased randomness or prevent the dealer
 knowing hidden cards. Abandoned-game timeout refunds favor recoverability and can
 be abused by a losing player. Public competitive money requires a reviewed
-randomness and inactivity/dispute policy. Contract ownership is a Safe; agent
+randomness and inactivity/dispute policy. Contract ownership is the explicitly selected temporary EOA for this testnet preview; agent
 wallets remain existing encrypted EOAs, not Safe session-key wallets.
 
 Uncertain transaction attempts deliberately consume budget until reviewed. Check
