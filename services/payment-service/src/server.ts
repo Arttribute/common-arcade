@@ -5,6 +5,7 @@ import {
   createPublicClient,
   createWalletClient,
   http,
+  isAddress,
   type Hex,
   type Address,
 } from 'viem'
@@ -22,12 +23,18 @@ const rails: PaidServiceRail[] = JSON.parse(
   process.env.ARCADE_X402_RAILS ?? '[]',
 )
 const deployments: Partial<
-  Record<PaymentNetwork, { contract: Address; safe: Address; rpcUrl?: string }>
+  Record<
+    PaymentNetwork,
+    { contract: Address; treasury?: Address; safe?: Address; rpcUrl?: string }
+  >
 > = JSON.parse(process.env.ARCADE_ESCROW_DEPLOYMENTS ?? '{}')
 const adapters: Record<string, MatchSettlementAdapter> = {}
 for (const [id, deployment] of Object.entries(deployments)) {
   const network = NETWORKS[id as PaymentNetwork]
   if (!network?.testnet) throw new Error('Escrow service is testnet only')
+  const treasury = deployment.treasury ?? deployment.safe
+  if (!treasury || !isAddress(treasury) || /^0x0{40}$/i.test(treasury))
+    throw new Error(`Missing or invalid treasury for ${id}`)
   const key = process.env[`ARCADE_RESOLVER_KEY_${network.chain.id}`] as
     Hex | undefined
   if (!key) throw new Error(`Missing resolver key for ${id}`)
@@ -48,7 +55,7 @@ for (const [id, deployment] of Object.entries(deployments)) {
     },
     reader,
     wallet,
-    deployment.safe,
+    treasury,
   )
 }
 const host = new MatchHost(

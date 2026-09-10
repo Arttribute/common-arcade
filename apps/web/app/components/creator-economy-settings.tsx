@@ -1,5 +1,8 @@
 'use client'
-import type { GameMonetization } from '@common-arcade/protocol'
+import {
+  gameMonetizationSchema,
+  type GameMonetization,
+} from '@common-arcade/protocol'
 export function CreatorEconomySettings({
   value,
   onChange,
@@ -10,6 +13,7 @@ export function CreatorEconomySettings({
   disabled?: boolean
 }) {
   const policy = value ?? { mode: 'free' }
+  const validation = gameMonetizationSchema.safeParse(policy)
   return (
     <fieldset disabled={disabled} className="studio-section economy-settings">
       <legend>Game earnings</legend>
@@ -40,6 +44,12 @@ export function CreatorEconomySettings({
       </p>
       {policy.mode === 'revenue-share' && (
         <>
+          {!validation.success && (
+            <p className="studio-help" role="status">
+              Add a complete, nonzero payout address for at least one network
+              before saving or publishing paid matches.
+            </p>
+          )}
           <label>
             Earning mode
             <select

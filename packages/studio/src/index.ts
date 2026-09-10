@@ -63,7 +63,21 @@ export interface LiveReadinessReport {
 export function assessLiveReadiness(
   document: GameDocument,
 ): LiveReadinessReport {
-  const parsed = gameDocumentSchema.parse(document)
+  // Editor drafts can be temporarily incomplete (for example while typing a
+  // payout address). Report blockers without throwing through React render.
+  // Save, compilation and publication still validate the complete document.
+  const result = gameDocumentSchema.safeParse(document)
+  if (!result.success)
+    return {
+      liveReady: false,
+      classification: 'preview-only',
+      runtimeModule: 'browser-presentation',
+      checks: [],
+      blockers: result.error.issues.map(
+        (issue) => `${issue.path.join('.') || 'Document'}: ${issue.message}`,
+      ),
+    }
+  const parsed = result.data
   if (isManagedBrowserGame(parsed))
     return {
       liveReady: true,

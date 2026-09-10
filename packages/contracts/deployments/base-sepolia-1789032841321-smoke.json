@@ -1,0 +1,120 @@
+{
+  "network": "base-sepolia",
+  "chainId": 84532,
+  "contract": "0x45699ed8ccda0d7b29008e7af90e287a79de08de",
+  "administrator": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+  "runId": "base-sepolia-1789032841321",
+  "transactions": [
+    {
+      "operation": "approve",
+      "hash": "0xd2288d52c7ea94c41fb0e487d4368a60f74b9642117cda7f63651c8a52d92ef6",
+      "blockNumber": "46632278",
+      "status": "success"
+    },
+    {
+      "operation": "createMatch",
+      "hash": "0xe731185c7e1e90ffacf9521fd3cb1b912633aa5dc7f0602e2471c5ca48f08c68",
+      "blockNumber": "46632281",
+      "status": "success"
+    },
+    {
+      "operation": "stake",
+      "hash": "0x599cbb7a3e28906ff6ed6a2089c8d876302a94a2b912046e8a70c981fae50854",
+      "blockNumber": "46632284",
+      "status": "success"
+    },
+    {
+      "operation": "stake",
+      "hash": "0x42a692a3e002542d90a37b2c45bdcf4e6adc9942b89de306376bb138ce2237b1",
+      "blockNumber": "46632287",
+      "status": "success"
+    },
+    {
+      "operation": "fundBounty",
+      "hash": "0x6888ffce4e0ffc04cba7b43aa89f7d3e27b871b24eedcc2556217d833a05b0f4",
+      "blockNumber": "46632290",
+      "status": "success"
+    },
+    {
+      "operation": "placeBet",
+      "hash": "0x3790e4496f8c24ca79ad3ed37d8008f7ed0aab224589f285727e430c445a3c91",
+      "blockNumber": "46632293",
+      "status": "success"
+    },
+    {
+      "operation": "placeBet",
+      "hash": "0xf92aaa2c22a2aeccc25afaca8707b3a1cdfacf49e45ae36e496956b77a8926dc",
+      "blockNumber": "46632296",
+      "status": "success"
+    },
+    {
+      "operation": "lock",
+      "hash": "0x09cd80fdea35f2d3e24bce5c0842d7e853df9a11a348881429b99daccdc14e89",
+      "blockNumber": "46632299",
+      "status": "success"
+    },
+    {
+      "operation": "settle",
+      "hash": "0x3087233d7e9110c8795b60c542b07b1caaf70c77c88be0468017580957930f20",
+      "blockNumber": "46632302",
+      "status": "success"
+    },
+    {
+      "operation": "claimBet",
+      "hash": "0x07ae454302746991239f7ddcd22cd8dd975a2b16b8df2584037803dfc136d8ca",
+      "blockNumber": "46632305",
+      "status": "success"
+    },
+    {
+      "operation": "withdraw",
+      "hash": "0xcc11685188871074d0ed61850e124ab1a41ea9f9072fe06c1d06c3f344ef4b9e",
+      "blockNumber": "46632308",
+      "status": "success"
+    },
+    {
+      "operation": "createMatch",
+      "hash": "0x05a13daaa44c639e32af2748e3613511fd36b36a6e120175fa9339c75dd6465c",
+      "blockNumber": "46632311",
+      "status": "success"
+    },
+    {
+      "operation": "fundBounty",
+      "hash": "0x216d8b69bb11ff1d8cb28e1cdd07168b76be965f690f6f35067a5558bd64619f",
+      "blockNumber": "46632314",
+      "status": "success"
+    },
+    {
+      "operation": "voidMatch",
+      "hash": "0x3c42e3482ec2807e0c597ea7136354a82e22f03b8970231ba71c72022ac1a986",
+      "blockNumber": "46632317",
+      "status": "success"
+    },
+    {
+      "operation": "claimRefund",
+      "hash": "0x4e696eb07a61de61507988cd4d3b4b16f240e85f078a7e182d97aeaa3ad5a98a",
+      "blockNumber": "46632320",
+      "status": "success"
+    },
+    {
+      "operation": "approve",
+      "hash": "0x04b61a156124fcbf2a8f01bcd10d2909db6a1c799257a653b672f5fbdc389001",
+      "blockNumber": "46632323",
+      "status": "success"
+    }
+  ],
+  "verified": true,
+  "verifiedAt": "2026-09-10T09:35:36.666Z",
+  "checks": [
+    "canonical USDC approval",
+    "two player stakes",
+    "sponsor bounty",
+    "winning and losing spectator deposits",
+    "lock",
+    "settlement and fee accounting",
+    "spectator claim",
+    "withdrawal",
+    "sponsored pool cancellation and refund",
+    "escrow balance conservation",
+    "allowance cleared"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "network": "base-sepolia",
+  "chainId": 84532,
+  "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+  "payer": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+  "payTo": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+  "amount": "480",
+  "transaction": "0xcf3f43d7261b3e3a26a270172ea1f076d4bc52fd8ba96493cf04a461f803b322",
+  "blockNumber": "46632404",
+  "verifiedAt": "2026-09-10T09:38:19.617Z",
+  "checks": [
+    "unpaid response 402",
+    "official x402 client authorization",
+    "canonical USDC EIP-3009 transfer",
+    "analysis delivered after settlement",
+    "replay rejected"
+  ],
+  "transport": "in-process real payment-service and EVM facilitator handlers; public testnet RPC"
+}
