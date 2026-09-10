@@ -11,6 +11,7 @@ import {
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { arcade, browserControlClient } from '../../lib/api'
+import { LivePaymentPanel } from './live-payment-panel'
 
 export function MatchLauncher({
   releaseId,
@@ -373,6 +374,7 @@ export function MatchLauncher({
           </a>
         </div>
       )}
+      <LivePaymentPanel releaseId={releaseId} />
       {error ? <p className="error-text">{error}</p> : null}
     </div>
   )

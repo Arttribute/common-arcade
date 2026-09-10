@@ -76,9 +76,15 @@ const format = (value: string) => {
 export function AgentWalletPanel({
   table,
   onWalletSelected,
+  initialAgentId,
+  initialRuntimeId,
+  returnTo = '/agents',
 }: {
   table?: AgentTableContext
   onWalletSelected?: (address: string) => void
+  initialAgentId?: string
+  initialRuntimeId?: string
+  returnTo?: string
 }) {
   const [agentRunning, setAgentRunning] = useState(false),
     [agents, setAgents] = useState<Agent[]>([]),
@@ -95,7 +101,7 @@ export function AgentWalletPanel({
     [balance, setBalance] = useState(''),
     [network, setNetwork] = useState<PaymentNetwork>('base-sepolia'),
     [kind, setKind] = useState<'x402' | 'arcade'>('x402'),
-    [runtime, setRuntime] = useState(''),
+    [runtime, setRuntime] = useState(initialRuntimeId ?? ''),
     [origin, setOrigin] = useState(
       process.env.NEXT_PUBLIC_ARCADE_PAYMENTS_URL ?? '',
     ),
@@ -130,6 +136,29 @@ export function AgentWalletPanel({
   const attemptedTurn = useRef('')
   const wallet = wallets.find((w) => w.id === walletId),
     config = NETWORKS[network]
+  useEffect(() => {
+    if (
+      kind !== 'x402' ||
+      !initialRuntimeId ||
+      !origin ||
+      origin !== process.env.NEXT_PUBLIC_ARCADE_PAYMENTS_URL
+    )
+      return
+    const controller = new AbortController()
+    fetch(`${origin}/.well-known/x402`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return
+        return response.json()
+      })
+      .then((value) => {
+        const rail = value?.services?.find(
+          (entry: { network: string }) => entry.network === config.x402Network,
+        )
+        if (rail?.payTo && !controller.signal.aborted) setRecipient(rail.payTo)
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [kind, initialRuntimeId, origin, config.x402Network])
   async function refresh() {
     setGrants(await api<Grant[]>(`wallets/agent/${agentId}/payment-sessions`))
   }
@@ -157,7 +186,11 @@ export function AgentWalletPanel({
         if (cancelled) return
         const list = Array.isArray(result) ? result : result.data
         setAgents(list)
-        setAgentId(list[0]?.agentId ?? '')
+        setAgentId(
+          list.find((agent) => agent.agentId === initialAgentId)?.agentId ??
+            list[0]?.agentId ??
+            '',
+        )
       })
       .catch((e) => {
         if (!cancelled) setError(e.message)
@@ -165,7 +198,7 @@ export function AgentWalletPanel({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [initialAgentId])
   useEffect(() => {
     if (!agentId) return
     let cancelled = false
@@ -398,7 +431,10 @@ export function AgentWalletPanel({
         off until you create a grant.
       </p>
       {!signedIn ? (
-        <a className="primary" href="/api/auth/login?next=/agents">
+        <a
+          className="primary"
+          href={`/api/auth/login?next=${encodeURIComponent(returnTo)}`}
+        >
           Sign in with Agent Commons
         </a>
       ) : (
@@ -667,7 +703,7 @@ export function AgentWalletPanel({
           </div>
           {grant && !grant.policy.arcade && !grant.revoked_at && (
             <button disabled={busy} onClick={() => run(paidAnalysis)}>
-              Ask agent wallet to pay for analysis
+              Pay for test card analysis with x402
             </button>
           )}
           {table &&
@@ -705,7 +741,13 @@ export function AgentWalletPanel({
                   {a.settlement?.transaction && (
                     <>
                       <br />
-                      <code>{a.settlement.transaction}</code>
+                      <a
+                        href={`${config.explorer}/tx/${a.settlement.transaction}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        View transaction receipt
+                      </a>
                     </>
                   )}
                 </p>
