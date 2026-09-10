@@ -257,6 +257,10 @@ The opt-in `CommonArcade-<stage>-Payments` CDK stack deploys one Fargate worker,
 encrypted EFS match storage with backups, and a CloudFront HTTPS/WebSocket endpoint.
 Deployments stop the previous worker before starting its replacement. Do not
 increase desired count or deployment overlap while the file store is in use.
+The hosted workflow discovers the existing Arcade realtime VPC by its `Name`
+tag; payment tasks, storage and load balancer use their own security groups.
+This avoids consuming another regional VPC quota slot. Direct CDK users can
+set `paymentVpcName` to reuse a VPC, or omit it to create a separate VPC.
 
 Create the Secrets Manager secret `common-arcade/<stage>/payments` out of band with
 the fields `resolverKey`, `baseFacilitatorKey`, and `arcFacilitatorKey`. The resolver

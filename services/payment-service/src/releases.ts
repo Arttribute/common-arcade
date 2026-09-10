@@ -10,11 +10,11 @@ import { documentDigest, assessLiveReadiness } from '@common-arcade/studio'
 import { computeManifestDigest } from '@common-arcade/manifest'
 /** Trusted registry URL is deployment configuration; callers supply only a release ID. */
 export function releaseLoader(registry: string) {
-  const origin = new URL(registry).origin
+  const base = new URL(registry).href.replace(/\/$/, '')
   return async (id: string): Promise<StudioRelease> => {
     if (!/^rel_[A-Za-z0-9_-]{1,190}$/.test(id))
       throw new Error('Invalid release ID')
-    const response = await fetch(`${origin}/v1/studio/releases/${id}`, {
+    const response = await fetch(`${base}/v1/studio/releases/${id}`, {
       redirect: 'error',
       signal: AbortSignal.timeout(15000),
     })
