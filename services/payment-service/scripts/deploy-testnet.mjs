@@ -17,7 +17,9 @@ const network = NETWORKS[networkId]
 const broadcast = process.argv.includes('--broadcast')
 try {
   if (!network?.testnet)
-    throw new Error('Select base-sepolia, arc-testnet or hedera-testnet')
+    throw new Error(
+      'Select base-sepolia, arc-testnet, hedera-testnet or celo-sepolia',
+    )
   const admin = process.env.ARCADE_TESTNET_ADMIN
   if (!/^0x[0-9a-fA-F]{40}$/.test(admin ?? '') || /^0x0{40}$/.test(admin))
     throw new Error('Set a nonzero ARCADE_TESTNET_ADMIN')

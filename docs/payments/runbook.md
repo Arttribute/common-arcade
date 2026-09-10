@@ -263,10 +263,13 @@ This avoids consuming another regional VPC quota slot. Direct CDK users can
 set `paymentVpcName` to reuse a VPC, or omit it to create a separate VPC.
 
 Create the Secrets Manager secret `common-arcade/<stage>/payments` out of band with
-the fields `resolverKey`, `baseFacilitatorKey`, and `arcFacilitatorKey`. The resolver
+the fields `resolverKey`, `baseFacilitatorKey`, `arcFacilitatorKey`, and
+`celoFacilitatorKey` when Celo is deployed. The resolver
 must be authorized by every configured escrow. Give each facilitator a separate,
 funded testnet gas wallet so its nonce cannot race the resolver. Keys are injected
 into containers; never put them in CDK context or deployment outputs.
+Only networks present in the verified deployment map get facilitator containers.
+Celo Sepolia uses chain ID 11142220; Alfajores is not a supported deployment target.
 
 After CI passes and the change merges, dispatch **Deploy testnet payment service**
 on `main`, using the existing protected AWS environment. Run `operation=diff`,

@@ -2,14 +2,51 @@
 
 Temporary administrator, deployer, treasury and resolver:
 `0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab`.
-The supplied key was checked against this address and used only in process
-memory. No key is included in source or deployment records.
+The supplied key was checked against this address. The hosted worker receives
+it from AWS Secrets Manager; deployment tools load it into process memory.
+No key is included in source or deployment records.
 
-| Network              | Status                                                                                                                  |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Base Sepolia, 84532  | Escrow deployed; canonical USDC and resolver authorized; escrow and x402 public-chain checks passed.                    |
-| Arc Testnet, 5042002 | Escrow deployed; USDC and resolver authorized; full escrow and x402 public-chain checks passed.                         |
-| Hedera Testnet, 296  | Escrow deployed; USDC/resolver authorized; escrow and treasury associated with USDC. Payment checks await USDC funding. |
+| Network                | Status                                                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Base Sepolia, 84532    | Escrow deployed; canonical USDC and resolver authorized; escrow and x402 public-chain checks passed.                    |
+| Arc Testnet, 5042002   | Escrow deployed; USDC and resolver authorized; full escrow and x402 public-chain checks passed.                         |
+| Hedera Testnet, 296    | Escrow deployed; USDC/resolver authorized; escrow and treasury associated with USDC. Payment checks await USDC funding. |
+| Celo Sepolia, 11142220 | Escrow deployed; canonical USDC/resolver authorized; dedicated facilitator funded. Paid checks await USDC funding.      |
+
+## Public backend and frontend
+
+Payment endpoint: https://d2scptqzm55h6p.cloudfront.net.
+Frontend: https://arcade.agentcommons.io, with production
+`NEXT_PUBLIC_ARCADE_PAYMENTS_URL` configured to that endpoint.
+
+The protected AWS deployment completed with one healthy payment worker,
+private EVM facilitators, encrypted EFS state and automatic backups. Direct
+load-balancer application requests return 403; CloudFront HTTPS requests and
+WebSockets work. Browser CORS permits the production frontend.
+
+Public HTTPS checks passed on Base Sepolia and Arc: signed match creation,
+a 0.01 USDC sponsor deposit, two distinct player wallets, authoritative game
+settlement, withdrawal or draw refund, allowance cleanup, and live WebSocket
+snapshots. Paid analysis settled 480 atomic USDC units through each dedicated
+facilitator and rejected a replay. Public evidence:
+
+- [Base hosted match and x402](../../packages/contracts/deployments/base-sepolia-hosted.json)
+- [Arc hosted match and x402](../../packages/contracts/deployments/arc-testnet-hosted.json)
+
+Celo Sepolia replaces Alfajores, using chain ID 11142220 and
+`https://forno.celo-sepolia.celo-testnet.org`.
+[Celo network documentation](https://docs.celo.org/build-on-celo/network-overview)
+and [Circle's canonical USDC addresses](https://developers.circle.com/stablecoins/usdc-contract-addresses)
+were checked before deployment. Its USDC is
+`0x01C5C0122039549AD1493B8220cABEdD739BC44E`.
+Escrow: [0xbe529edf75ebeb609dcf7ab26783dc558b735851](https://celo-sepolia.blockscout.com/address/0xbe529edf75ebeb609dcf7ab26783dc558b735851).
+[Deployment receipt and permissions](../../packages/contracts/deployments/celo-sepolia.json)
+are recorded separately. Its gas-funded facilitator is
+`0xe4886e4AE8Cc1197689dbd80D4596A0DCF855a26`.
+
+Celo and Hedera USDC payment checks require token funding. CELO and HBAR pay
+network gas; neither replaces the USDC needed for the payment tests. Circle's
+faucet required human verification when automated Hedera funding was attempted.
 
 ## Base Sepolia evidence
 
@@ -72,8 +109,10 @@ editing incomplete/complete payout addresses and disabling payments without
 a page error after rollout. API responses used isolated fixtures; no production
 data was written.
 
-Public payment-worker hosting is still pending. Its HTTPS host is needed to set `NEXT_PUBLIC_ARCADE_PAYMENTS_URL`, resolver secret injection, creator allowlist,
-registry URL and allowed origins. The existing payment Compose configuration binds
-only to localhost and requires an HTTPS/WebSocket reverse proxy.
+Public hosting now uses the AWS payment stack described above. Published games
+load through the `/api/arcade` registry proxy with document and manifest digest
+validation; the loader preserves that proxy path. The creator allowlist uses the
+temporary administrator wallet. The production frontend rebuild consumes the
+configured payment URL.
 
 See [deployment runbook](runbook.md) for remaining network deployment commands.

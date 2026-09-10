@@ -30,6 +30,17 @@ const source = (economy: unknown, rate: number, other: unknown[] = []) =>
     distribution: { revenueShareBps: rate },
   }) as unknown as StudioRelease
 describe('published remix economics', () => {
+  it('retains Celo Sepolia payouts and inherited royalties when publishing a remix', () => {
+    const celoPolicy = { ...policy, payouts: { 'celo-sepolia': original } }
+    const inherited = inheritedRemixEconomy(source(celoPolicy, 3000))
+    const child = publishGameEconomy(
+      { ...celoPolicy, payouts: { 'celo-sepolia': remixer } },
+      inherited,
+    )
+    expect(
+      child.mode === 'revenue-share' && child.royalties?.['celo-sepolia'],
+    ).toEqual([{ recipient: original, bps: 3000 }])
+  })
   it('preserves legacy royalty obligations without blocking free remix creation', () => {
     const legacy = source({ mode: 'free' }, 500)
     expect(inheritedRemixEconomy(legacy)).toBeUndefined()

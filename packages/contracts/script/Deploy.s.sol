@@ -10,7 +10,10 @@ interface ISafe {
 
 contract Deploy is Script {
     function run() external returns (ArcadeEscrow escrow) {
-        require(block.chainid == 84532 || block.chainid == 5042002 || block.chainid == 296, "Testnets only");
+        require(
+            block.chainid == 84532 || block.chainid == 5042002 || block.chainid == 296 || block.chainid == 11142220,
+            "Testnets only"
+        );
         address governance = vm.envOr("ARCADE_TESTNET_ADMIN", address(0));
         if (governance == address(0)) {
             governance = vm.envAddress("ARCADE_SAFE_ADDRESS");
