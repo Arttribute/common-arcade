@@ -54,19 +54,19 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
       - name: Synthesize payment infrastructure
-        run: pnpm --filter @common-arcade/aws-infra synth --context stage="${{ inputs.stage }}" --context payments=true
+        run: pnpm --filter @common-arcade/aws-infra synth --context stage="${{ inputs.stage }}" --context payments=true --context paymentVpcName="CommonArcade-${{ inputs.stage }}-RealtimePilot/RealtimeVpc"
         env:
           CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
           CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}
       - name: Review payment infrastructure diff
         if: inputs.operation == 'diff'
-        run: pnpm --filter @common-arcade/aws-infra diff "CommonArcade-${{ inputs.stage }}-Payments" --exclusively --context stage="${{ inputs.stage }}" --context payments=true
+        run: pnpm --filter @common-arcade/aws-infra diff "CommonArcade-${{ inputs.stage }}-Payments" --exclusively --context stage="${{ inputs.stage }}" --context payments=true --context paymentVpcName="CommonArcade-${{ inputs.stage }}-RealtimePilot/RealtimeVpc"
         env:
           CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
           CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}
       - name: Deploy only the reviewed payment stack
         if: inputs.operation == 'deploy' && inputs.confirm == 'deploy'
-        run: pnpm --filter @common-arcade/aws-infra run deploy "CommonArcade-${{ inputs.stage }}-Payments" --exclusively --context stage="${{ inputs.stage }}" --context payments=true --outputs-file /tmp/payment-outputs.json
+        run: pnpm --filter @common-arcade/aws-infra run deploy "CommonArcade-${{ inputs.stage }}-Payments" --exclusively --context stage="${{ inputs.stage }}" --context payments=true --context paymentVpcName="CommonArcade-${{ inputs.stage }}-RealtimePilot/RealtimeVpc" --outputs-file /tmp/payment-outputs.json
         env:
           CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
           CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}

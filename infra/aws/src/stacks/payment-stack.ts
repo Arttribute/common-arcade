@@ -24,6 +24,7 @@ export interface PaymentStackProps extends StackProps {
   stage: DeploymentStage
   registryUrl: string
   corsOrigins: string
+  vpcName?: string
 }
 
 /** One durable testnet worker, with stop-before-start deployments and private facilitators. */
@@ -40,13 +41,15 @@ export class PaymentStack extends Stack {
       ),
     )
     const treasury = '0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab'
-    const vpc = new ec2.Vpc(this, 'Vpc', {
-      maxAzs: 2,
-      natGateways: 0,
-      subnetConfiguration: [
-        { name: 'public', subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },
-      ],
-    })
+    const vpc = props.vpcName
+      ? ec2.Vpc.fromLookup(this, 'Vpc', { tags: { Name: props.vpcName } })
+      : new ec2.Vpc(this, 'Vpc', {
+          maxAzs: 2,
+          natGateways: 0,
+          subnetConfiguration: [
+            { name: 'public', subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },
+          ],
+        })
     const cluster = new ecs.Cluster(this, 'Cluster', {
       vpc,
       clusterName: `common-arcade-${props.stage}-payments`,

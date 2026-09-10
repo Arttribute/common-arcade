@@ -22,6 +22,7 @@ if (app.node.tryGetContext('payments') === 'true') {
     env: environment,
     stage: config.stage,
     corsOrigins,
+    vpcName: app.node.tryGetContext('paymentVpcName'),
     registryUrl:
       app.node.tryGetContext('paymentRegistryUrl') ??
       'https://arcade.agentcommons.io/api/arcade',
