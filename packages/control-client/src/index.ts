@@ -535,6 +535,30 @@ export class ControlClient {
       `/v1/projects/${encodeURIComponent(projectId)}/browser-runs`,
     )
   }
+  async coachBrowserAgent(
+    runId: string,
+    seatId: string,
+    prompt: string,
+    observation: { state: JsonValue; actions: { id: string; label: string }[] },
+  ): Promise<unknown> {
+    return this.request(
+      `/v1/studio/browser-runs/${encodeURIComponent(runId)}/controllers/${encodeURIComponent(seatId)}/coach`,
+      { method: 'POST', body: { prompt, observation } },
+    )
+  }
+
+  async coachLiveAgent(
+    matchId: string,
+    seatId: string,
+    agentId: string,
+    prompt: string,
+  ): Promise<unknown> {
+    return this.request(
+      `/v1/matches/${encodeURIComponent(matchId)}/seats/${encodeURIComponent(seatId)}/coach`,
+      { method: 'POST', body: { agentId, prompt } },
+    )
+  }
+
   async updateBrowserStrategy(
     runId: string,
     seatId: string,

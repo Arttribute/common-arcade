@@ -65,6 +65,15 @@ import {
 import type { TestRun } from '@common-arcade/control-client'
 import { arcade, arcadeCopilot, type CopilotActivity } from '../../lib/api'
 import { RecordingShelf, storeRecording } from './recording-shelf'
+import { usePreviewAgents } from '../lib/use-preview-agents'
+import {
+  createBrowserPolicy,
+  type ExecutableStrategy,
+} from '@common-arcade/studio'
+import {
+  transitionFeedback,
+  type BrowserFeedback,
+} from '../lib/browser-policy-feedback'
 
 type Agent = { agentId: string; name: string }
 type BrowserController = {
@@ -75,6 +84,7 @@ type BrowserController = {
   sessionId?: string
   strategy: string
   strategyEpoch?: number
+  executableStrategy?: ExecutableStrategy
   lastActionId?: string
   lastDecisionAt?: number
   performance?: {
@@ -93,15 +103,8 @@ type BrowserController = {
     lastLesson?: string
   }
 }
-type BrowserFeedback = {
-  actionId: string
-  outcome: 'positive' | 'negative' | 'neutral' | 'unknown'
-  reward: number
-  summary: string
-  observedAfterMs: number
-  metrics: Record<string, number>
-}
 type BrowserEvent = {
+  epoch?: string
   step: number
   seatId?: string
   observation: CanvasObservation
@@ -111,7 +114,12 @@ type BrowserEvent = {
     learning?: { lesson: string; confidence: number }
   }
   decisionSource?:
-    'commons' | 'arcade-policy' | 'arcade-fallback' | 'human' | 'external'
+    | 'commons'
+    | 'arcade-policy'
+    | 'arcade-fallback'
+    | 'human'
+    | 'external'
+    | 'preview-frame-policy'
   feedback?: BrowserFeedback
   adaptation?: {
     from: string
@@ -161,12 +169,16 @@ export function GameStudio({ projectId }: { projectId: string }) {
   const [shareRecordings, setShareRecordings] = useState(false),
     [recordingsRefresh, setRecordingsRefresh] = useState(0)
   const [browserRun, setBrowserRun] = useState<BrowserRun>()
+  const browserRunCurrent = useRef(browserRun)
+  browserRunCurrent.current = browserRun
+  const installedStrategies = useRef(new Map<string, number>())
   const [browserRuns, setBrowserRuns] = useState<BrowserRun[]>([])
   const [browserEvents, setBrowserEvents] = useState<BrowserEvent[]>([])
   const [browserObservation, setBrowserObservation] =
     useState<CanvasObservation>()
   const [browserPlaying, setBrowserPlaying] = useState(false)
   const [browserDeciding, setBrowserDeciding] = useState(false)
+  const [frameDecisions, setFrameDecisions] = useState(0)
   const [logsOpen, setLogsOpen] = useState(true)
   const [browserAction, setBrowserAction] = useState<{
     seat: string
@@ -247,6 +259,12 @@ export function GameStudio({ projectId }: { projectId: string }) {
             : 'model',
       },
     )
+    if (
+      browserRunCurrent.current?.id !== current.id ||
+      (installedStrategies.current.get(`${current.id}/${selected.seatId}`) ??
+        0) > (event.controller?.strategyEpoch ?? selected.strategyEpoch ?? 0)
+    )
+      return
     const chosen = seatObservation.actions.find(
       (action) => action.id === event.decision.actionId,
     )
@@ -264,19 +282,23 @@ export function GameStudio({ projectId }: { projectId: string }) {
       actedAt: Date.now(),
     })
     setBrowserObservation(nextObservation)
-    setBrowserRun({
-      ...current,
-      step: current.step + 1,
-      controllers: current.controllers.map((controller) =>
-        controller.seatId === selected.seatId && event.controller
-          ? {
-              ...controller,
-              ...event.controller,
-              performance: event.performance,
-            }
-          : controller,
-      ),
-    })
+    setBrowserRun((latest) =>
+      latest?.id !== current.id
+        ? latest
+        : {
+            ...latest,
+            step: current.step + 1,
+            controllers: latest.controllers.map((controller) =>
+              controller.seatId === selected.seatId && event.controller
+                ? {
+                    ...controller,
+                    ...event.controller,
+                    performance: event.performance,
+                  }
+                : controller,
+            ),
+          },
+    )
     setBrowserEvents((all) => [...all, event])
     if (event.decisionSource === 'arcade-fallback')
       setNotice(
@@ -316,7 +338,9 @@ export function GameStudio({ projectId }: { projectId: string }) {
     )
     const nextRun = { ...browserRun, step: browserRun.step + 1 }
     setBrowserObservation(nextObservation)
-    setBrowserRun(nextRun)
+    setBrowserRun((latest) =>
+      latest?.id === browserRun.id ? { ...latest, step: nextRun.step } : latest,
+    )
     setBrowserEvents((all) => [...all, event])
     setBrowserPlaying(
       nextRun.controllers.some(
@@ -410,6 +434,47 @@ export function GameStudio({ projectId }: { projectId: string }) {
         view === 'code' &&
         source !== JSON.stringify(document, null, 2))
     : false
+  const realtimePreview =
+    isBrowserGame(document) &&
+    ['realtime', 'hybrid'].includes(document.play?.mode ?? '')
+  usePreviewAgents({
+    root: previewStageRef,
+    active:
+      realtimePreview &&
+      browserPlaying &&
+      !dirty &&
+      view === 'preview' &&
+      tool === 'select',
+    runId: browserRun?.id,
+    previewRevision: `${project?.revision}:${previewKey}:${view}`,
+    controllers: browserRun?.controllers ?? [],
+    decisionsPerSecond: isBrowserGame(document)
+      ? (document.play?.maxDecisionsPerSecond ?? 10)
+      : 2,
+    onSample: (event: BrowserEvent, epoch, decisions) => {
+      setFrameDecisions(decisions)
+      setBrowserEvents((all) => [...all, { ...event, epoch }].slice(-120))
+      setBrowserAction({
+        seat:
+          browserRun?.controllers.find((c) => c.seatId === event.seatId)
+            ?.label ??
+          event.seatId ??
+          '',
+        action:
+          event.observation.actions.find(
+            (a) => a.id === event.decision.actionId,
+          )?.label ?? event.decision.actionId,
+        fallback: false,
+      })
+    },
+    onStrategyApplied: (seatId, epoch) =>
+      setNotice(`Strategy ${epoch} is active for ${seatId}.`),
+    onStop: (reason) => {
+      setBrowserPlaying(false)
+      setNotice(reason)
+    },
+    onWarning: (reason) => setNotice(reason),
+  })
   const isOwner = Boolean(user && project?.ownerId === user.id)
   const myPermissions =
     project?.collaborators?.find((member) => member.actorId === user?.id)
@@ -607,6 +672,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
       controllers,
     })
     setBrowserRun(created)
+    setFrameDecisions(0)
     setBrowserRuns((runs) => [created, ...runs])
     setBrowserEvents([])
     browserOutcome.current.clear()
@@ -630,9 +696,12 @@ export function GameStudio({ projectId }: { projectId: string }) {
     return created
   }
   async function resumeBrowserRun(summary: BrowserRun) {
-    const saved = await arcade<BrowserRun & { events: BrowserEvent[] }>(
-      `studio/browser-runs/${summary.id}`,
-    )
+    const saved = await arcade<
+      BrowserRun & {
+        events: BrowserEvent[]
+        telemetry?: { epoch: string; events: BrowserEvent[] }[]
+      }
+    >(`studio/browser-runs/${summary.id}`)
     if (!project || saved.revision !== project.revision)
       throw new Error(
         `This session belongs to revision ${saved.revision}. Restore that revision before resuming it.`,
@@ -641,6 +710,19 @@ export function GameStudio({ projectId }: { projectId: string }) {
     setBrowserControllers(saved.controllers)
     setBrowserEvents(saved.events ?? [])
     setBrowserPlaying(false)
+    if (saved.telemetry?.length) {
+      setBrowserEvents(
+        saved.telemetry
+          .flatMap((batch) =>
+            batch.events.map((event) => ({ ...event, epoch: batch.epoch })),
+          )
+          .slice(-120),
+      )
+      setNotice(
+        'Loaded sampled realtime diagnostics. Start a new session to play; samples cannot reconstruct a timed race.',
+      )
+      return
+    }
     setPreviewKey((key) => key + 1)
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
@@ -658,10 +740,40 @@ export function GameStudio({ projectId }: { projectId: string }) {
     strategy: string,
   ) {
     if (!browserRun) throw new Error('Start or resume a session first.')
-    const result = await arcade<{ controller: BrowserController }>(
-      `studio/browser-runs/${browserRun.id}/controllers/${encodeURIComponent(controller.seatId)}/strategy`,
-      { prompt: strategy },
+    const runId = browserRun.id
+    const observed = await compiledRef.current?.observe()
+    if (!observed)
+      throw new Error(
+        'The game observation is unavailable. Retry when the preview is ready.',
+      )
+    const state = observed.state as Record<string, any>
+    const seatState = state?.arcade?.observations?.[controller.seatId]
+    const actions = observed.actions.filter((a) =>
+      a.id.startsWith(`seat:${encodeURIComponent(controller.seatId)}:`),
     )
+    if (!seatState || !actions.length)
+      throw new Error(
+        'This seat needs an observation and legal actions before it can be coached.',
+      )
+    setNotice(`${controller.label} is processing your coaching…`)
+    const result = await arcade<{ controller: BrowserController }>(
+      `studio/browser-runs/${browserRun.id}/controllers/${encodeURIComponent(controller.seatId)}/coach`,
+      {
+        prompt: strategy,
+        observation: {
+          state: seatState,
+          actions: actions
+            .slice(0, 80)
+            .map((a) => ({ id: a.id, label: a.label.slice(0, 200) })),
+        },
+      },
+    )
+    if (browserRunCurrent.current?.id !== runId) return
+    installedStrategies.current.set(
+      `${runId}/${controller.seatId}`,
+      result.controller.strategyEpoch ?? 0,
+    )
+    browserOutcome.current.delete(controller.seatId)
     setBrowserRun((run) =>
       run
         ? {
@@ -680,7 +792,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
       ),
     )
     setNotice(
-      `${controller.label} will use strategy epoch ${result.controller.strategyEpoch} on its next decision.`,
+      `${controller.label} prepared strategy ${result.controller.strategyEpoch}; applying it to the game.`,
     )
   }
   async function startRun() {
@@ -733,6 +845,8 @@ export function GameStudio({ projectId }: { projectId: string }) {
       !browserPlaying ||
       browserDeciding ||
       !browserRun ||
+      (isBrowserGame(document) &&
+        ['realtime', 'hybrid'].includes(document.play?.mode ?? '')) ||
       browserRun.step >= 200
     )
       return
@@ -1448,7 +1562,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                           </select>
                           <textarea
                             rows={2}
-                            aria-label={`${controller.label} strategy`}
+                            aria-label={`${controller.label} coaching`}
                             value={controller.strategy}
                             onChange={(event) =>
                               setBrowserControllers((current) =>
@@ -1468,15 +1582,19 @@ export function GameStudio({ projectId }: { projectId: string }) {
                               variant="ghost"
                               disabled={!!busy || !controller.strategy.trim()}
                               onClick={() =>
-                                void task('strategy update', () =>
-                                  updateBrowserStrategy(
-                                    controller,
-                                    controller.strategy,
+                                void updateBrowserStrategy(
+                                  controller,
+                                  controller.strategy,
+                                ).catch((cause) =>
+                                  setError(
+                                    cause instanceof Error
+                                      ? cause.message
+                                      : String(cause),
                                   ),
                                 )
                               }
                             >
-                              Coach next move
+                              Coach agent
                             </Button>
                           ) : null}
                         </>
@@ -1532,7 +1650,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 ) : (
                   <div className="studio-controller-actions">
                     <Button
-                      disabled={browserRun.step >= 200}
+                      disabled={!realtimePreview && browserRun.step >= 200}
                       onClick={() => setBrowserPlaying((active) => !active)}
                     >
                       {browserPlaying ? (
@@ -1584,7 +1702,9 @@ export function GameStudio({ projectId }: { projectId: string }) {
                   Private, unrated and not prize eligible. Human controls stay
                   in this panel so every move can be resumed; agents act
                   autonomously from the same legal browser observations.{' '}
-                  {browserRun?.step ?? 0} / 200 decisions.
+                  {realtimePreview
+                    ? `${frameDecisions} local decisions · five-minute sessions · sampled diagnostics`
+                    : `${browserRun?.step ?? 0} / 200 decisions.`}
                 </p>
                 {browserRuns.length ? (
                   <label>
@@ -1987,10 +2107,9 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 private / unrated
               </strong>
               <span>
-                {browserEvents.length} decisions ·{' '}
-                {document.play?.mode === 'realtime'
-                  ? 'low-latency policy'
-                  : 'model policy'}
+                {browserEvents.length}{' '}
+                {realtimePreview ? 'diagnostic samples' : 'decisions'} ·{' '}
+                {realtimePreview ? 'frame-synchronized policy' : 'model policy'}
               </span>
               <button
                 aria-label="Close test logs"
@@ -2007,7 +2126,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
               </p>
             ) : null}
             {browserEvents.map((event) => (
-              <details key={event.step}>
+              <details key={`${event.epoch ?? 'server'}:${event.step}`}>
                 <summary>
                   {event.step + 1}. {event.seatId ?? 'seat'} ·{' '}
                   {event.decision.actionId} · {event.decision.reason}{' '}
@@ -2505,121 +2624,7 @@ function stateForSeat(state: unknown, seatId: string): unknown {
   return (observations as Record<string, unknown>)[seatId] ?? state
 }
 
-function numberAt(state: unknown, path: readonly string[]): number | undefined {
-  let value = state
-  for (const key of path) {
-    if (!value || typeof value !== 'object') return undefined
-    value = (value as Record<string, unknown>)[key]
-  }
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
-}
-
-function textAt(state: unknown, path: readonly string[]): string | undefined {
-  let value = state
-  for (const key of path) {
-    if (!value || typeof value !== 'object') return undefined
-    value = (value as Record<string, unknown>)[key]
-  }
-  return typeof value === 'string' ? value : undefined
-}
-
-function transitionFeedback(
-  before: unknown,
-  after: unknown,
-  actionId: string,
-  observedAfterMs: number,
-): BrowserFeedback {
-  const metrics: Record<string, number> = {}
-  let reward = 0
-  const measure = (
-    name: string,
-    path: readonly string[],
-    rewardWeight: number,
-  ) => {
-    const prior = numberAt(before, path)
-    const current = numberAt(after, path)
-    if (prior === undefined || current === undefined) return
-    const delta = current - prior
-    metrics[name] = delta
-    reward += delta * rewardWeight
-  }
-  measure('ownLivesDelta', ['me', 'lives'], 2)
-  measure('opponentLivesDelta', ['opponent', 'lives'], -2)
-  measure('ownHitsDelta', ['me', 'shotsHit'], 1)
-  measure('opponentHitsDelta', ['opponent', 'shotsHit'], -1)
-  measure('scoreDelta', ['score'], 1)
-  const winner = textAt(after, ['winner'])
-  const me = textAt(after, ['me', 'id'])
-  if (winner && me) reward += winner === me ? 5 : -5
-  const rounded = Math.round(reward * 100) / 100
-  const outcome =
-    rounded > 0
-      ? ('positive' as const)
-      : rounded < 0
-        ? ('negative' as const)
-        : Object.keys(metrics).length
-          ? ('neutral' as const)
-          : ('unknown' as const)
-  const changed = Object.entries(metrics)
-    .filter(([, delta]) => delta !== 0)
-    .map(([name, delta]) => `${name} ${delta >= 0 ? '+' : ''}${delta}`)
-  return {
-    actionId,
-    outcome,
-    reward: rounded,
-    summary: changed.length
-      ? `Observed ${changed.join(', ')} after the prior action.`
-      : `No measurable outcome change was visible after the prior action.`,
-    observedAfterMs: Math.max(0, Math.round(observedAfterMs)),
-    metrics,
-  }
-}
-
-function enrichRealtimeState(state: unknown): unknown {
-  if (!state || typeof state !== 'object' || Array.isArray(state)) return state
-  const source = state as Record<string, unknown>
-  const me =
-    source.me && typeof source.me === 'object'
-      ? (source.me as Record<string, unknown>)
-      : undefined
-  const bullets = Array.isArray(source.bullets) ? source.bullets : []
-  const meX = typeof me?.x === 'number' ? me.x : undefined
-  const meId = typeof me?.id === 'string' ? me.id : undefined
-  const incomingThreats = bullets.flatMap((candidate) => {
-    if (!candidate || typeof candidate !== 'object' || meX === undefined)
-      return []
-    const bullet = candidate as Record<string, unknown>
-    if (
-      typeof bullet.x !== 'number' ||
-      typeof bullet.vx !== 'number' ||
-      bullet.vx === 0 ||
-      (meId && bullet.owner === meId)
-    )
-      return []
-    const seconds = (meX - bullet.x) / bullet.vx
-    if (!Number.isFinite(seconds) || seconds < 0) return []
-    return [
-      {
-        owner: typeof bullet.owner === 'string' ? bullet.owner : undefined,
-        distance: Math.round(Math.abs(meX - bullet.x)),
-        timeToImpactMs: Math.round(seconds * 1000),
-        ...(typeof bullet.y === 'number' ? { y: bullet.y } : {}),
-      },
-    ]
-  })
-  return {
-    ...source,
-    arcadeDecisionContext: {
-      capturedAt: new Date().toISOString(),
-      incomingThreats,
-      urgency: incomingThreats.some((threat) => threat.timeToImpactMs <= 500)
-        ? 'immediate'
-        : incomingThreats.length
-          ? 'approaching'
-          : 'clear',
-    },
-  }
-}
+const { enrich: enrichRealtimeState } = createBrowserPolicy()
 
 async function waitForPreview(
   ref: React.RefObject<CompiledFrameHandle | null>,

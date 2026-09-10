@@ -1,4 +1,11 @@
+export { livePolicyObservation } from './live-policy.js'
+export {
+  executableStrategySchema,
+  coachedStrategySchema,
+  type ExecutableStrategy,
+} from './coached-strategy.js'
 import { compileBrowserPresentation } from './browser.js'
+export { createBrowserPolicy } from './browser-policy.js'
 import type { GridPlacementRuleSet } from '@common-arcade/match-runtime'
 import { computeManifestDigest } from '@common-arcade/manifest'
 import { ARCADE_API_VERSION, type GameManifest } from '@common-arcade/protocol'

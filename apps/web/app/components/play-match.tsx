@@ -1,6 +1,6 @@
 'use client'
 
-import { browserControlClient } from '../../lib/api'
+import { arcade, browserControlClient } from '../../lib/api'
 import { RealtimeClient } from '@common-arcade/realtime-client'
 import type {
   JsonValue,
@@ -47,7 +47,50 @@ export function PlayMatch({
   matchId: string
   initialActor: string
 }) {
-  const [actorId] = useState(initialActor)
+  const [actorId, setActorId] = useState(initialActor)
+  const [agents, setAgents] = useState<{ agentId: string; name: string }[]>([])
+  const [selectedAgent, setSelectedAgent] = useState('')
+  useEffect(() => {
+    let active = true
+    void fetch('/api/auth/session')
+      .then((r) => r.json())
+      .then(async (session) => {
+        if (!active || !session.user?.id) return
+        setActorId(session.user.id)
+        const result = await arcade<{
+          agents:
+            | { agentId: string; name: string }[]
+            | { agents: { agentId: string; name: string }[] }
+        }>('commons/agents')
+        if (active)
+          setAgents(
+            Array.isArray(result.agents)
+              ? result.agents
+              : (result.agents.agents ?? []),
+          )
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+  async function assignAgent(seatId: string) {
+    try {
+      const result = await browserControlClient().claimSeat({
+        matchId,
+        seatId,
+        controllerId: selectedAgent,
+        controllerKind: 'agent',
+      })
+      setMatch(result)
+      setCoachingStatus((v) => ({
+        ...v,
+        [seatId]: 'Agent assigned. Send coaching to start its strategy.',
+      }))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
   const [match, setMatch] = useState<MatchDescriptor>()
   const [observation, setObservation] = useState<Observation>()
   const [publicState, setPublicState] = useState<JsonValue>()
@@ -56,6 +99,38 @@ export function PlayMatch({
   const [lastResult, setLastResult] = useState<string>()
   const [error, setError] = useState<string>()
   const [copied, setCopied] = useState(false)
+  const [coaching, setCoaching] = useState<Record<string, string>>({})
+  const [coachingStatus, setCoachingStatus] = useState<Record<string, string>>(
+    {},
+  )
+  const [coachingBusy, setCoachingBusy] = useState<Record<string, boolean>>({})
+  async function coach(seatId: string, controllerId: string) {
+    setCoachingBusy((v) => ({ ...v, [seatId]: true }))
+    setCoachingStatus((v) => ({
+      ...v,
+      [seatId]: 'Agent is processing your coaching…',
+    }))
+    try {
+      const applied = await arcade<{ strategy: string; strategyEpoch: number }>(
+        `matches/${matchId}/seats/${encodeURIComponent(seatId)}/coach`,
+        {
+          prompt: coaching[seatId],
+          agentId: controllerId.replace(/^agent:/, ''),
+        },
+      )
+      setCoachingStatus((v) => ({
+        ...v,
+        [seatId]: `Strategy ${applied.strategyEpoch} active: ${applied.strategy}`,
+      }))
+    } catch (cause) {
+      setCoachingStatus((v) => ({
+        ...v,
+        [seatId]: cause instanceof Error ? cause.message : String(cause),
+      }))
+    } finally {
+      setCoachingBusy((v) => ({ ...v, [seatId]: false }))
+    }
+  }
   const clientRef = useRef<RealtimeClient | undefined>(undefined)
   const presentationRef = useRef<HTMLIFrameElement | null>(null)
   const actionSequence = useRef(0)
@@ -227,6 +302,22 @@ export function PlayMatch({
         <p style={{ fontSize: 11, color: '#78716c' }}>
           Sign in with Commons to claim a seat, or watch as a spectator.
         </p>
+        {agents.length ? (
+          <label>
+            Agent
+            <select
+              value={selectedAgent}
+              onChange={(event) => setSelectedAgent(event.target.value)}
+            >
+              <option value="">Select your agent</option>
+              {agents.map((agent) => (
+                <option key={agent.agentId} value={agent.agentId}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <div className="seat-list">
           {match?.seats.map((seat, index) => (
             <article key={seat.id}>
@@ -235,6 +326,40 @@ export function PlayMatch({
                 {seat.status} · {seat.actorId ?? 'unclaimed'}
                 {seat.controllerKind ? ` · ${seat.controllerKind}` : ''}
               </small>
+              {seat.status === 'open' &&
+              selectedAgent &&
+              match.lobby?.allowedControllers.includes('agent') ? (
+                <button onClick={() => void assignAgent(seat.id)}>
+                  Assign agent
+                </button>
+              ) : null}
+              {seat.controllerKind === 'agent' &&
+              seat.actorId === actorId &&
+              seat.controllerId ? (
+                <div>
+                  <textarea
+                    aria-label={`Coach Player ${index + 1}`}
+                    placeholder="Tell your agent how to change its play…"
+                    maxLength={2000}
+                    value={coaching[seat.id] ?? ''}
+                    onChange={(event) =>
+                      setCoaching((v) => ({
+                        ...v,
+                        [seat.id]: event.target.value,
+                      }))
+                    }
+                  />
+                  <button
+                    disabled={
+                      coachingBusy[seat.id] || !coaching[seat.id]?.trim()
+                    }
+                    onClick={() => void coach(seat.id, seat.controllerId!)}
+                  >
+                    Coach agent
+                  </button>
+                  <p role="status">{coachingStatus[seat.id]}</p>
+                </div>
+              ) : null}
               <button
                 disabled={connection === 'connected'}
                 onClick={() => connect('control', seat.id)}

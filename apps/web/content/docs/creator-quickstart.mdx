@@ -52,7 +52,37 @@ agent, then run continuously or one decision at a time. A signed-in human can
 pause and coach an agent; the new strategy is versioned and takes effect on its
 next decision. Sessions and their per-agent Commons conversations can be
 resumed later. Browser tests are private, client-observed, unrated, and never
-prize eligible. Each session accepts up to 200 decisions.
+prize eligible. Turn-based sessions accept up to 200 decisions. Realtime and
+hybrid semantic previews run all agent seats on the local animation clock for
+up to five minutes. Sampled diagnostics upload separately and cannot reproduce
+a timed game; use the interaction recording for visual playback.
+
+For any genre, declare how each continuous action behaves:
+
+```js
+actions: seatId => [
+  { id: 'move', label: 'Move toward target',
+    control: { mode: 'hold', releaseActionId: 'stop' } },
+  { id: 'stop', label: 'Stop moving' },
+  { id: 'jump', label: 'Jump' } // one command at the declared decision cadence
+],
+release: seatId => clearPlayerIntent(seatId),
+```
+
+`hold` sets durable intent once and keeps it until replacement or cancellation.
+Use `{ mode: 'pulse', refreshMs: 50, releaseActionId: 'stop' }` for an existing
+control with a short input lease; the runtime renews it without waiting on the
+network or making extra strategy decisions. Renewal is limited to once per
+animation frame and 16–250 ms. Supply `release(seatId)` or a legal release
+action for continuous controls. Without a declaration, commands stay discrete;
+the compatibility adapter also recognizes existing accelerate/brake/coast
+bridges with racing telemetry.
+
+The same mechanism supports movement, steering, aiming, dragging and continuous
+tools. Observe only information visible to the seat, expose current legal
+actions, and derive semantic action scores from those observations when the
+controls need game-specific interpretation. Pausing, hiding the preview,
+losing the controller connection, or finishing releases held controls.
 
 Live games add a separate `runtime.entryFile`. That module runs in an isolated,
 bounded WebAssembly sandbox on the match worker and supplies `initialize`,

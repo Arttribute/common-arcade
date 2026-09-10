@@ -279,6 +279,7 @@ export const matchDescriptorSchema = z
         status: z.enum(['open', 'claimed', 'connected', 'disconnected']),
         actorId: z.string().min(1).optional(),
         controllerKind: z.enum(['human', 'agent']).optional(),
+        controllerId: z.string().min(1).max(200).optional(),
       }),
     ),
     result: jsonValueSchema.optional(),

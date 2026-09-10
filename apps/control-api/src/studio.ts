@@ -95,7 +95,8 @@ type RunRecord = StoredDocument & {
   createdAt: string
 }
 const COPILOT_INSTRUCTIONS =
-  'You are a Common Arcade copilot. Use the assigned build-common-arcade-games skill and the supplied Arcade tools. The Arcade tools are the complete creation path; Agent Computer is not required and its availability is never a blocker. Read the current project before editing. Build the game the creator actually requested—never substitute a grid, line-building, or tic-tac-toe game unless they explicitly asked for one. If older skill text says live-managed games are grid-only, that statement is obsolete and this contract supersedes it. arcade_write_live_game accepts any genre through a custom web presentation plus a sandboxed authoritative server module, including realtime action, racing, sports, strategy, cards, simulations, teams, and 2D/3D games. For a managed live game, browser files are presentation only: assign window.arcade with render(authoritativeState, context), and have human controls call window.arcade.submit(action). Do not define submit yourself; Arcade installs it. Do not duplicate authoritative seats, observations, legal actions, or state transitions in the browser. The separate server module owns those concerns and assigns globalThis.arcadeGame with pure synchronous initialize(context), validateAction(state, action, context), applyAction(state, action, context), observe(state, seatId, context), result(state), and—for realtime/hybrid games—tick(state, context). Every state, action, observation, event, and result must be JSON-serializable. Server functions receive only their arguments; use context.elapsedMs, context.deltaMs, and the initialization seed, never Date, network, filesystem, process, or Math.random. Each transition returns {state,events}; each event has a dotted type, visibility, and payload. result returns null until terminal. Realtime observations should include actionable derived timing such as time-to-impact. Only preview-only browser games need the local seats(), observe(), actions(), and step() bridge. Use arcade_write_preview_game only when the creator explicitly asks for a local non-live prototype. Declare persistent worlds, teams, 3D presentation, and future payment hooks when relevant. Blender assets must be exported to glTF/GLB. After every write, run arcade_test_game and repair failures. Use arcade_publish_game only when asked to publish or make live. Report only actions confirmed by tools.'
+  'You are a Common Arcade copilot. Use the assigned build-common-arcade-games skill and the supplied Arcade tools. The Arcade tools are the complete creation path; Agent Computer is not required and its availability is never a blocker. Read the current project before editing. Build the game the creator actually requested—never substitute a grid, line-building, or tic-tac-toe game unless they explicitly asked for one. If older skill text says live-managed games are grid-only, that statement is obsolete and this contract supersedes it. arcade_write_live_game accepts any genre through a custom web presentation plus a sandboxed authoritative server module, including realtime action, racing, sports, strategy, cards, simulations, teams, and 2D/3D games. For a managed live game, browser files are presentation only: assign window.arcade with render(authoritativeState, context), and have human controls call window.arcade.submit(action). Do not define submit yourself; Arcade installs it. Do not duplicate authoritative seats, observations, legal actions, or state transitions in the browser. The separate server module owns those concerns and assigns globalThis.arcadeGame with pure synchronous initialize(context), validateAction(state, action, context), applyAction(state, action, context), observe(state, seatId, context), result(state), and—for realtime/hybrid games—tick(state, context). Every state, action, observation, event, and result must be JSON-serializable. Server functions receive only their arguments; use context.elapsedMs, context.deltaMs, and the initialization seed, never Date, network, filesystem, process, or Math.random. Each transition returns {state,events}; each event has a dotted type, visibility, and payload. result returns null until terminal. Realtime observations must expose decision-useful semantic state, not only render data: phase, objectives/progress, self status and position, visible opponents/obstacles, derived timing such as time-to-impact, and an arcadeDecisionContext with rewardDelta when an outcome is attributable. For unusual controls, arcadeDecisionContext may include bounded actionScores keyed by legal action ID plus preferredActions or avoidActions, derived only from state visible to that seat. Only preview-only browser games need the local seats(), observe(), actions(), and step() bridge. Use arcade_write_preview_game only when the creator explicitly asks for a local non-live prototype. Declare persistent worlds, teams, 3D presentation, and future payment hooks when relevant. Blender assets must be exported to glTF/GLB. After every write, run arcade_test_game and repair failures. Use arcade_publish_game only when asked to publish or make live. Report only actions confirmed by tools.' +
+  ' For every genre, distinguish instantaneous commands from continuous intent. In realtime or hybrid browser previews, action entries may declare control:{mode:"hold",releaseActionId:"stop"} for input that persists until replaced, or control:{mode:"pulse",refreshMs:50,releaseActionId:"stop"} for a short input lease needing renewal; omit control for discrete commands such as jump, shoot, confirm, or card play. Provide release(seatId) or a legal releaseActionId so pause, disconnect and seat takeover cancel movement. Studio runs these policies on the local animation clock and uploads sampled diagnostics asynchronously. Use play.maxDecisionsPerSecond to bound new decisions; input lease renewal is independent. In managed live games, applyAction should set durable seat intent, tick consumes it using deltaMs, and an explicit stop/replacement clears it; render only authoritative state with interpolation. Do not integrate physics or advance time in an input handler, and do not require a network request per animation frame. These control semantics apply equally to driving, movement, aiming, dragging, and continuous tools.'
 const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_read_project',
@@ -204,7 +205,7 @@ const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_write_preview_game',
     description:
-      'Create or replace the project with a complete agent-playable browser preview. Browser state is not authoritative and cannot host a competitive live session. Use only after the user explicitly accepts that limitation; unsupported mechanics alone are not consent to fall back from live hosting.',
+      'Create or replace the project with a complete agent-playable browser preview. Its observe result must expose decision-useful semantic phase, progress, self, visible hazard/opponent, and timing state; unusual action spaces should add visible-state-derived arcadeDecisionContext actionScores. Browser state is not authoritative and cannot host a competitive live session. Use only after the user explicitly accepts that limitation; unsupported mechanics alone are not consent to fall back from live hosting.',
     parameters: {
       type: 'object',
       properties: {
@@ -1990,6 +1991,7 @@ type CommonsStreamEvent = {
 async function* commonsAgentStream(
   p: Principal,
   body: unknown,
+  timeoutMs = 570_000,
 ): AsyncGenerator<CommonsStreamEvent> {
   if (p.provider !== 'commons')
     throw new IdentityError(
@@ -2009,7 +2011,7 @@ async function* commonsAgentStream(
           'x-initiator': p.id,
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(570_000),
+        signal: AbortSignal.timeout(timeoutMs),
       },
     )
   } catch (error) {
@@ -2050,19 +2052,34 @@ async function* commonsAgentStream(
     for (;;) {
       const { done, value } = await reader.read()
       buffer += decoder.decode(value, { stream: !done })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() ?? ''
-      for (const line of lines) {
-        if (!line.startsWith('data:')) continue
-        const raw = line.slice(5).trim()
-        if (!raw || raw === '[DONE]') return
+      const frames = buffer.split(/\r?\n\r?\n/)
+      buffer = frames.pop() ?? ''
+      if (done && buffer.trim()) {
+        frames.push(buffer)
+        buffer = ''
+      }
+      for (const frame of frames) {
+        const raw = frame
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart())
+          .join('\n')
+          .trim()
+        if (!raw) continue
+        if (raw === '[DONE]') return
+        let event: CommonsStreamEvent
         try {
-          const event = JSON.parse(raw) as CommonsStreamEvent
-          if (event.type !== 'keepalive') yield event
-          if (event.type === 'final' || event.type === 'completed') return
+          event = JSON.parse(raw) as CommonsStreamEvent
         } catch {
-          // Ignore malformed keepalive/proxy fragments without losing the run.
+          continue
         }
+        if (event.type !== 'keepalive') yield event
+        if (
+          event.type === 'final' ||
+          event.type === 'completed' ||
+          event.type === 'error'
+        )
+          return
       }
       if (done) break
     }
@@ -2071,6 +2088,9 @@ async function* commonsAgentStream(
       502,
       `Commons agent stream ended unexpectedly: ${error instanceof Error ? error.message : 'connection error'}`,
     )
+  } finally {
+    await reader.cancel().catch(() => {})
+    reader.releaseLock()
   }
 }
 
@@ -2079,31 +2099,55 @@ async function* commonsAgentStream(
  * Short browser decisions use the stream too: the synchronous agent endpoint
  * can be terminated by an upstream proxy before a model finishes thinking.
  */
-export async function commonsAgentText(p: Principal, body: unknown) {
+export async function commonsAgentText(
+  p: Principal,
+  body: unknown,
+  timeoutMs = 90_000,
+) {
   let text = ''
-  for await (const event of commonsAgentStream(p, body)) {
+  for await (const event of commonsAgentStream(p, body, timeoutMs)) {
+    if (event.type === 'error')
+      throw new CommonsServiceError(
+        502,
+        `Commons could not finish the decision: ${event.message ?? (agentEventText(event) || 'agent service error')}`,
+      )
     if (
       event.type === 'token' &&
-      typeof event.content === 'string' &&
       (!event.phase || event.phase === 'final_answer')
     )
-      text += event.content
-    else if (event.type === 'final') text = text.trim() || agentEventText(event)
+      text += agentEventText(event)
+    else if (event.type === 'final' || event.type === 'completed') {
+      // Native Commons serializes LangChain messages as {type, data:{content}};
+      // external runtimes use {content}. The complete answer supersedes deltas.
+      text = agentEventText(event).trim() || text
+    }
   }
   if (!text.trim())
     throw new CommonsServiceError(
       502,
-      'Commons finished the agent decision without returning an action.',
+      'The agent returned no decision. Its seat is still reserved; retry the agent decision.',
     )
   return text.trim()
 }
 
 function agentEventText(event: CommonsStreamEvent) {
-  if (typeof event.content === 'string') return event.content
-  if (event.payload && typeof event.payload === 'object') {
-    const payload = event.payload as Record<string, unknown>
-    for (const value of [payload.content, payload.text, payload.message])
-      if (typeof value === 'string') return value
+  const payload =
+    event.payload && typeof event.payload === 'object'
+      ? (event.payload as Record<string, unknown>)
+      : {}
+  const data =
+    payload.data && typeof payload.data === 'object'
+      ? (payload.data as Record<string, unknown>)
+      : {}
+  for (const content of [
+    event.content,
+    payload.content,
+    data.content,
+    payload.text,
+    payload.message,
+  ]) {
+    const text = agentText(content)
+    if (text?.trim()) return text
   }
   return ''
 }
