@@ -200,3 +200,48 @@ it('reads native Commons final responses even without token deltas or a trailing
   expect(response.status, await response.clone().text()).toBe(200)
   expect((await response.json()).controller.strategy).toBe(planned.strategy)
 })
+
+it('repairs incomplete coaching before replacing the active strategy', async () => {
+  const { post } = await setup()
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response(
+        'data: {"type":"final","payload":{"content":"{\\"strategy\\":\\"Attack constantly"}}\n\n',
+      ),
+    )
+    .mockResolvedValueOnce(streamed(planned))
+  vi.stubGlobal('fetch', fetcher)
+  const response = await post('controllers/seat/coach', {
+    prompt: 'Accelerate.',
+    observation,
+  })
+  expect(response.status).toBe(200)
+  expect((await response.json()).controller).toMatchObject({
+    strategy: planned.strategy,
+    strategyEpoch: 2,
+  })
+  expect(fetcher).toHaveBeenCalledTimes(2)
+})
+
+it('preserves the active strategy and learned memory when correction also fails', async () => {
+  const { post, store } = await setup()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => streamed({ strategy: 'incomplete' })),
+  )
+  const response = await post('controllers/seat/coach', {
+    prompt: 'Accelerate.',
+    observation,
+  })
+  expect(response.status).toBe(500)
+  expect((await response.json()).detail).toContain(
+    'Your current strategy is still active',
+  )
+  const saved: any = await store.get('browser-runs:owner', 'run')
+  expect(saved.controllers[0]).toMatchObject({
+    strategy: 'Brake.',
+    strategyEpoch: 1,
+    policyMemory: { actions: { brake: { samples: 5 } } },
+  })
+})
