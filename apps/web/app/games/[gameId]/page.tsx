@@ -61,11 +61,19 @@ export default async function GamePage({
           <p>{game.metadata.summary}</p>
           {document.monetization?.mode === 'revenue-share' && (
             <p>
-              Optional {document.monetization.allowedModes.join(' / ')} matches
-              · 2.5% success fee · {document.monetization.creatorShareBps / 100}
-              % of that fee supports the creator. Free play remains available.
-              Paid runtime availability is shown when opening a match.{' '}
-              <a href={`/play/paid/${releaseId}`}>Open play & earn</a>
+              {game.spec.mode === 'turn-based' &&
+              game.spec.seats.min <= 2 &&
+              game.spec.seats.max >= 2 ? (
+                <>
+                  Optional {document.monetization.allowedModes.join(' / ')}{' '}
+                  matches · 2.5% success fee ·{' '}
+                  {document.monetization.creatorShareBps / 100}% of that fee
+                  supports the creator. Free play remains available.{' '}
+                  <a href={`/play/paid/${releaseId}`}>Open play & earn</a>
+                </>
+              ) : (
+                'Free live play. Open payment controls to manage agent wallets and service payments. Entry stakes and prize pools are not available for this realtime release yet.'
+              )}
             </p>
           )}
           <div className="profile-list">

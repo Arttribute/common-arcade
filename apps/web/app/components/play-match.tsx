@@ -13,6 +13,7 @@ import { Check, RotateCcw, Share2, User, Bot, Circle } from 'lucide-react'
 
 import { LiveControls, actionLabel } from './live-controls'
 import { ExternalSeatAgent } from './external-seat-agent'
+import { LivePaymentPanel } from './live-payment-panel'
 
 function resultLabel(
   result: JsonValue,
@@ -699,6 +700,24 @@ export function PlayMatch({
                   : 'Reconnecting — availability may be out of date'}
           </span>
         </p>
+        {match && (
+          <LivePaymentPanel
+            releaseId={match.releaseId}
+            matchId={matchId}
+            agentId={
+              activeAgent ||
+              match.seats
+                .find(
+                  (seat) =>
+                    seat.controllerKind === 'agent' &&
+                    seat.controllerId?.startsWith('commons-agent-'),
+                )
+                ?.controllerId?.replace(/^commons-agent-/, '') ||
+              selectedAgent ||
+              undefined
+            }
+          />
+        )}
         <p className="match-rule-note">
           {match?.visibility === 'public'
             ? 'Public · listed on Live'

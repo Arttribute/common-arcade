@@ -2619,3 +2619,75 @@ h3 {
   margin-right: 8px;
   margin-top: 4px;
 }
+
+.live-payment-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 16px;
+}
+.live-payment-card > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.live-payment-card > p {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.live-payment-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper, #fff);
+  color: var(--ink);
+  overflow: auto;
+}
+.live-payment-dialog::backdrop {
+  background: rgb(0 0 0 / 50%);
+}
+.live-payment-dialog > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.live-payment-dialog h2 {
+  margin: 8px 0 0;
+}
+.live-payment-content {
+  display: grid;
+  gap: 24px;
+}
+.live-payment-summary {
+  padding: 16px;
+  background: var(--wash, #f5f5f4);
+  border-radius: 10px;
+}
+.live-payment-summary dl {
+  display: grid;
+  gap: 12px;
+}
+.live-payment-summary dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.live-payment-summary dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+.live-payment-dialog .payment-panel {
+  width: 100%;
+  min-width: 0;
+}
+.live-payment-dialog input,
+.live-payment-dialog select {
+  max-width: 100%;
+}
