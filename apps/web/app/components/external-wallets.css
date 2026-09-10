@@ -1,0 +1,538 @@
+.aw-shell {
+  width: min(620px, calc(100% - 40px));
+  margin: 38px auto 80px;
+}
+.aw-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #78716c;
+  font-size: 12px;
+}
+.aw-page-heading {
+  text-align: center;
+  margin: 38px 0 18px;
+}
+.aw-title-icon {
+  width: 50px;
+  height: 50px;
+  border: 1px solid #e7e5e4;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 22px;
+  background: #fff;
+  box-shadow: 0 3px 10px #29252404;
+}
+.aw-page-heading .eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+}
+.aw-page-heading h1 {
+  font-size: 36px;
+  line-height: 1.2;
+  margin: 12px 0;
+}
+.aw-page-heading p {
+  color: #78716c;
+  font-size: 14px;
+  line-height: 1.7;
+  margin: 0;
+}
+.aw-trust {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: #78716c;
+  font-size: 11px;
+  margin-bottom: 30px;
+}
+.aw-trust > span {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.aw-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+}
+.aw-setup,
+.aw-wallet,
+.aw-connect {
+  background: #fff;
+  border: 1px solid #e7e5e4;
+  border-radius: 14px;
+  padding: 26px;
+}
+.aw-section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.aw-section-title h2 {
+  font-size: 17px;
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+.aw-section-title h2 > span {
+  color: #a8a29e;
+  font-size: 12px;
+  margin-left: 6px;
+}
+.aw-agent-choices {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.aw-choice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #e7e5e4;
+  background: #fff;
+  border-radius: 8px;
+  padding: 11px 7px;
+  font-size: 12px;
+}
+.aw-choice-active {
+  border-color: #57534e;
+  background: #fafaf9;
+}
+.aw-mono {
+  font-family: monospace;
+  font-weight: 600;
+}
+.aw-asterisk {
+  font-size: 19px;
+  color: #ba765f;
+  line-height: 1;
+}
+.aw-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 19px 16px;
+}
+.aw-form-grid label,
+.aw-advanced label {
+  color: #57534e;
+  font-size: 12px;
+  gap: 8px;
+}
+.aw-form-grid input,
+.aw-form-grid select {
+  height: 41px;
+  width: 100%;
+  background: #fff;
+}
+.aw-amount {
+  position: relative;
+}
+.aw-amount input {
+  padding-right: 58px;
+  width: 100%;
+}
+.aw-amount > span {
+  position: absolute;
+  right: 12px;
+  top: 11px;
+  font-size: 11px;
+  color: #a8a29e;
+  pointer-events: none;
+}
+.aw-details {
+  border-top: 1px solid #f0eeeb;
+  margin-top: 20px;
+  padding-top: 14px;
+  font-size: 12px;
+  color: #78716c;
+}
+.aw-details summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #57534e;
+}
+.aw-details summary::-webkit-details-marker {
+  display: none;
+}
+.aw-details[open] summary {
+  margin-bottom: 14px;
+}
+.aw-details[open] summary svg {
+  transform: rotate(180deg);
+}
+.aw-details p {
+  line-height: 1.7;
+  margin: 12px 0;
+}
+.aw-advanced label {
+  max-width: 230px;
+}
+.aw-approval {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: #fafaf9;
+  border-radius: 8px;
+  padding: 13px;
+  margin-top: 20px;
+  color: #78716c;
+}
+.aw-approval svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.aw-approval p {
+  font-size: 11px;
+  line-height: 1.7;
+  margin: 0;
+}
+.aw-approval strong {
+  font-weight: 500;
+  color: #57534e;
+}
+.aw-primary {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 9px;
+  margin-top: 18px;
+  min-height: 44px;
+}
+.aw-footer {
+  font-size: 11px;
+  color: #a8a29e;
+  text-align: center;
+  margin: 22px 0;
+}
+.aw-recovery-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+.aw-recovery-form button {
+  justify-self: start;
+  font-size: 11px;
+}
+.aw-message {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #e7e5e4;
+  border-radius: 10px;
+  padding: 15px 18px;
+  background: #f5f5f4;
+  font-size: 12px;
+  line-height: 1.65;
+  margin: 0 0 18px;
+  color: #78716c;
+}
+.aw-message strong {
+  font-weight: 500;
+  color: #57534e;
+}
+.aw-error {
+  color: #9f3d36;
+  background: #fdf7f6;
+  border-color: #f0dcd8;
+}
+.aw-wallet-list {
+  margin-top: 30px;
+}
+.aw-wallet-list > .aw-wallet {
+  margin-top: 12px;
+}
+.aw-wallet-heading {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+}
+.aw-avatar {
+  display: grid;
+  place-items: center;
+  width: 39px;
+  height: 39px;
+  background: #f5f5f4;
+  border-radius: 11px;
+}
+.aw-wallet-heading h3 {
+  font-size: 15px;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+.aw-muted {
+  font-size: 11px;
+  color: #a8a29e;
+}
+.aw-state {
+  font-size: 10px;
+  color: #78716c;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fafaf9;
+  border: 1px solid #e7e5e4;
+  border-radius: 20px;
+  padding: 3px 8px;
+}
+.aw-state-connected {
+  color: #557164;
+  background: #f3f7f4;
+  border-color: #e0eae3;
+}
+.aw-address {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 18px 0;
+  color: #78716c;
+}
+.aw-address > a {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font: 12px monospace;
+}
+.aw-icon-button,
+.aw-text-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+  color: #78716c;
+}
+.aw-icon-button:hover,
+.aw-text-button:hover {
+  color: #292524;
+}
+.aw-wallet-numbers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  border-top: 1px solid #f0eeeb;
+  padding-top: 16px;
+}
+.aw-wallet-numbers > div {
+  display: grid;
+  gap: 4px;
+}
+.aw-wallet-numbers strong {
+  font-weight: 500;
+  font-size: 19px;
+  letter-spacing: -0.04em;
+}
+.aw-wallet-numbers strong > span {
+  font-size: 12px;
+  color: #a8a29e;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.aw-wallet-numbers small {
+  font-size: 10px;
+  color: #a8a29e;
+  overflow-wrap: anywhere;
+}
+.aw-funding-note {
+  font-size: 11px;
+  line-height: 1.7;
+  color: #78716c;
+  background: #fafaf9;
+  border-radius: 7px;
+  padding: 10px 12px;
+  margin: 16px 0 0;
+}
+.aw-funding-note a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.aw-card-actions {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  margin-top: 18px;
+}
+.aw-revoke {
+  margin-left: auto;
+}
+.aw-confirm {
+  border-top: 1px solid #e7e5e4;
+  margin-top: 18px;
+  padding-top: 16px;
+  font-size: 12px;
+}
+.aw-confirm > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.aw-confirm button {
+  font-size: 11px;
+  padding: 7px 12px;
+}
+.aw-activity {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.aw-activity li {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 0;
+  border-bottom: 1px solid #f0eeeb;
+}
+.aw-activity li > span:last-child {
+  text-align: right;
+}
+.aw-activity small {
+  display: block;
+  font-size: 10px;
+  color: #a8a29e;
+}
+.aw-connect {
+  margin-bottom: 20px;
+}
+.aw-connect-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin-bottom: 18px;
+}
+.aw-connect-heading h2 {
+  font-size: 17px;
+  margin: 0 0 4px;
+}
+.aw-connect-heading p {
+  font-size: 12px;
+  color: #78716c;
+  margin: 0;
+}
+.aw-success-icon {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  background: #f0f5f1;
+  border-radius: 50%;
+  color: #557164;
+  flex-shrink: 0;
+}
+.aw-command {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #e7e5e4;
+  background: #fafaf9;
+  border-radius: 8px;
+  padding: 12px;
+}
+.aw-command code,
+.aw-pair-code code {
+  font: 11px/1.75 monospace;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.aw-command .aw-copy-wrap {
+  justify-self: end;
+}
+.aw-instruction {
+  font-size: 12px;
+  color: #78716c;
+  margin: 18px 0 9px;
+}
+.aw-pair-code {
+  display: grid;
+  gap: 8px;
+  border: 1px dashed #d6d3d1;
+  border-radius: 7px;
+  padding: 12px;
+}
+.aw-pair-code .aw-copy-wrap {
+  justify-self: end;
+}
+.aw-connect > small {
+  display: block;
+  color: #a8a29e;
+  font-size: 10px;
+  margin: 8px 0 16px;
+}
+.aw-copy-wrap {
+  display: inline-grid;
+  gap: 4px;
+}
+.aw-copy-wrap small {
+  font-size: 10px;
+  color: #a8a29e;
+}
+.aw-spin {
+  animation: aw-spin 1s linear infinite;
+}
+@keyframes aw-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 540px) {
+  .aw-shell {
+    width: calc(100% - 28px);
+    margin-top: 24px;
+  }
+  .aw-page-heading {
+    margin-top: 28px;
+  }
+  .aw-page-heading h1 {
+    font-size: 30px;
+  }
+  .aw-setup,
+  .aw-wallet,
+  .aw-connect {
+    padding: 20px;
+  }
+  .aw-form-grid {
+    gap: 16px 12px;
+  }
+  .aw-agent-choices {
+    gap: 6px;
+  }
+  .aw-choice {
+    font-size: 11px;
+    gap: 5px;
+  }
+  .aw-wallet-heading {
+    flex-wrap: wrap;
+  }
+  .aw-state {
+    font-size: 9px;
+  }
+  .aw-card-actions {
+    flex-wrap: wrap;
+    gap: 13px;
+  }
+  .aw-wallet-numbers {
+    gap: 12px;
+  }
+  .aw-wallet-numbers strong {
+    font-size: 17px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aw-spin {
+    animation: none;
+  }
+}

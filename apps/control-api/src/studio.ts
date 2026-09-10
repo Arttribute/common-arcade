@@ -6,7 +6,7 @@ import {
 import { Hono } from 'hono'
 import { z } from 'zod'
 import {
-  gameMonetizationSchema,
+  platformGameMonetizationSchema,
   gameDistributionSchema,
   browserGameDocumentSchema,
 } from '@common-arcade/protocol'
@@ -376,11 +376,11 @@ const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_configure_earnings',
     description:
-      'Configure optional game earnings and remix licensing on the current draft. Free play stays available. Creator share divides one 2.5% success fee; zero remix royalty permits free remixes. Inherited royalties cannot be removed. Publishing remains a separate owner action.',
+      'Configure optional game earnings and remix licensing on the current draft. Free play stays available. The platform fixes one 2.5% success fee, split 70% to creators and 30% to Arcade; zero remix royalty permits free remixes. Inherited royalties cannot be removed. Publishing remains a separate owner action.',
     parameters: {
       type: 'object',
       properties: {
-        monetization: z.toJSONSchema(gameMonetizationSchema),
+        monetization: z.toJSONSchema(platformGameMonetizationSchema),
         distribution: z.toJSONSchema(gameDistributionSchema),
       },
       required: ['monetization'],
@@ -469,6 +469,8 @@ export function createStudioApi(
     return project
   }
   const revision = async (p: StudioProject) => {
+    if (p.document.monetization)
+      platformGameMonetizationSchema.parse(p.document.monetization)
     checkSize(p)
     // Immutable snapshots are written first. A failed CAS can only leave an unreferenced snapshot.
     await store
@@ -1697,7 +1699,7 @@ export function createStudioApi(
         const record = await owned(p.id, projectId)
         const input = z
           .object({
-            monetization: gameMonetizationSchema,
+            monetization: platformGameMonetizationSchema,
             distribution: gameDistributionSchema.optional(),
           })
           .strict()

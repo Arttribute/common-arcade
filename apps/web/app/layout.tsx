@@ -4,6 +4,7 @@ import { RootProvider } from 'fumadocs-ui/provider/next'
 import 'fumadocs-ui/style.css'
 import '@agent-commons/ui/styles.css'
 import './styles.css'
+import { ArcadeWalletProvider } from './components/arcade-wallet'
 
 export const metadata: Metadata = {
   title: {
@@ -18,7 +19,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <RootProvider>{children}</RootProvider>
+        <RootProvider>
+          <ArcadeWalletProvider>{children}</ArcadeWalletProvider>
+        </RootProvider>
       </body>
     </html>
   )

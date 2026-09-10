@@ -62,6 +62,18 @@ export default function AgentsPage() {
         className="shell"
         style={{ display: 'grid', gap: 24, paddingBottom: 70 }}
       >
+        <a
+          className="launch-card"
+          href="/agents/wallets"
+          style={{ display: 'block' }}
+        >
+          <span className="eyebrow">CODEX · CLAUDE CODE · EXTERNAL AGENTS</span>
+          <h2 style={{ margin: '10px 0 6px' }}>Give your agent a wallet.</h2>
+          <p style={{ color: '#78716c', margin: 0 }}>
+            A dedicated wallet, a spending allowance, and one command to
+            connect. Set up an agent wallet ↗
+          </p>
+        </a>
         {!signedIn ? (
           <a
             className="primary"

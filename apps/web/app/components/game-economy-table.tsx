@@ -3,11 +3,9 @@ import type { Observation, JsonValue } from '@common-arcade/protocol'
 import { useEffect, useRef, useState } from 'react'
 import {
   createPublicClient,
-  createWalletClient,
-  custom,
+  erc20Abi,
   http,
   type Address,
-  type EIP1193Provider,
   type Hex,
 } from 'viem'
 import {
@@ -15,7 +13,6 @@ import {
   economyConfigSchema,
   approvalCall,
   escrowCall,
-  createViemAdapter,
   hashArcadeId,
   usdcUnits,
   type EconomyConfig,
@@ -23,6 +20,10 @@ import {
 } from '@common-arcade/economy'
 import { AgentWalletPanel } from './agent-wallet-panel'
 import { EconomySettings } from './economy-settings'
+import { useArcadeWallet, WalletConnectionButton } from './arcade-wallet'
+import { useWalletTransaction } from './use-wallet-transaction'
+import { WalletActionStatus } from './wallet-action-status'
+import { walletError } from './wallet-transaction'
 const service =
   process.env.NEXT_PUBLIC_ARCADE_PAYMENTS_URL ??
   (process.env.NODE_ENV === 'development' ? 'http://localhost:4021' : '')
@@ -52,18 +53,32 @@ interface Table {
   trust: string
   replay?: unknown
 }
-function provider() {
-  const value = (window as unknown as { ethereum?: EIP1193Provider }).ethereum
-  if (!value)
-    throw new Error(
-      'Connect an EVM wallet extension to play. Spectating needs no wallet.',
-    )
-  return value
+type PaymentOperation =
+  'stake' | 'bounty' | 'bet' | 'withdraw' | 'refund' | 'claimBet' | 'void'
+const paymentLabels: Record<PaymentOperation, string> = {
+  stake: 'Stake USDC',
+  bounty: 'Fund bounty',
+  bet: 'Place spectator bet',
+  withdraw: 'Claim earnings',
+  refund: 'Claim refund',
+  claimBet: 'Claim spectator payout',
+  void: 'Void expired match',
+}
+interface PaymentReview {
+  operation: PaymentOperation
+  beneficiary: Address
+  account: Address
+  amount: string
+  backSeat: string
+  matchId: string
 }
 export function GameEconomyTable({ releaseId }: { releaseId?: string } = {}) {
+  const connection = useArcadeWallet()
+  const account = connection.address
+  const transaction = useWalletTransaction()
+  const [review, setReview] = useState<PaymentReview>()
   const [observation, setObservation] = useState<Observation>()
-  const [account, setAccount] = useState<Address>(),
-    [other, setOther] = useState(''),
+  const [other, setOther] = useState(''),
     [economy, setEconomy] = useState<EconomyConfig>({ mode: 'free' }),
     [table, setTable] = useState<Table>(),
     [matchInput, setMatchInput] = useState(''),
@@ -74,6 +89,11 @@ export function GameEconomyTable({ releaseId }: { releaseId?: string } = {}) {
     [backSeat, setBackSeat] = useState('sea_player_1'),
     [live, setLive] = useState(false)
   const creation = useRef<unknown>(null)
+  const working = useRef(false)
+  useEffect(() => {
+    setObservation(undefined)
+    setReview(undefined)
+  }, [account, table?.id])
   async function request(path: string, body?: unknown) {
     const r = await fetch(service + path, {
       method: body === undefined ? 'GET' : 'POST',
@@ -85,30 +105,37 @@ export function GameEconomyTable({ releaseId }: { releaseId?: string } = {}) {
     return result
   }
   async function run(fn: () => Promise<void>) {
+    if (working.current) return
+    working.current = true
     setBusy(true)
     setMessage('')
     try {
       await fn()
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Request failed')
+      setMessage(walletError(e))
     } finally {
+      working.current = false
       setBusy(false)
     }
   }
   async function connect() {
-    const wallet = createWalletClient({ transport: custom(provider()) })
-    const [address] = await wallet.requestAddresses()
-    setAccount(address)
-    return address!
+    if (!connection.address)
+      throw new Error(
+        'Connect your wallet first, then choose this action again',
+      )
+    return connection.address
   }
   async function auth(id: string, operation: string, body: unknown) {
     const address = account ?? (await connect()),
       expiresAt = Date.now() + 60000
-    const wallet = createWalletClient({
-      transport: custom(provider()),
-      account: address,
-    })
+    const wallet = await connection.client()
+    if (wallet.account?.address.toLowerCase() !== address.toLowerCase())
+      throw new Error('Your wallet changed. Try the action again')
+    setMessage(
+      'Approve the game message in your wallet. This signature does not transfer funds or charge gas.',
+    )
     const signature = await wallet.signMessage({
+      account: address,
       message: JSON.stringify({
         domain: service,
         matchId: id,
@@ -117,6 +144,7 @@ export function GameEconomyTable({ releaseId }: { releaseId?: string } = {}) {
         expiresAt,
       }),
     })
+    setMessage('Game message signed. Waiting for the table…')
     return { address, expiresAt, signature }
   }
   useEffect(() => {
@@ -245,57 +273,116 @@ export function GameEconomyTable({ releaseId }: { releaseId?: string } = {}) {
       }),
     )
   }
-  async function transact(
-    operation:
-      'stake' | 'bounty' | 'bet' | 'withdraw' | 'refund' | 'claimBet' | 'void',
-    beneficiary?: Address,
-  ) {
+  async function transact(operation: PaymentOperation, beneficiary?: Address) {
     if (!table?.deployment || !table.pool || table.economy.mode !== 'escrow')
       return
-    const address = account ?? (await connect()),
-      config = NETWORKS[table.economy.network],
-      wallet = createWalletClient({
-        account: address,
-        chain: config.chain,
-        transport: custom(provider()),
-      })
-    try {
-      await wallet.switchChain({ id: config.chain.id })
-    } catch (error) {
-      if ((error as { code?: number }).code === 4902)
-        await wallet.addChain({ chain: config.chain })
-      else throw error
-    }
-    const adapter = createViemAdapter(
-        table.deployment,
-        wallet,
-        createPublicClient({ chain: config.chain, transport: http() }),
-      ),
-      seat = table.recipients.findIndex(
-        (a) => a.toLowerCase() === address.toLowerCase(),
+    const address = await connect()
+    if (transaction.pending)
+      throw new Error(
+        'Check the pending transaction before starting another payment',
       )
-    if (operation === 'stake' && seat < 0)
-      throw new Error('This wallet is not a player at this table')
+    const deposit = ['stake', 'bounty', 'bet'].includes(operation)
     const units =
       operation === 'stake'
         ? BigInt(table.economy.stakeUnits)
-        : usdcUnits(amount)
-    if (['stake', 'bounty', 'bet'].includes(operation))
-      await adapter.submit(approvalCall(table.deployment, units))
-    const hash = await adapter.submit(
-      escrowCall(table.deployment, operation, table.pool, {
+        : deposit
+          ? usdcUnits(amount)
+          : 0n
+    if (deposit && units <= 0n) throw new Error('Enter a positive USDC amount')
+    setReview({
+      operation,
+      beneficiary: beneficiary ?? address,
+      account: address,
+      amount: units.toString(),
+      backSeat,
+      matchId: table.id,
+    })
+  }
+  async function confirmPayment(input: PaymentReview) {
+    if (
+      !table?.deployment ||
+      !table.pool ||
+      table.economy.mode !== 'escrow' ||
+      table.id !== input.matchId
+    )
+      throw new Error('The table changed. Review the payment again')
+    const config = NETWORKS[table.economy.network]
+    if (
+      table.deployment.chainId !== config.chain.id ||
+      table.deployment.token.toLowerCase() !== config.token.toLowerCase()
+    )
+      throw new Error('The table payment network does not match its deployment')
+    const wallet = await connection.client(config.chain)
+    const address = wallet.account?.address
+    if (!address || address.toLowerCase() !== input.account.toLowerCase())
+      throw new Error('Your wallet changed. Review the payment again')
+    const reader = createPublicClient({
+      chain: config.chain,
+      transport: http(),
+    })
+    const seat = table.recipients.findIndex(
+      (a) => a.toLowerCase() === address.toLowerCase(),
+    )
+    if (input.operation === 'stake' && seat < 0)
+      throw new Error('This wallet is not a player at this table')
+    const units = BigInt(input.amount)
+    if (['stake', 'bounty', 'bet'].includes(input.operation)) {
+      const balance = await reader.readContract({
+        address: config.token,
+        abi: erc20Abi,
+        functionName: 'balanceOf',
+        args: [address],
+      })
+      if (balance < units)
+        throw new Error(
+          'Not enough USDC in this wallet on the selected network',
+        )
+      const allowance = await reader.readContract({
+        address: config.token,
+        abi: erc20Abi,
+        functionName: 'allowance',
+        args: [address, table.deployment.contract],
+      })
+      if (allowance < units)
+        await transaction.submit(
+          table.deployment,
+          wallet,
+          approvalCall(table.deployment, units),
+          'USDC allowance',
+        )
+    }
+    // Recheck the active wallet after the separate token approval.
+    const activeWallet = await connection.client(config.chain)
+    if (activeWallet.account?.address.toLowerCase() !== address.toLowerCase())
+      throw new Error(
+        'Your wallet changed after approval. Review the payment again',
+      )
+    const hash = await transaction.submit(
+      table.deployment,
+      activeWallet,
+      escrowCall(table.deployment, input.operation, table.pool, {
         seat: hashArcadeId(
-          operation === 'bet'
-            ? backSeat
+          input.operation === 'bet'
+            ? input.backSeat
             : seat === 0
               ? 'sea_player_1'
               : 'sea_player_2',
         ),
         amount: units,
-        beneficiary: beneficiary ?? address,
+        beneficiary: input.beneficiary,
       }),
+      paymentLabels[input.operation],
     )
-    setMessage(`Confirmed ${operation}: ${hash}`)
+    setReview(undefined)
+    setMessage(`Confirmed: ${paymentLabels[input.operation]}.`)
+    setTable((current) =>
+      current
+        ? {
+            ...current,
+            transactions: [...new Set([...current.transactions, hash])],
+          }
+        : current,
+    )
   }
   const seat =
       table?.recipients.findIndex(
@@ -315,22 +402,10 @@ export function GameEconomyTable({ releaseId }: { releaseId?: string } = {}) {
   return (
     <div style={{ display: 'grid', gap: 24, maxWidth: 960, marginTop: 28 }}>
       <div>
-        <button
-          className="secondary"
-          disabled={busy}
-          onClick={() =>
-            run(async () => {
-              await connect()
-            })
-          }
-        >
-          {account
-            ? `${account.slice(0, 8)}…${account.slice(-6)}`
-            : 'Connect wallet'}
-        </button>
+        <WalletConnectionButton disabled={busy} />
         <span role="status" style={{ marginLeft: 16 }}>
           {busy
-            ? 'Waiting for confirmation…'
+            ? 'Request in progress…'
             : table
               ? live
                 ? 'Live table connected'
@@ -342,6 +417,67 @@ export function GameEconomyTable({ releaseId }: { releaseId?: string } = {}) {
         <p role="status" style={{ overflowWrap: 'anywhere' }}>
           {message}
         </p>
+      )}
+      <p className="studio-help">
+        Connect a wallet to play or make payments. Game moves request a message
+        signature with no gas fee. Deposits and claims require a transaction.
+        Watching is free.
+      </p>
+      <WalletActionStatus
+        pending={transaction.pending}
+        status={transaction.status}
+        check={transaction.check}
+        disabled={busy}
+      />
+      {review && table?.economy.mode === 'escrow' && (
+        <section
+          className="wallet-review"
+          aria-label="Review wallet transaction"
+        >
+          <h3>{paymentLabels[review.operation]}</h3>
+          <p>
+            {NETWORKS[table.economy.network].chain.name} · Wallet{' '}
+            {review.account.slice(0, 8)}…{review.account.slice(-6)}
+          </p>
+          {BigInt(review.amount) > 0n ? (
+            <>
+              <p>
+                <strong>{Number(review.amount) / 1e6} USDC</strong> to the match
+                escrow.
+              </p>
+              <p className="studio-help">
+                Your wallet may ask twice: authorize this exact USDC amount,
+                then confirm the deposit. An allowance approval alone does not
+                fund the match. Network fees apply.
+              </p>
+            </>
+          ) : (
+            <p className="studio-help">
+              {review.operation === 'void'
+                ? 'This transaction voids an expired match so contributions can be refunded.'
+                : `Available funds go to ${review.beneficiary}.`}{' '}
+              Your wallet will show the network fee before you confirm.
+            </p>
+          )}
+          <div className="actions">
+            <button
+              type="button"
+              className="primary"
+              disabled={busy || !!transaction.pending}
+              onClick={() => run(() => confirmPayment(review))}
+            >
+              Continue in wallet
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy}
+              onClick={() => setReview(undefined)}
+            >
+              Cancel
+            </button>
+          </div>
+        </section>
       )}
       {!table ? (
         <>
@@ -512,7 +648,7 @@ export function GameEconomyTable({ releaseId }: { releaseId?: string } = {}) {
                     className="primary"
                     onClick={() => run(() => transact('stake'))}
                   >
-                    Approve and stake USDC
+                    Stake USDC
                   </button>
                 )}
               {seat === 0 && (
@@ -609,7 +745,7 @@ export function GameEconomyTable({ releaseId }: { releaseId?: string } = {}) {
                   disabled={busy || table.stage !== 'settled'}
                   onClick={() => run(() => transact('withdraw', recipient))}
                 >
-                  Send earnings to {recipient.slice(0, 10)}…
+                  Claim earnings for {recipient.slice(0, 10)}…
                 </button>
               ))}
             </section>
@@ -692,7 +828,7 @@ export function GameEconomyTable({ releaseId }: { releaseId?: string } = {}) {
                       disabled={busy || table.stage !== 'settled'}
                       onClick={() => run(() => transact('withdraw', recipient))}
                     >
-                      Send prize to player {index + 1}
+                      Claim prize for player {index + 1}
                     </button>
                   ))}
                 </div>

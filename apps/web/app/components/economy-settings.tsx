@@ -103,7 +103,7 @@ export function EconomySettings({
             Allow spectator bets before play
           </label>
           <p>
-            Platform fee: {value.feeBps / 100}% of the prize pool and spectator
+            Success fee: {value.feeBps / 100}% of the prize pool and spectator
             profits. Draws and cancelled matches refund contributions.
           </p>
         </div>

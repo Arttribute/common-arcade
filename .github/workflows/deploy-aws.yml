@@ -35,6 +35,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ inputs.stage }}
+    env:
+      PRIVY_WALLET_SECRET_NAME: ${{ vars.PRIVY_WALLET_SECRET_NAME }}
+      MANAGED_WALLETS_ENABLED: ${{ vars.MANAGED_WALLETS_ENABLED }}
 
     steps:
       - name: Confirm this protected environment permits deployment
