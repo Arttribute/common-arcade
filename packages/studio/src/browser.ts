@@ -1,6 +1,8 @@
 import { transform } from '@babel/standalone'
 import { managedPreviewRuntime } from './managed-preview.js'
 import type { BrowserGameDocument } from '@common-arcade/protocol'
+import { createBrowserPolicy } from './browser-policy.js'
+import { createPreviewAgentRuntime } from './preview-agent-runtime.js'
 
 const attribute = (attrs: string, name: string) => {
   const match = attrs.match(
@@ -91,6 +93,7 @@ function installArcadeSeats(){
   const observe=typeof api.observe==='function'?api.observe.bind(api):()=>({text:document.body.innerText.slice(0,8000)});
   const actions=typeof api.actions==='function'?api.actions.bind(api):()=>[];
   const step=typeof api.step==='function'?api.step.bind(api):undefined;
+  const release=typeof api.release==='function'?api.release.bind(api):undefined;
   const render=typeof api.render==='function'?api.render.bind(api):undefined;
   const actionLookup=new Map;
   api.seats=()=>publicSeats;
@@ -106,7 +109,8 @@ function installArcadeSeats(){
         const full='seat:'+encodeURIComponent(seat.id)+':'+encodeURIComponent(String(action.id));
         const id=full.length<=100?full:'seat:'+encodeURIComponent(seat.id)+':action-'+index;
         actionLookup.set(id,{actionId:String(action.id),seatId:seat.sourceId});
-        return{id,label:seat.label+' · '+String(action.label??action.id)};
+        const control=action.control?{...action.control,releaseActionId:action.control.releaseActionId?'seat:'+encodeURIComponent(seat.id)+':'+encodeURIComponent(action.control.releaseActionId):undefined}:undefined;
+        return{id,label:seat.label+' · '+String(action.label??action.id),...(control?{control}:{})};
       }):[];
     });
   };
@@ -116,15 +120,38 @@ function installArcadeSeats(){
     const match=/^seat:([^:]+):(.*)$/.exec(String(encoded));
     return match?step(decodeURIComponent(match[2]),decodeURIComponent(match[1])):step(encoded);
   };
+  if(release)api.release=(id)=>release(seats.find(seat=>seat.id===id)?.sourceId??id);
   let authoritative=false,inputEnabled=false,inputFocused=true;
   const heldKeys=new Map;
   window.addEventListener('keydown',event=>heldKeys.set(event.code,event.key));
   window.addEventListener('keyup',event=>heldKeys.delete(event.code));
   window.addEventListener('focus',()=>{inputFocused=true});
   window.addEventListener('blur',()=>{inputFocused=false;if(authoritative){window.parent.postMessage({type:'arcade.release-input'},'*');for(const [code,key] of [...heldKeys])window.dispatchEvent(new KeyboardEvent('keyup',{code,key,bubbles:true}));heldKeys.clear()}});
+  const agents=step&&bridge==='semantic'&&['realtime','hybrid'].includes(configured?.mode)
+    ? (__ARCADE_AGENT_RUNTIME__)({
+        api,policy:(__ARCADE_AGENT_POLICY__)(),
+        now:()=>performance.now(),
+        requestFrame:callback=>requestAnimationFrame(callback),
+        cancelFrame:id=>cancelAnimationFrame(id),
+        emit:message=>window.parent.postMessage(message,'*'),
+      }):undefined;
+  window.addEventListener('message',event=>{
+    if(event.source!==window.parent)return;
+    const data=event.data;
+    if(data?.type==='arcade.preview-policy.start'){
+      if(authoritative||!agents){window.parent.postMessage({type:'arcade.preview-policy.stopped',runId:data.runId,epoch:data.epoch,reason:'This preview has no local realtime semantic controller'},'*');return}
+      agents.start(data);
+    }
+    if(data?.type==='arcade.preview-policy.stop')agents?.stop();
+    if(data?.type==='arcade.preview-policy.heartbeat')agents?.heartbeat(data.epoch);
+    if(data?.command==='mode'&&data?.payload?.editing===true)agents?.stop('Preview inspection paused controls');
+  });
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)agents?.stop('Preview hidden')});
+  window.addEventListener('pagehide',()=>agents?.stop('Preview closed'));
   window.addEventListener('message',event=>{
     if(event.source!==window.parent||event.data?.type!=='arcade.authoritative-state')return;
     authoritative=true;
+    agents?.stop('Authoritative runtime owns these controls');
     inputEnabled=event.data.inputEnabled !== false && Boolean(event.data.observation?.seatId) && event.data.match?.status === 'running';
     if(render)render(event.data.state,{observation:event.data.observation,match:event.data.match,mode:event.data.mode,controllerKind:event.data.controllerKind,inputEnabled});
     window.dispatchEvent(new CustomEvent('arcade:authoritative-state',{detail:event.data}));
@@ -254,16 +281,17 @@ export function compileBrowserPresentation(
     )
     .join(',\n')
   const compatibility = browserCompatibilityRuntime
-    .replace(
-      '__ARCADE_ENTRY__',
+    .replace('__ARCADE_AGENT_RUNTIME__', () =>
+      createPreviewAgentRuntime.toString(),
+    )
+    .replace('__ARCADE_AGENT_POLICY__', () => createBrowserPolicy.toString())
+    .replace('__ARCADE_ENTRY__', () =>
       JSON.stringify(document.entryFile).replace(/</g, '\\u003c'),
     )
-    .replace(
-      '__ARCADE_PLAY__',
+    .replace('__ARCADE_PLAY__', () =>
       JSON.stringify(document.play ?? null).replace(/</g, '\\u003c'),
     )
-    .replace(
-      '__ARCADE_FILES__',
+    .replace('__ARCADE_FILES__', () =>
       JSON.stringify(Object.fromEntries(files)).replace(/</g, '\\u003c'),
     )
   const preview = managedPreview ? managedPreviewRuntime(document) : ''
@@ -273,6 +301,6 @@ export function compileBrowserPresentation(
     ? html.replace(/<head\b[^>]*>/i, (m) => m + policy)
     : policy + html
   return /<\/body>/i.test(html)
-    ? html.replace(/<\/body>/i, runtime + '</body>')
+    ? html.replace(/<\/body>/i, () => runtime + '</body>')
     : html + runtime
 }

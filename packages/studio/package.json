@@ -38,6 +38,7 @@
   },
   "devDependencies": {
     "@types/babel__standalone": "^7.1.9",
+    "@types/node": "catalog:",
     "tsup": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:",

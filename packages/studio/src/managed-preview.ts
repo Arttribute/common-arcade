@@ -43,11 +43,19 @@ function installManagedPreview(){
   api.seats=()=>roster.map((s,i)=>({id:s.seatId,label:'Player '+(i+1)}));
   api.observe=seatId=>{const o=observe(seatId);return{...o.visibleState,visibleState:o.visibleState,feedback:o.feedback??null,result:result(),elapsedMs}};
   const actionIds=new Map,actionValues=new Map;let nextActionId=0;
-  api.actions=seatId=>result()?[]:observe(seatId).legalActions.map((action,i)=>{
+  const registerAction=action=>{
     const key=JSON.stringify(action);let id=actionIds.get(key);
     if(!id){if(actionIds.size>=4096){actionIds.clear();actionValues.clear()}id='managed-'+(++nextActionId);actionIds.set(key,id);actionValues.set(id,clone(action))}
-    return{id,label:action?.label??action?.type??('Action '+(i+1))};
-  });
+    return id;
+  };
+  api.actions=seatId=>{
+    if(result())return [];
+    const available=observe(seatId).legalActions;
+    return available.map((action,i)=>{
+      const release=available.find(candidate=>(candidate?.id??candidate?.type)===action?.control?.releaseActionId);
+      return{id:registerAction(action),label:action?.label??action?.type??('Action '+(i+1)),...(action?.control?{control:{...action.control,releaseActionId:release===undefined?undefined:registerAction(release)}}:{})};
+    });
+  };
   api.step=(input,seatId)=>{
     if(stopped||result())return false;
     const action=seatId===undefined?input:actionValues.get(input);
@@ -56,6 +64,12 @@ function installManagedPreview(){
     const rejected=game.validateAction(clone(state),clone(action),context(seatId));
     if(rejected!==null&&rejected!==undefined&&rejected!==true)return false;
     transition(game.applyAction(clone(state),clone(action),context(seatId)));return true;
+  };
+  const submit=api.step;
+  api.release=seatId=>{
+    const available=observe(seatId).legalActions;
+    const releaseIds=new Set(available.map(action=>action?.control?.releaseActionId).filter(Boolean));
+    for(const action of available)if(releaseIds.has(action?.id??action?.type))submit(registerAction(action),seatId);
   };
   draw();
   const deltaMs=1000/${document.runtime.tickRate};

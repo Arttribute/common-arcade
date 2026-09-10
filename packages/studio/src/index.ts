@@ -1,3 +1,9 @@
+export { livePolicyObservation } from './live-policy.js'
+export {
+  executableStrategySchema,
+  coachedStrategySchema,
+  type ExecutableStrategy,
+} from './coached-strategy.js'
 import { publishGameEconomy } from './economy.js'
 export {
   inheritedRemixEconomy,
@@ -5,6 +11,7 @@ export {
   publishGameEconomy,
 } from './economy.js'
 import { compileBrowserPresentation } from './browser.js'
+export { createBrowserPolicy } from './browser-policy.js'
 import type { GridPlacementRuleSet } from '@common-arcade/match-runtime'
 import { computeManifestDigest } from '@common-arcade/manifest'
 import {
