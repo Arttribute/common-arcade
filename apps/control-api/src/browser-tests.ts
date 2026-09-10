@@ -109,11 +109,54 @@ const controllerSchema = z
         message: 'Human controllers cannot have an agent ID.',
       })
   })
+type TelemetryBatch = StoredDocument & {
+  epoch: string
+  events: { step: number }[]
+  progress?: { decisions: number }
+}
+
+// Counts are client-observed diagnostics, never the authoritative move counter.
+export function summarizePreviewTelemetry(batches: TelemetryBatch[]) {
+  const epochs = new Map<string, { decisions: number; samples: Set<number> }>()
+  for (const batch of batches) {
+    const epoch = epochs.get(batch.epoch) ?? {
+      decisions: 0,
+      samples: new Set<number>(),
+    }
+    for (const event of batch.events) {
+      epoch.samples.add(event.step)
+      epoch.decisions = Math.max(epoch.decisions, event.step + 1)
+    }
+    epoch.decisions = Math.max(epoch.decisions, batch.progress?.decisions ?? 0)
+    epochs.set(batch.epoch, epoch)
+  }
+  return {
+    decisions: [...epochs.values()].reduce((n, e) => n + e.decisions, 0),
+    samples: [...epochs.values()].reduce((n, e) => n + e.samples.size, 0),
+    source: 'client-observed-preview' as const,
+  }
+}
+
 export function createBrowserTestApi(
   store: DocumentStore,
   authenticate: (authorization?: string, scope?: string) => Promise<Principal>,
 ) {
   const app = new Hono()
+  async function previewCounts(runId: string) {
+    const counts = await store.list<
+      StoredDocument & { decisions: number; steps: number[] }
+    >(`browser-preview-counts:${runId}`)
+    if (counts.length)
+      return {
+        decisions: counts.reduce((n, c) => n + c.decisions, 0),
+        samples: counts.reduce((n, c) => n + c.steps.length, 0),
+        source: 'client-observed-preview',
+      }
+    return summarizePreviewTelemetry(
+      await store.list<TelemetryBatch>(`browser-telemetry:${runId}`),
+    )
+  }
+
   app.post('/v1/projects/:id/browser-runs', async (c) => {
     const p = await authenticate(
       c.req.header('Authorization'),
@@ -221,10 +264,16 @@ export function createBrowserTestApi(
     await projectAccess(store, p.id, c.req.param('id'), 'view')
     const runs = await store.list<BrowserRun>(`browser-runs:${p.id}`)
     return c.json({
-      runs: runs
-        .filter((run) => run.projectId === c.req.param('id'))
-        .map((run) => ({ ...run, controllers: controllersFor(run) }))
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      runs: await Promise.all(
+        runs
+          .filter((run) => run.projectId === c.req.param('id'))
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          .map(async (run) => ({
+            ...run,
+            controllers: controllersFor(run),
+            preview: await previewCounts(run.id),
+          })),
+      ),
     })
   })
   app.get('/v1/studio/browser-runs/:id', async (c) => {
@@ -235,13 +284,17 @@ export function createBrowserTestApi(
     )
     if (!run)
       throw new IdentityError(403, 'Playtest is unavailable to this account.')
+    const telemetry = await store.list<TelemetryBatch>(
+      `browser-telemetry:${run.id}`,
+    )
     return c.json({
       ...run,
+      preview: summarizePreviewTelemetry(telemetry),
       controllers: controllersFor(run),
       classification: 'private-unrated-test',
       rewardEligible: false,
       events: await store.list(`browser-events:${run.id}`),
-      telemetry: await store.list(`browser-telemetry:${run.id}`),
+      telemetry,
       strategyEvents: await store.list(`browser-strategy-events:${run.id}`),
     })
   })
@@ -269,6 +322,11 @@ export function createBrowserTestApi(
     const body = z
       .object({
         epoch: z.string().uuid(),
+        recordedAt: z.string().datetime().optional(),
+        progress: z
+          .object({ decisions: z.number().int().min(0).max(100000) })
+          .strict()
+          .optional(),
         events: z
           .array(
             z
@@ -308,7 +366,6 @@ export function createBrowserTestApi(
               })
               .strict(),
           )
-          .min(1)
           .max(16),
       })
       .strict()
@@ -337,6 +394,8 @@ export function createBrowserTestApi(
       version: 1,
       epoch: body.epoch,
       events: body.events,
+      ...(body.recordedAt ? { recordedAt: body.recordedAt } : {}),
+      ...(body.progress ? { progress: body.progress } : {}),
       source: 'client-observed-preview',
       rewardEligible: false,
     }
@@ -350,6 +409,38 @@ export function createBrowserTestApi(
         canonicalJson(jsonValueSchema.parse(document))
       )
         throw error
+    }
+    // Separate optimistic record: never touch the turn-based decision lock.
+    const countsPartition = `browser-preview-counts:${run.id}`
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const prior = await store.get<
+        StoredDocument & { decisions: number; steps: number[] }
+      >(countsPartition, body.epoch)
+      const steps = [
+        ...new Set([
+          ...(prior?.steps ?? []),
+          ...body.events.map((e) => e.step),
+        ]),
+      ]
+      try {
+        await store.put(
+          countsPartition,
+          body.epoch,
+          {
+            version: (prior?.version ?? 0) + 1,
+            decisions: Math.max(
+              prior?.decisions ?? 0,
+              body.progress?.decisions ?? 0,
+              ...body.events.map((e) => e.step + 1),
+            ),
+            steps,
+          },
+          prior?.version,
+        )
+        break
+      } catch (error) {
+        if (!(error instanceof StoreConflict) || attempt === 4) throw error
+      }
     }
     return c.json({ saved: body.events.length, batchId, rewardEligible: false })
   })

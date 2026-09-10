@@ -2,7 +2,7 @@
 import { CreatorEconomySettings } from './creator-economy-settings'
 import { AccountMenu } from './account-menu'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArcadeComposer, useArcadeIdentity } from './studio-composer'
@@ -137,6 +137,50 @@ type BrowserEvent = {
     'kind' | 'agentId' | 'strategy' | 'strategyEpoch' | 'policyMemory'
   >
 }
+const BrowserEventRow = memo(function BrowserEventRow({
+  event,
+  index,
+  sampled,
+}: {
+  event: BrowserEvent
+  index: number
+  sampled: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <details onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>
+        {index + 1}. {sampled ? `Decision ${event.step + 1} · ` : ''}
+        {event.seatId ?? 'seat'} · {event.decision.actionId} ·{' '}
+        {event.decision.reason}{' '}
+        {event.feedback ? (
+          <em className={`studio-feedback ${event.feedback.outcome}`}>
+            {event.feedback.reward >= 0 ? '+' : ''}
+            {event.feedback.reward.toFixed(1)}
+          </em>
+        ) : null}
+      </summary>
+      {open ? (
+        <pre>
+          {JSON.stringify(
+            {
+              controller: event.controller,
+              observation: event.observation,
+              feedback: event.feedback,
+              learning: event.decision.learning,
+              adaptation: event.adaptation,
+              performance: event.performance,
+              timing: event.timing,
+            },
+            null,
+            2,
+          )}
+        </pre>
+      ) : null}
+    </details>
+  )
+})
+
 type BrowserRun = {
   id: string
   step: number
@@ -144,6 +188,7 @@ type BrowserRun = {
   createdAt: string
   controllers: BrowserController[]
   events?: BrowserEvent[]
+  preview?: { decisions: number; samples: number }
 }
 type Run = TestRun & {
   document: GameDocument
@@ -171,6 +216,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
   const [shareRecordings, setShareRecordings] = useState(false),
     [recordingsRefresh, setRecordingsRefresh] = useState(0)
   const [browserRun, setBrowserRun] = useState<BrowserRun>()
+  const [reviewingBrowserRun, setReviewingBrowserRun] = useState(false)
   const browserRunCurrent = useRef(browserRun)
   browserRunCurrent.current = browserRun
   const installedStrategies = useRef(new Map<string, number>())
@@ -463,6 +509,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
     root: previewStageRef,
     active:
       realtimePreview &&
+      !reviewingBrowserRun &&
       browserPlaying &&
       !dirty &&
       view === 'preview' &&
@@ -475,6 +522,19 @@ export function GameStudio({ projectId }: { projectId: string }) {
       : 2,
     onSample: (event: BrowserEvent, epoch, decisions) => {
       setFrameDecisions(decisions)
+      setBrowserRuns((runs) =>
+        runs.map((run) =>
+          run.id === browserRun?.id
+            ? {
+                ...run,
+                preview: {
+                  decisions,
+                  samples: (run.preview?.samples ?? 0) + 1,
+                },
+              }
+            : run,
+        ),
+      )
       setBrowserEvents((all) => [...all, { ...event, epoch }].slice(-120))
       setBrowserAction({
         seat:
@@ -699,6 +759,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
     const created = await arcade<BrowserRun>(`projects/${p.id}/browser-runs`, {
       controllers,
     })
+    setReviewingBrowserRun(false)
     setBrowserRun(created)
     setFrameDecisions(0)
     setBrowserRuns((runs) => [created, ...runs])
@@ -728,37 +789,66 @@ export function GameStudio({ projectId }: { projectId: string }) {
     return created
   }
   async function resumeBrowserRun(summary: BrowserRun) {
-    if (isManagedBrowserGame(document))
-      throw new Error(
-        'Managed playtests cannot be resumed from decision logs. Start a new session; hosted matches provide authoritative reconnects.',
-      )
     const saved = await arcade<
       BrowserRun & {
         events: BrowserEvent[]
-        telemetry?: { epoch: string; events: BrowserEvent[] }[]
+        telemetry?: {
+          epoch: string
+          recordedAt?: string
+          events: BrowserEvent[]
+        }[]
       }
     >(`studio/browser-runs/${summary.id}`)
-    if (!project || saved.revision !== project.revision)
-      throw new Error(
-        `This session belongs to revision ${saved.revision}. Restore that revision before resuming it.`,
-      )
+    setReviewingBrowserRun(true)
     setBrowserRun(saved)
     setBrowserControllers(saved.controllers)
     setBrowserEvents(saved.events ?? [])
     setBrowserPlaying(false)
-    if (saved.telemetry?.length) {
+    setLogsOpen(true)
+    setFrameDecisions(saved.preview?.decisions ?? 0)
+    if (
+      isManagedBrowserGame(document) ||
+      realtimePreview ||
+      saved.telemetry?.length
+    ) {
+      const epochs = new Map<
+        string,
+        { started: string; events: BrowserEvent[] }
+      >()
+      for (const batch of saved.telemetry ?? []) {
+        const prior = epochs.get(batch.epoch) ?? {
+          started: batch.recordedAt ?? batch.epoch,
+          events: [],
+        }
+        if (batch.recordedAt && batch.recordedAt < prior.started)
+          prior.started = batch.recordedAt
+        prior.events.push(
+          ...batch.events.map((event) => ({ ...event, epoch: batch.epoch })),
+        )
+        epochs.set(batch.epoch, prior)
+      }
       setBrowserEvents(
-        saved.telemetry
-          .flatMap((batch) =>
-            batch.events.map((event) => ({ ...event, epoch: batch.epoch })),
+        [...epochs.values()]
+          .sort((a, b) => a.started.localeCompare(b.started))
+          .flatMap((epoch) =>
+            [
+              ...new Map(
+                epoch.events.map((event) => [event.step, event]),
+              ).values(),
+            ].sort((a, b) => a.step - b.step),
           )
           .slice(-120),
       )
       setNotice(
-        'Loaded sampled realtime diagnostics. Start a new session to play; samples cannot reconstruct a timed race.',
+        `Reviewing saved diagnostics from revision ${saved.revision}. Start a new session to play. Timed playtests cannot be reconstructed from samples.`,
       )
       return
     }
+    if (!project || saved.revision !== project.revision)
+      throw new Error(
+        `Restore revision ${saved.revision} before resuming this turn-based session.`,
+      )
+    setReviewingBrowserRun(false)
     setPreviewKey((key) => key + 1)
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
@@ -1708,7 +1798,11 @@ export function GameStudio({ projectId }: { projectId: string }) {
                               <Button
                                 key={action.id}
                                 variant="ghost"
-                                disabled={!!busy || browserPlaying}
+                                disabled={
+                                  !!busy ||
+                                  browserPlaying ||
+                                  reviewingBrowserRun
+                                }
                                 onClick={() =>
                                   void task('human move', () =>
                                     browserHumanDecision(controller, action.id),
@@ -1737,7 +1831,10 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 ) : (
                   <div className="studio-controller-actions">
                     <Button
-                      disabled={!realtimePreview && browserRun.step >= 200}
+                      disabled={
+                        reviewingBrowserRun ||
+                        (!realtimePreview && browserRun.step >= 200)
+                      }
                       onClick={() => setBrowserPlaying((active) => !active)}
                     >
                       {browserPlaying ? (
@@ -1759,6 +1856,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       variant="ghost"
                       disabled={
                         !!busy ||
+                        reviewingBrowserRun ||
                         browserDeciding ||
                         browserPlaying ||
                         browserRun.step >= 200
@@ -1775,6 +1873,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                     disabled={browserDeciding}
                     onClick={() => {
                       setBrowserPlaying(false)
+                      setReviewingBrowserRun(false)
                       setBrowserRun(undefined)
                       setBrowserEvents([])
                       setBrowserObservation(undefined)
@@ -1786,16 +1885,16 @@ export function GameStudio({ projectId }: { projectId: string }) {
                   </Button>
                 )}
                 <p className="studio-help">
-                  Private, unrated and not prize eligible. Human controls stay
-                  in this panel so every move can be resumed; agents act
-                  autonomously from the same legal browser observations.{' '}
+                  Private, unrated and not prize eligible. Humans and agents use
+                  the same legal controls. Timed sessions save diagnostics for
+                  review; hosted matches support reconnects.{' '}
                   {realtimePreview
                     ? `${frameDecisions} local decisions · five-minute sessions · sampled diagnostics`
                     : `${browserRun?.step ?? 0} / 200 decisions.`}
                 </p>
                 {browserRuns.length ? (
                   <label>
-                    Resume session
+                    Session history
                     <select
                       value={browserRun?.id ?? ''}
                       disabled={!!busy}
@@ -1813,7 +1912,9 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       {browserRuns.map((run) => (
                         <option key={run.id} value={run.id}>
                           {new Date(run.createdAt).toLocaleString()} ·{' '}
-                          {run.step} moves
+                          {run.preview?.decisions
+                            ? `${run.preview.decisions} recorded decisions · ${run.preview.samples} samples`
+                            : `${run.step} moves`}
                         </option>
                       ))}
                     </select>
@@ -2212,34 +2313,13 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 appear here.
               </p>
             ) : null}
-            {browserEvents.map((event) => (
-              <details key={`${event.epoch ?? 'server'}:${event.step}`}>
-                <summary>
-                  {event.step + 1}. {event.seatId ?? 'seat'} ·{' '}
-                  {event.decision.actionId} · {event.decision.reason}{' '}
-                  {event.feedback ? (
-                    <em className={`studio-feedback ${event.feedback.outcome}`}>
-                      {event.feedback.reward >= 0 ? '+' : ''}
-                      {event.feedback.reward.toFixed(1)}
-                    </em>
-                  ) : null}
-                </summary>
-                <pre>
-                  {JSON.stringify(
-                    {
-                      controller: event.controller,
-                      observation: event.observation,
-                      feedback: event.feedback,
-                      learning: event.decision.learning,
-                      adaptation: event.adaptation,
-                      performance: event.performance,
-                      timing: event.timing,
-                    },
-                    null,
-                    2,
-                  )}
-                </pre>
-              </details>
+            {browserEvents.map((event, index) => (
+              <BrowserEventRow
+                key={`${event.epoch ?? 'server'}:${event.step}`}
+                event={event}
+                index={index}
+                sampled={realtimePreview}
+              />
             ))}
           </div>
         ) : (
@@ -2653,7 +2733,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 : isBrowserGame(document) && browserRun
                   ? browserPlaying
                     ? `${browserRun.controllers.filter((controller) => controller.kind === 'agent').length} agents are playing · human turns use the legal-action panel`
-                    : `Session paused at decision ${browserRun.step}`
+                    : `Session paused · ${realtimePreview ? frameDecisions : browserRun.step} decisions`
                   : 'Play directly in the preview'}
             <span className="studio-preview-trust">
               {view === 'test'

@@ -34,7 +34,12 @@ export function createPreviewTelemetryOutbox(
     runId: string
     batchId: string
     sealed?: boolean
-    body: { epoch: string; events: any[] }
+    body: {
+      epoch: string
+      recordedAt?: string
+      events: any[]
+      progress?: { decisions: number }
+    }
   }[] = []
   let inFlight = false
   let counter = 0
@@ -64,7 +69,35 @@ export function createPreviewTelemetryOutbox(
       queue.push({
         runId,
         batchId: epoch + '-' + counter++,
-        body: { epoch, events: [event] },
+        body: { epoch, recordedAt: new Date().toISOString(), events: [event] },
+      })
+    },
+    progress(runId: string, epoch: string, decisions: number) {
+      const pending = queue.find(
+        (batch) =>
+          !batch.sealed &&
+          batch.runId === runId &&
+          batch.body.epoch === epoch &&
+          batch.body.progress,
+      )
+      if (pending) {
+        pending.body.progress!.decisions = Math.max(
+          pending.body.progress!.decisions,
+          decisions,
+        )
+        return
+      }
+      if (queue.length >= 32) {
+        const sample = queue.findIndex(
+          (batch) => !batch.sealed && !batch.body.progress,
+        )
+        if (sample < 0) return
+        queue.splice(sample, 1)
+      }
+      queue.push({
+        runId,
+        batchId: epoch + '-progress-' + counter++,
+        body: { epoch, events: [], progress: { decisions } },
       })
     },
     async flush() {
@@ -166,6 +199,8 @@ export function usePreviewAgents(options: Options) {
         latest.current.onWarning(String(data.reason))
       if (data.type === 'arcade.preview-policy.stopped') {
         finished = true
+        outbox.current?.progress(runId, epoch, data.decisions ?? 0)
+        void outbox.current?.flush()
         latest.current.onStop(String(data.reason))
       }
     }

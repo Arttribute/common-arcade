@@ -223,7 +223,14 @@ function problem(
       },
     }
   }
-  if (error instanceof ZodError) {
+  if (
+    error instanceof ZodError ||
+    (error &&
+      typeof error === 'object' &&
+      (error as { name?: string }).name === 'ZodError' &&
+      Array.isArray((error as { issues?: unknown }).issues))
+  ) {
+    const validation = error as ZodError
     return {
       status: 422,
       body: {
@@ -234,7 +241,7 @@ function problem(
         code: 'INVALID_REQUEST',
         requestId: requestIdValue,
         retryable: false,
-        violations: error.issues.map((issue) => ({
+        violations: validation.issues.map((issue) => ({
           field: issue.path.join('.') || 'body',
           code: issue.code,
           message: issue.message,
@@ -314,6 +321,16 @@ export function createApp(options: ControlApiOptions = {}) {
       : undefined
 
   app.use('*', requestId())
+  // Some bundled validation errors do not inherit the host realm's Error.
+  // Hono rethrows those; normalize them before they escape the Lambda adapter.
+  app.use('*', async (context, next) => {
+    try {
+      await next()
+    } catch (error) {
+      const response = problem(error, context.get('requestId'))
+      return context.json(response.body, response.status)
+    }
+  })
   app.use('*', bodyLimit({ maxSize: 256 * 1024 }))
   if (options.logRequests !== false) app.use('*', logger())
   app.use(
@@ -678,6 +695,37 @@ export function createApp(options: ControlApiOptions = {}) {
       ),
     ),
   )
+
+  app.post('/v1/matches/:matchId/seats/:seatId/autoplay', async (context) => {
+    const p = await authenticate(
+      context.req.header('Authorization'),
+      'matches:play',
+    )
+    const body = z
+      .object({ controllerId: z.string().min(1).max(200) })
+      .strict()
+      .parse(await context.req.json())
+    const platform = requirePlatform()
+    const matchId = context.req.param('matchId'),
+      seatId = context.req.param('seatId')
+    const prepared = platform.beginCoaching(matchId, seatId, p.id)
+    if (prepared.controllerId !== body.controllerId)
+      throw new IdentityError(403, 'This controller no longer owns the seat.')
+    const applied = await platform.applyCoaching(
+      matchId,
+      seatId,
+      p.id,
+      prepared.requestId,
+      prepared.controllerId,
+      {
+        strategy:
+          'Play to win legally. Adapt to visible objectives, opponents and threats.',
+        reason: 'Arcade realtime policy started on the match worker.',
+        executableStrategy: { actionWeights: {}, avoidActions: [], rules: [] },
+      },
+    )
+    return context.json({ ...applied, source: 'arcade-realtime-policy' })
+  })
 
   app.post('/v1/matches/:matchId/seats/:seatId/coach', async (context) => {
     const p = await authenticate(

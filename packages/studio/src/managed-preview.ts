@@ -39,9 +39,10 @@ function installManagedPreview(){
   const result=()=>game.result(clone(state));
   const observe=seatId=>game.observe(clone(state),seatId,context(seatId));
   const draw=()=>{const observation=observe(roster[0].seatId);render(observation.visibleState,{observation,inputEnabled:!stopped&&!result(),match:{id:'mat_studio_preview',status:result()?'completed':'running',seats:roster.map(s=>({id:s.seatId,role:s.role}))},preview:true})};
-  const transition=next=>{state=clone(next.state);stateSequence++;eventSequence+=(next.events??[]).length;draw()};
+  let drawPending=false;const scheduleDraw=()=>{if(drawPending)return;drawPending=true;requestAnimationFrame(()=>{drawPending=false;draw()})};
+  const transition=next=>{state=clone(next.state);stateSequence++;eventSequence+=(next.events??[]).length;scheduleDraw()};
   api.seats=()=>roster.map((s,i)=>({id:s.seatId,label:'Player '+(i+1)}));
-  api.observe=seatId=>{const o=observe(seatId);return{...o.visibleState,visibleState:o.visibleState,feedback:o.feedback??null,result:result(),elapsedMs}};
+  api.observe=seatId=>{const o=observe(seatId);const visible={...o.visibleState};const context=visible.arcadeDecisionContext;if(context){const ids=new Map(o.legalActions.map(a=>[a.id??a.type,registerAction(a)]));visible.arcadeDecisionContext={...context,actionScores:Object.fromEntries(Object.entries(context.actionScores??{}).map(([id,score])=>[ids.get(id)??id,score])),preferredActions:(context.preferredActions??[]).map(id=>ids.get(id)??id),avoidActions:(context.avoidActions??[]).map(id=>ids.get(id)??id)}}return{...visible,visibleState:visible,feedback:o.feedback??null,result:result(),elapsedMs}};
   const actionIds=new Map,actionValues=new Map;let nextActionId=0;
   const registerAction=action=>{
     const key=JSON.stringify(action);let id=actionIds.get(key);

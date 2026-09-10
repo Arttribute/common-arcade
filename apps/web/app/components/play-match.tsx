@@ -291,6 +291,26 @@ export function PlayMatch({
             : await control.claimSeat(input),
         )
       }
+      if (
+        mode === 'control' &&
+        seatId &&
+        agentId &&
+        match?.lobby?.spectating !== 'disabled' &&
+        ['realtime', 'hybrid'].includes(match?.mode ?? '')
+      ) {
+        await arcade(
+          `matches/${matchId}/seats/${encodeURIComponent(seatId)}/autoplay`,
+          { controllerId },
+        )
+        coachedSeats.current.add(seatId)
+        setAgentPaused(true)
+        setActiveAgent(undefined)
+        setAgentStatus(
+          'Arcade realtime policy is playing on the match worker. Use coaching to change its strategy.',
+        )
+        mode = 'spectate'
+        seatId = undefined
+      }
       const session = await control.createSession({
         matchId,
         mode,

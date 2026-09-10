@@ -4,7 +4,7 @@ import { smokeTestRuntime } from './runtime-validation.js'
 
 function game(
   observe: string,
-  validateAction = '()=>null',
+  validateAction = '(s,a,c)=>s.roster.some(r=>r.seatId===c.seatId)?null:"Unknown seat"',
   mode = 'turn-based',
 ) {
   return gameDocumentSchema.parse({
@@ -76,7 +76,7 @@ describe('live runtime playability validation', () => {
       smokeTestRuntime(
         game(
           '(s,id,c)=>({visibleState:s,legalActions:c.elapsedMs>=300?[{type:"shoot"}]:[]})',
-          '()=>null',
+          '(s,a,c)=>s.roster.some(r=>r.seatId===c.seatId)?null:"Unknown seat"',
           'realtime',
         ),
         'sha256:test',
@@ -88,11 +88,23 @@ describe('live runtime playability validation', () => {
       smokeTestRuntime(
         game(
           '(s,id)=>({visibleState:s,legalActions:id===s.roster[0].seatId?[{type:"shoot"}]:[]})',
-          '()=>null',
+          '(s,a,c)=>s.roster.some(r=>r.seatId===c.seatId)?null:"Unknown seat"',
           'realtime',
         ),
         'sha256:test',
       ),
     ).rejects.toThrow('sea_validation_2')
+  })
+  it('rejects fallback-to-home rules even when both seats advertise controls', async () => {
+    await expect(
+      smokeTestRuntime(
+        game(
+          '(s,id)=>({visibleState:s,legalActions:[{type:"move"}]})',
+          '()=>null',
+          'realtime',
+        ),
+        'sha256:test',
+      ),
+    ).rejects.toThrow('unregistered seat')
   })
 })

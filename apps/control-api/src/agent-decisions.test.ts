@@ -118,3 +118,29 @@ it('turns the native Commons final message into the exact advertised live action
     basedOnStateSequence: 12,
   })
 })
+
+it('retries safe agent lookups through transient gateway errors without exposing HTML', async () => {
+  const { commonsRequest } = await import('./studio.js')
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(new Response('<html>503</html>', { status: 503 }))
+    .mockResolvedValueOnce(Response.json({ data: { agentId: 'player' } }))
+  vi.stubGlobal('fetch', fetcher)
+  expect(await commonsRequest(principal, '/v1/agents/player')).toEqual({
+    agentId: 'player',
+  })
+  expect(fetcher).toHaveBeenCalledTimes(2)
+})
+it('does not replay a potentially billable POST after an ambiguous upstream failure', async () => {
+  const { commonsRequest } = await import('./studio.js')
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(
+      new Response('<html>Bad Gateway</html>', { status: 502 }),
+    )
+  vi.stubGlobal('fetch', fetcher)
+  await expect(commonsRequest(principal, '/v1/agents/run', {})).rejects.toThrow(
+    'temporarily unavailable (HTTP 502)',
+  )
+  expect(fetcher).toHaveBeenCalledTimes(1)
+})

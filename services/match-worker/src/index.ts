@@ -1227,6 +1227,16 @@ export class LocalArcadePlatform {
         this.agentPolicies.delete(`${matchId}/${seat.id}`)
         continue
       }
+      // A held intent needs no new projection until its next decision or pulse.
+      // Sandboxed observations are expensive; do not evaluate them every timer tick.
+      if (
+        now < agent.nextDecision &&
+        !(
+          agent.held?.mode === 'pulse' &&
+          now - (agent.lastApply ?? 0) >= agent.held.refreshMs
+        )
+      )
+        continue
       const observation = record.runtime.observation(seat.id)
       if (!observation.legalActions.length) {
         agent.held = undefined

@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #090b18;
+        color: #f5f6ff;
+        font: 14px system-ui;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        padding: 14px 20px;
+        letter-spacing: 3px;
+        border-bottom: 1px solid #283044;
+      }
+      small {
+        color: #8e9aac;
+        letter-spacing: 1px;
+      }
+      canvas {
+        width: 100%;
+        display: block;
+        aspect-ratio: 960/500;
+      }
+      #controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
+        padding: 12px;
+      }
+      button {
+        border: 1px solid #4a5570;
+        background: #192139;
+        color: white;
+        border-radius: 8px;
+        padding: 12px;
+        touch-action: none;
+      }
+      button:disabled {
+        opacity: 0.35;
+      }
+      button:active {
+        background: #53669b;
+      }
+      #status {
+        text-align: center;
+        min-height: 22px;
+        color: #bec7df;
+      }
+      .help {
+        text-align: center;
+        color: #8895b1;
+        padding: 4px 10px 14px;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <header><b>NEON DUEL</b><small>VOLT / EMBER</small></header>
+    <canvas
+      id="arena"
+      width="960"
+      height="500"
+      aria-label="Two fighters in a neon arena"
+    ></canvas>
+    <div id="status" role="status">Waiting for the arena…</div>
+    <div id="controls"></div>
+    <div class="help">
+      A / D move · J jab · K kick · L uppercut · W jump · Space block. Click the
+      arena to focus.
+    </div>
+    <script src="main.js"></script>
+  </body>
+</html>
