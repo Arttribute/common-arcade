@@ -1739,7 +1739,7 @@ export class LocalArcadePlatform {
         const now = this.now().getTime()
         lastTickAt = Math.max(lastTickAt, now - 1000)
         const due = Math.min(
-          4,
+          8,
           Math.max(1, Math.floor((now - lastTickAt) / deltaMs)),
         )
         for (let step = 0; step < due; step++) {
