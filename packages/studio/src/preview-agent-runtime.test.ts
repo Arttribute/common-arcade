@@ -6,6 +6,7 @@ function harness(
   mode: 'pulse' | 'hold' | 'instant' = 'pulse',
   count = 2,
   rate = 10,
+  clockLeadMs = 0,
 ) {
   let now = 0
   let nextId = 1
@@ -39,7 +40,7 @@ function harness(
     ])
   const runtime = createPreviewAgentRuntime({
     policy: createBrowserPolicy(),
-    now: () => now,
+    now: () => now + clockLeadMs,
     api: {
       observe: () => ({
         arcade: {
@@ -102,6 +103,20 @@ function harness(
 }
 
 describe('frame-synchronized preview control', () => {
+  it('keeps timing samples nonnegative when the first RAF timestamp predates start()', () => {
+    const h = harness('instant', 1, 10, 1)
+    h.advance(1, true, 0.25)
+    const samples = h.messages.filter(
+      (message) => message.type === 'arcade.preview-policy.sample',
+    )
+    expect(samples.length).toBeGreaterThan(0)
+    for (const sample of samples)
+      expect(
+        Object.values(sample.event.timing).every(
+          (value) => typeof value === 'number' && value >= 0,
+        ),
+      ).toBe(true)
+  })
   it('reports integer feedback durations from fractional animation frame timestamps', () => {
     const h = harness()
     h.advance(1200, true, 1000 / 60)
