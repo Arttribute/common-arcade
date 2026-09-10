@@ -19,6 +19,7 @@ import {
   type MatchSettlementAdapter,
 } from './escrow.js'
 import type { PaidServiceRail } from './x402.js'
+import { trustedOrigin } from './origin-auth.js'
 const rails: PaidServiceRail[] = JSON.parse(
   process.env.ARCADE_X402_RAILS ?? '[]',
 )
@@ -82,6 +83,13 @@ const wss = new WebSocketServer({
   server: server as import('node:http').Server,
   path: '/v1/economy/live',
   maxPayload: 32768,
+  verifyClient: ({ req }: { req: import('node:http').IncomingMessage }) =>
+    trustedOrigin(
+      process.env.ARCADE_ORIGIN_TOKEN,
+      typeof req.headers['x-arcade-origin'] === 'string'
+        ? req.headers['x-arcade-origin']
+        : undefined,
+    ),
 })
 wss.on('connection', (socket, request) => {
   const id =

@@ -251,6 +251,32 @@ Set `NEXT_PUBLIC_ARCADE_PAYMENTS_URL` before building the web app and
 contract, administrator, canonical token, resolver, faucet funding and facilitator checks
 pass. Contracts/accounting tests do not prove a public chain integration.
 
+## Hosted testnet payment worker
+
+The opt-in `CommonArcade-<stage>-Payments` CDK stack deploys one Fargate worker,
+encrypted EFS match storage with backups, and a CloudFront HTTPS/WebSocket endpoint.
+Deployments stop the previous worker before starting its replacement. Do not
+increase desired count or deployment overlap while the file store is in use.
+
+Create the Secrets Manager secret `common-arcade/<stage>/payments` out of band with
+the fields `resolverKey`, `baseFacilitatorKey`, and `arcFacilitatorKey`. The resolver
+must be authorized by every configured escrow. Give each facilitator a separate,
+funded testnet gas wallet so its nonce cannot race the resolver. Keys are injected
+into containers; never put them in CDK context or deployment outputs.
+
+After CI passes and the change merges, dispatch **Deploy testnet payment service**
+on `main`, using the existing protected AWS environment. Run `operation=diff`,
+review the changes, then run `operation=deploy` with `confirm=deploy`. The workflow
+uses GitHub OIDC and deploys only the payment stack. Its `PaymentUrl` output is the
+exact signing domain and the value for Vercel's production
+`NEXT_PUBLIC_ARCADE_PAYMENTS_URL`; rebuild the frontend after setting it.
+
+The load balancer accepts application traffic only with a generated origin token
+that CloudFront adds. Facilitators listen on task-local loopback interfaces.
+`/healthz` remains available to load-balancer health checks. Inspect the workflow's
+health/config/discovery checks, then exercise a paid match and x402 request through
+the public endpoint before treating a network as verified.
+
 ## Operational limits and remaining launch evidence
 
 This is a testnet trusted-dealer/resolver preview. A commitment proves the dealer

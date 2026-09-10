@@ -1,0 +1,80 @@
+name: Deploy testnet payment service
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: Existing protected AWS environment
+        type: choice
+        options: [development, staging]
+        default: development
+        required: true
+      operation:
+        description: Review infrastructure or deploy the reviewed payment stack
+        type: choice
+        options: [diff, deploy]
+        default: diff
+        required: true
+      confirm:
+        description: Type deploy for a deployment
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: common-arcade-payments-${{ inputs.stage }}
+  cancel-in-progress: false
+
+jobs:
+  payments:
+    if: inputs.operation == 'diff' || inputs.confirm == 'deploy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: ${{ inputs.stage }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Confirm deployment is enabled
+        env:
+          AWS_DEPLOY_ENABLED: ${{ vars.AWS_DEPLOY_ENABLED }}
+        run: test "$AWS_DEPLOY_ENABLED" = true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.3
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @common-arcade/control-api... build
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Synthesize payment infrastructure
+        run: pnpm --filter @common-arcade/aws-infra synth --context stage="${{ inputs.stage }}" --context payments=true
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+      - name: Review payment infrastructure diff
+        if: inputs.operation == 'diff'
+        run: pnpm --filter @common-arcade/aws-infra diff "CommonArcade-${{ inputs.stage }}-Payments" --exclusively --context stage="${{ inputs.stage }}" --context payments=true
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+      - name: Deploy only the reviewed payment stack
+        if: inputs.operation == 'deploy' && inputs.confirm == 'deploy'
+        run: pnpm --filter @common-arcade/aws-infra run deploy "CommonArcade-${{ inputs.stage }}-Payments" --exclusively --context stage="${{ inputs.stage }}" --context payments=true --outputs-file /tmp/payment-outputs.json
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+      - name: Verify public payment endpoint
+        if: inputs.operation == 'deploy'
+        run: |
+          payment_url=$(jq -r '.[] | .PaymentUrl' /tmp/payment-outputs.json)
+          curl --fail --retry 6 --retry-delay 10 "$payment_url/healthz"
+          curl --fail "$payment_url/v1/economy/config"
+          curl --fail "$payment_url/.well-known/x402"
+          printf '\nPayment endpoint: %s\n' "$payment_url" >> "$GITHUB_STEP_SUMMARY"
