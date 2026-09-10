@@ -1,8 +1,16 @@
+import { publishGameEconomy } from './economy.js'
+export {
+  inheritedRemixEconomy,
+  unresolvedRemixRoyalty,
+  publishGameEconomy,
+} from './economy.js'
 import { compileBrowserPresentation } from './browser.js'
 import type { GridPlacementRuleSet } from '@common-arcade/match-runtime'
 import { computeManifestDigest } from '@common-arcade/manifest'
 import {
   ARCADE_API_VERSION,
+  GAME_ECONOMY_EXTENSION,
+  GAME_REMIX_EXTENSION,
   gameManifestSchema,
   type GameManifest,
 } from '@common-arcade/protocol'
@@ -164,7 +172,7 @@ export async function releaseManifest(
           : undefined,
       ].filter((tag): tag is string => Boolean(tag))
     : []
-  const extensions = capabilities
+  const extensions: GameManifest['spec']['extensions'] = capabilities
     ? [
         {
           id: 'https://arcade.agentcommons.io/extensions/world/v1',
@@ -196,6 +204,38 @@ export async function releaseManifest(
           : []),
       ]
     : []
+  if (project.forkedFrom)
+    extensions.push({
+      id: GAME_REMIX_EXTENSION,
+      required: false,
+      config: {
+        sourceReleaseId: project.forkedFrom.releaseId,
+        sourceDigest: project.forkedFrom.digest,
+        ...(project.unresolvedRemixRoyalty
+          ? { unresolvedRemixRoyalty: true }
+          : {}),
+        ...(project.inheritedEconomy
+          ? { inheritedEconomy: project.inheritedEconomy }
+          : {}),
+      },
+    })
+  if (
+    project.unresolvedRemixRoyalty &&
+    project.document.monetization?.mode === 'revenue-share'
+  )
+    throw new Error(
+      'Source royalty recipients are unresolved; free remix publication remains available',
+    )
+  const earnings = publishGameEconomy(
+    project.document.monetization,
+    project.inheritedEconomy,
+  )
+  if (earnings.mode === 'revenue-share')
+    extensions.push({
+      id: GAME_ECONOMY_EXTENSION,
+      required: false,
+      config: earnings,
+    })
   const m: GameManifest = {
     apiVersion: ARCADE_API_VERSION,
     kind: 'Game',
@@ -212,7 +252,17 @@ export async function releaseManifest(
         name: 'Arcade creator',
       },
       tags: isBrowserGame(project.document)
-        ? [...new Set(['browser', 'interactive', 'agents', ...capabilityTags])]
+        ? [
+            ...new Set([
+              'browser',
+              'interactive',
+              'agents',
+              ...(project.document.monetization?.mode === 'revenue-share'
+                ? ['creator-earnings']
+                : []),
+              ...capabilityTags,
+            ]),
+          ]
         : ['grid', 'turn-based', 'agents'],
     },
     spec: {

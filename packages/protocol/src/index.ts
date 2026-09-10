@@ -66,3 +66,5 @@ export type {
 } from './schemas.js'
 
 export * from './studio.js'
+
+export * from './economy.js'

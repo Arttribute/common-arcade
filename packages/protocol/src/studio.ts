@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import type { PublishedGameEconomy } from './economy.js'
+import { gameMonetizationSchema } from './economy.js'
 import type { GameManifest } from './index.js'
 
 export const gameDistributionSchema = z
@@ -48,6 +50,7 @@ export const gridGameDocumentSchema = z
     accent: z.string().regex(/^#[0-9a-fA-F]{6}$/),
     background: z.string().regex(/^#[0-9a-fA-F]{6}$/),
     distribution: gameDistributionSchema.optional(),
+    monetization: gameMonetizationSchema.optional(),
   })
   .strict()
   .superRefine((d, c) => {
@@ -230,6 +233,7 @@ export const browserGameDocumentSchema = z
       .strict()
       .optional(),
     distribution: gameDistributionSchema.optional(),
+    monetization: gameMonetizationSchema.optional(),
     files: z
       .array(
         z
@@ -416,6 +420,8 @@ export type StudioProject = {
   createdAt: string
   updatedAt: string
   releaseId?: string
+  inheritedEconomy?: PublishedGameEconomy
+  unresolvedRemixRoyalty?: boolean
   collaborators?: {
     actorId: string
     permissions: ('test' | 'comment' | 'edit')[]

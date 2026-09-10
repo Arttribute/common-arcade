@@ -10,3 +10,21 @@ node_modules
 *.log
 .env*
 !.env.example
+
+**/.payment-data
+**/lib/forge-std
+**/lib/openzeppelin-contracts
+**/lib/safe-contracts
+**/out
+**/cache
+**/broadcast
+
+# Exclude workspace-local build output and injected environment files too.
+**/.next
+**/.turbo
+**/.source
+**/cdk.out
+**/coverage
+**/*.tsbuildinfo
+**/.env*
+!**/.env.example

@@ -59,6 +59,15 @@ export default async function GamePage({
           </span>
           <h1>{game.metadata.title}</h1>
           <p>{game.metadata.summary}</p>
+          {document.monetization?.mode === 'revenue-share' && (
+            <p>
+              Optional {document.monetization.allowedModes.join(' / ')} matches
+              · 2.5% success fee · {document.monetization.creatorShareBps / 100}
+              % of that fee supports the creator. Free play remains available.
+              Paid runtime availability is shown when opening a match.{' '}
+              <a href={`/play/paid/${releaseId}`}>Open play & earn</a>
+            </p>
+          )}
           <div className="profile-list">
             <span className={browserGame ? 'is-preview' : 'is-live-ready'}>
               {browserGame ? 'Preview only · no live lobby' : 'Live-ready'}
