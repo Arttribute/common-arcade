@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, type RefObject } from 'react'
 import type { ExecutableStrategy } from '@common-arcade/studio'
-import { arcade } from '../../lib/api'
+import { arcade, ArcadeApiError } from '../../lib/api'
 
 type Controller = {
   seatId: string
@@ -108,10 +108,19 @@ export function createPreviewTelemetryOutbox(
       try {
         await send(next.runId, next.batchId, next.body)
         queue.shift()
-      } catch {
-        warn(
-          'Diagnostic upload delayed. The same batch will be retried; controls continue locally.',
-        )
+      } catch (error) {
+        if (
+          error instanceof ArcadeApiError &&
+          [400, 413, 422].includes(error.status)
+        ) {
+          queue.shift()
+          warn(
+            'A diagnostic batch was rejected and skipped. Later samples will still be saved; controls continue locally.',
+          )
+        } else
+          warn(
+            'Diagnostic upload delayed. The same batch will be retried; controls continue locally.',
+          )
       } finally {
         inFlight = false
       }
