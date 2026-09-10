@@ -13,11 +13,11 @@ import { createEvmFacilitator } from '../src/evm-facilitator.ts'
 try {
   const networkId = process.argv[2]
   if (
-    !['base-sepolia', 'arc-testnet'].includes(networkId) ||
+    !['base-sepolia', 'arc-testnet', 'celo-sepolia'].includes(networkId) ||
     !process.argv.includes('--broadcast')
   )
     throw new Error(
-      'Select base-sepolia or arc-testnet and explicitly pass --broadcast',
+      'Select base-sepolia, arc-testnet or celo-sepolia and explicitly pass --broadcast',
     )
   const network = NETWORKS[networkId]
   const key = process.env.ARCADE_DEPLOYER_KEY

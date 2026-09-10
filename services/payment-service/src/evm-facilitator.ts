@@ -6,7 +6,7 @@ import { toFacilitatorEvmSigner } from '@x402/evm'
 import { createWalletClient, http, publicActions, type Hex } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { NETWORKS, type PaymentNetwork } from '@common-arcade/economy'
-/** Optional single-instance Arc/Base testnet facilitator. Hedera always uses Blocky402. */
+/** Optional single-instance EVM testnet facilitator. Hedera always uses Blocky402. */
 export function createEvmFacilitator(
   networkId: PaymentNetwork,
   key: Hex,
@@ -14,9 +14,7 @@ export function createEvmFacilitator(
 ) {
   const network = NETWORKS[networkId]
   if (!network.testnet || networkId === 'hedera-testnet')
-    throw new Error(
-      'Only Arc and Base testnet EVM rails may be self-hosted here',
-    )
+    throw new Error('Only configured EVM testnet rails may be self-hosted here')
   const account = privateKeyToAccount(key),
     client = createWalletClient({
       account,

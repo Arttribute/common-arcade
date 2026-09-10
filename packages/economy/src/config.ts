@@ -7,7 +7,12 @@ export const economyConfigSchema = z.discriminatedUnion('mode', [
   z
     .object({
       mode: z.literal('escrow'),
-      network: z.enum(['base-sepolia', 'arc-testnet', 'hedera-testnet']),
+      network: z.enum([
+        'base-sepolia',
+        'arc-testnet',
+        'hedera-testnet',
+        'celo-sepolia',
+      ]),
       stakeUnits: units,
       bounties: z.boolean().default(false),
       spectatorBets: z.boolean().default(false),

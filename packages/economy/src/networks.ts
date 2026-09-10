@@ -1,7 +1,7 @@
 import { defineChain, type Address, type Chain } from 'viem'
-import { base, baseSepolia } from 'viem/chains'
+import { base, baseSepolia, celoSepolia } from 'viem/chains'
 export type PaymentNetwork =
-  'base-sepolia' | 'arc-testnet' | 'hedera-testnet' | 'base'
+  'base-sepolia' | 'arc-testnet' | 'hedera-testnet' | 'celo-sepolia' | 'base'
 export interface NetworkConfig {
   id: PaymentNetwork
   chain: Chain
@@ -38,6 +38,16 @@ export const NETWORKS: Record<PaymentNetwork, NetworkConfig> = {
     decimals: 6,
     testnet: true,
     explorer: 'https://testnet.arcscan.app',
+  },
+  'celo-sepolia': {
+    id: 'celo-sepolia',
+    chain: celoSepolia,
+    x402Network: 'eip155:11142220',
+    asset: '0x01C5C0122039549AD1493B8220cABEdD739BC44E',
+    token: '0x01C5C0122039549AD1493B8220cABEdD739BC44E',
+    decimals: 6,
+    testnet: true,
+    explorer: 'https://celo-sepolia.blockscout.com',
   },
   'hedera-testnet': {
     id: 'hedera-testnet',

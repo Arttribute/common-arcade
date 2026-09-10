@@ -21,6 +21,19 @@ describe('optional game-neutral economy', () => {
       expect(() => usdcUnits(amount)).toThrow()
     expect(NETWORKS['arc-testnet'].decimals).toBe(6)
   })
+  it('accepts Celo Sepolia payments and rejects obsolete or mainnet Celo rails', () => {
+    expect(
+      readEconomyConfig({
+        mode: 'escrow',
+        network: 'celo-sepolia',
+        stakeUnits: '1000000',
+      }).mode,
+    ).toBe('escrow')
+    for (const network of ['celo', 'celo-alfajores'])
+      expect(() =>
+        readEconomyConfig({ mode: 'escrow', network, stakeUnits: '1000000' }),
+      ).toThrow()
+  })
   it('isolates chains, rounds and deployments', () => {
     expect(poolId(296, contract, 'mat_a', 'digest', 1)).not.toBe(
       poolId(84532, contract, 'mat_a', 'digest', 1),

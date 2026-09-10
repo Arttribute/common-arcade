@@ -41,6 +41,7 @@ export class PaymentStack extends Stack {
       ),
     )
     const treasury = '0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab'
+    const celoEnabled = Boolean(deployments['celo-sepolia'])
     const vpc = props.vpcName
       ? ec2.Vpc.fromLookup(this, 'Vpc', { tags: { Name: props.vpcName } })
       : new ec2.Vpc(this, 'Vpc', {
@@ -89,8 +90,8 @@ export class PaymentStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     })
     const task = new ecs.FargateTaskDefinition(this, 'Task', {
-      cpu: 512,
-      memoryLimitMiB: 1024,
+      cpu: celoEnabled ? 1024 : 512,
+      memoryLimitMiB: celoEnabled ? 2048 : 1024,
     })
     const container = task.addContainer('payments', {
       image: ecs.ContainerImage.fromDockerImageAsset(image),
@@ -120,6 +121,15 @@ export class PaymentStack extends Stack {
             payTo: '0.0.10456930',
             facilitatorUrl: 'https://api.testnet.blocky402.com',
           },
+          ...(celoEnabled
+            ? [
+                {
+                  network: 'celo-sepolia',
+                  payTo: treasury,
+                  facilitatorUrl: 'http://127.0.0.1:4024',
+                },
+              ]
+            : []),
         ]),
       },
       secrets: {
@@ -135,6 +145,14 @@ export class PaymentStack extends Stack {
           runtimeSecret,
           'resolverKey',
         ),
+        ...(celoEnabled
+          ? {
+              ARCADE_RESOLVER_KEY_11142220: ecs.Secret.fromSecretsManager(
+                runtimeSecret,
+                'resolverKey',
+              ),
+            }
+          : {}),
         ARCADE_ORIGIN_TOKEN: ecs.Secret.fromSecretsManager(originSecret),
       },
       healthCheck: {
@@ -152,7 +170,9 @@ export class PaymentStack extends Stack {
     for (const [network, port, field] of [
       ['base-sepolia', '4022', 'baseFacilitatorKey'],
       ['arc-testnet', '4023', 'arcFacilitatorKey'],
+      ['celo-sepolia', '4024', 'celoFacilitatorKey'],
     ] as const) {
+      if (!deployments[network]) continue
       const facilitator = task.addContainer(`facilitator-${network}`, {
         image: ecs.ContainerImage.fromDockerImageAsset(image),
         command: ['node', 'dist/facilitator-server.js'],

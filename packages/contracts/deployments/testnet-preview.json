@@ -13,5 +13,10 @@
     "contract": "0xbe529edf75ebeb609dcf7ab26783dc558b735851",
     "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
     "rpcUrl": "https://testnet.hashio.io/api"
+  },
+  "celo-sepolia": {
+    "contract": "0xbe529edf75ebeb609dcf7ab26783dc558b735851",
+    "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+    "rpcUrl": "https://forno.celo-sepolia.celo-testnet.org"
   }
 }

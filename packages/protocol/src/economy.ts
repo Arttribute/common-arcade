@@ -25,6 +25,7 @@ export const gameMonetizationSchema = z.discriminatedUnion('mode', [
           'base-sepolia': payoutAddress.optional(),
           'arc-testnet': payoutAddress.optional(),
           'hedera-testnet': payoutAddress.optional(),
+          'celo-sepolia': payoutAddress.optional(),
         })
         .strict()
         .refine(
@@ -52,6 +53,7 @@ export const publishedGameEconomySchema = z.discriminatedUnion('mode', [
           'base-sepolia': z.array(royaltyShareSchema).max(8).optional(),
           'arc-testnet': z.array(royaltyShareSchema).max(8).optional(),
           'hedera-testnet': z.array(royaltyShareSchema).max(8).optional(),
+          'celo-sepolia': z.array(royaltyShareSchema).max(8).optional(),
         })
         .strict()
         .optional(),

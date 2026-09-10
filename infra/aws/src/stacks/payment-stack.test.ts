@@ -42,7 +42,13 @@ describe('PaymentStack', () => {
       template.findResources('AWS::ECS::TaskDefinition'),
     )
     const containers = tasks[0]!.Properties.ContainerDefinitions
-    expect(containers).toHaveLength(3)
+    expect(containers.map((c: { Name: string }) => c.Name)).toEqual(
+      expect.arrayContaining([
+        'payments',
+        'facilitator-base-sepolia',
+        'facilitator-arc-testnet',
+      ]),
+    )
     expect(
       containers.filter(
         (c: { PortMappings?: unknown[] }) => c.PortMappings?.length,
@@ -51,7 +57,7 @@ describe('PaymentStack', () => {
     const payment = containers.find(
       (c: { Name: string }) => c.Name === 'payments',
     )
-    expect(payment.DependsOn).toHaveLength(2)
+    expect(payment.DependsOn).toHaveLength(containers.length - 1)
     expect(payment.Secrets.map((s: { Name: string }) => s.Name)).toEqual(
       expect.arrayContaining([
         'ARCADE_ORIGIN_TOKEN',

@@ -96,23 +96,28 @@ export function CreatorEconomySettings({
             the platform. Draws and cancellations refund contributions without a
             fee.
           </p>
-          {(['base-sepolia', 'arc-testnet', 'hedera-testnet'] as const).map(
-            (network) => (
-              <label key={network}>
-                {network} payout address
-                <input
-                  placeholder="0x… · leave empty to disable this network"
-                  value={policy.payouts[network] ?? ''}
-                  onChange={(e) => {
-                    const payouts = { ...policy.payouts }
-                    if (e.target.value) payouts[network] = e.target.value
-                    else delete payouts[network]
-                    onChange({ ...policy, payouts })
-                  }}
-                />
-              </label>
-            ),
-          )}
+          {(
+            [
+              'base-sepolia',
+              'arc-testnet',
+              'hedera-testnet',
+              'celo-sepolia',
+            ] as const
+          ).map((network) => (
+            <label key={network}>
+              {network} payout address
+              <input
+                placeholder="0x… · leave empty to disable this network"
+                value={policy.payouts[network] ?? ''}
+                onChange={(e) => {
+                  const payouts = { ...policy.payouts }
+                  if (e.target.value) payouts[network] = e.target.value
+                  else delete payouts[network]
+                  onChange({ ...policy, payouts })
+                }}
+              />
+            </label>
+          ))}
           <label>
             <input
               type="checkbox"
