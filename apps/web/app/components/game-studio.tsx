@@ -59,6 +59,7 @@ import {
   gameDocumentSchema,
   emptyBrowserDocument,
   isBrowserGame,
+  isManagedBrowserGame,
   type GameDocument,
   type StudioProject,
   type StudioRelease,
@@ -223,10 +224,30 @@ export function GameStudio({ projectId }: { projectId: string }) {
         actionsForSeat(observation.actions, controller.seatId).length,
     )
     if (!selected) {
-      setBrowserPlaying(false)
-      throw new Error(
-        'No agent-controlled seat has a legal action. Make a human move or restart the session.',
+      const ended =
+        isManagedBrowserGame(document) &&
+        agents.every((controller) => {
+          const state = stateForSeat(observation.state, controller.seatId)
+          return (
+            state &&
+            typeof state === 'object' &&
+            'result' in state &&
+            state.result != null
+          )
+        })
+      if (
+        ended ||
+        !isBrowserGame(document) ||
+        document.play?.mode === 'turn-based'
       )
+        setBrowserPlaying(false)
+      setBrowserObservation(observation)
+      setNotice(
+        ended
+          ? 'Match finished. Start a new session to play again.'
+          : 'Agents are waiting for a legal move. Play a human turn or wait for the next playable moment.',
+      )
+      return
     }
     const rawSeatState = stateForSeat(observation.state, selected.seatId)
     const prior = browserOutcome.current.get(selected.seatId)
@@ -637,6 +658,12 @@ export function GameStudio({ projectId }: { projectId: string }) {
       throw new Error('Browser playtests require a browser game.')
     if (!compiledRef.current)
       throw new Error('Open Preview before starting a playtest.')
+    if (isManagedBrowserGame(p.document)) {
+      setPreviewKey((key) => key + 1)
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      )
+    }
     const initialObservation = await waitForPreview(compiledRef)
     const declaredSeats = seatsFromObservation(initialObservation)
     if (
@@ -684,19 +711,27 @@ export function GameStudio({ projectId }: { projectId: string }) {
         created.controllers.some(
           (controller) =>
             controller.kind === 'agent' &&
-            actionsForSeat(initialObservation.actions, controller.seatId)
-              .length > 0,
+            ((isManagedBrowserGame(p.document) &&
+              p.document.play?.mode !== 'turn-based') ||
+              actionsForSeat(initialObservation.actions, controller.seatId)
+                .length > 0),
         ),
       ),
     )
     setNotice(
-      bridgeFromObservation(initialObservation) === 'dom-fallback'
-        ? 'Session started in compatibility mode. Arcade assigned visible control groups to each seat; ask the copilot to add a semantic agent bridge for richer strategy.'
-        : 'Private Test Arena session started. Human moves use the legal-action controls so the session stays resumable.',
+      isManagedBrowserGame(p.document)
+        ? 'Local playtest started using the saved game rules. Play with the game controls; publish to host a shared live match.'
+        : bridgeFromObservation(initialObservation) === 'dom-fallback'
+          ? 'Session started in compatibility mode. Arcade assigned visible control groups to each seat; ask the copilot to add a semantic agent bridge for richer strategy.'
+          : 'Private Test Arena session started. Human moves use the legal-action controls so the session stays resumable.',
     )
     return created
   }
   async function resumeBrowserRun(summary: BrowserRun) {
+    if (isManagedBrowserGame(document))
+      throw new Error(
+        'Managed playtests cannot be resumed from decision logs. Start a new session; hosted matches provide authoritative reconnects.',
+      )
     const saved = await arcade<
       BrowserRun & {
         events: BrowserEvent[]
@@ -878,6 +913,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
           previewDocument,
           view === 'test' ? board : undefined,
           view !== 'test',
+          { managedPreview: true },
         ),
       }
     } catch (error) {
@@ -2544,7 +2580,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
               title={`${document.title} compiled game`}
               revision={`${previewKey}:${view}:${run?.steps ?? 0}`}
             />
-            {browserRun ? (
+            {browserRun && !isManagedBrowserGame(document) ? (
               <div
                 className="studio-agent-input-shield"
                 aria-hidden="true"

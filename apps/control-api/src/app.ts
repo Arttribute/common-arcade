@@ -193,9 +193,11 @@ function problem(
         status: error.status,
         detail: error.message,
         code:
-          error.status === 402
-            ? 'COMMONS_CREDITS_REQUIRED'
-            : 'COMMONS_AGENT_UNAVAILABLE',
+          error.status === 401
+            ? 'COMMONS_AUTH_REQUIRED'
+            : error.status === 402
+              ? 'COMMONS_CREDITS_REQUIRED'
+              : 'COMMONS_AGENT_UNAVAILABLE',
         requestId: requestIdValue,
         retryable: error.status === 429 || error.status === 502,
       },

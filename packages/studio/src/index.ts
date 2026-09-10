@@ -403,9 +403,11 @@ export function compilePresentation(
   document: GameDocument,
   state?: { board?: readonly (string | null)[] },
   interactive = true,
+  options: { managedPreview?: boolean } = {},
 ): string {
   const d = gameDocumentSchema.parse(document)
-  if (isBrowserGame(d)) return compileBrowserPresentation(d)
+  if (isBrowserGame(d))
+    return compileBrowserPresentation(d, options.managedPreview)
   const rules = rulesFor(d, 'rel_preview', `sha256:${'0'.repeat(64)}`)
   const board =
     state?.board ?? Array<string | null>(d.boardSize ** 2).fill(null)

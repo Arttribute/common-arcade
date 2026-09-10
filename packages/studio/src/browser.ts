@@ -1,4 +1,5 @@
 import { transform } from '@babel/standalone'
+import { managedPreviewRuntime } from './managed-preview.js'
 import type { BrowserGameDocument } from '@common-arcade/protocol'
 import { createBrowserPolicy } from './browser-policy.js'
 import { createPreviewAgentRuntime } from './preview-agent-runtime.js'
@@ -165,6 +166,7 @@ function installArcadeSeats(){
 /** Compilation only: user source never executes in the host process. */
 export function compileBrowserPresentation(
   document: BrowserGameDocument,
+  managedPreview = false,
 ): string {
   const files = new Map(document.files.map((f) => [f.path, f.content]))
   const externals = new Map<string, string>()
@@ -292,7 +294,8 @@ export function compileBrowserPresentation(
     .replace('__ARCADE_FILES__', () =>
       JSON.stringify(Object.fromEntries(files)).replace(/</g, '\\u003c'),
     )
-  const runtime = `<script>(async()=>{window.__arcadeRuntime={status:'loading'};${compatibility}try{const external=Object.fromEntries(await Promise.all(${JSON.stringify([...externals])}.map(async([id,url])=>[id,await import(url)])));const modules={${scriptSafe(factories)}},imports=${JSON.stringify(imports).replace(/</g, '\\u003c')},cache={},started=new Set;function load(id){if(external[id])return external[id];if(cache[id])return cache[id].exports;throw Error('Source module was not initialized: '+id)}async function start(id){if(external[id])return external[id];if(started.has(id))return cache[id].exports;if(!modules[id])throw Error('Unknown source module: '+id);started.add(id);const m=cache[id]={exports:{}};for(const dependency of Object.values(imports[id]))await start(dependency);await modules[id](m,m.exports,name=>load(imports[id][name]),__arcadeLocalStorage,__arcadeSessionStorage);return m.exports}${entries.map((p) => `await start(${JSON.stringify(p)});`).join('')}window.__arcadeRuntime={status:'ready'}}catch(e){const message=String(e?.message??e);window.__arcadeRuntime={status:'error',message};const pre=document.createElement('pre');pre.style.cssText='position:fixed;inset:16px;z-index:2147483647;overflow:auto;padding:16px;border-radius:12px;background:#fff7ed;color:#9a3412;font:13px/1.5 ui-monospace,monospace';pre.textContent='Preview error: '+message;pre.setAttribute('role','alert');document.body.append(pre);console.error(e)}finally{try{installArcadeSeats()}catch(e){window.__arcadeRuntime={status:'error',message:'Agent play bridge: '+String(e?.message??e)};console.error(e)}}})();</script>`
+  const preview = managedPreview ? managedPreviewRuntime(document) : ''
+  const runtime = `<script>(async()=>{window.__arcadeRuntime={status:'loading'};${compatibility}try{const external=Object.fromEntries(await Promise.all(${JSON.stringify([...externals])}.map(async([id,url])=>[id,await import(url)])));const modules={${scriptSafe(factories)}},imports=${JSON.stringify(imports).replace(/</g, '\\u003c')},cache={},started=new Set;function load(id){if(external[id])return external[id];if(cache[id])return cache[id].exports;throw Error('Source module was not initialized: '+id)}async function start(id){if(external[id])return external[id];if(started.has(id))return cache[id].exports;if(!modules[id])throw Error('Unknown source module: '+id);started.add(id);const m=cache[id]={exports:{}};for(const dependency of Object.values(imports[id]))await start(dependency);await modules[id](m,m.exports,name=>load(imports[id][name]),__arcadeLocalStorage,__arcadeSessionStorage);return m.exports}${entries.map((p) => `await start(${JSON.stringify(p)});`).join('')}${scriptSafe(preview)}window.__arcadeRuntime={status:'ready'}}catch(e){const message=String(e?.message??e);window.__arcadeRuntime={status:'error',message};const pre=document.createElement('pre');pre.style.cssText='position:fixed;inset:16px;z-index:2147483647;overflow:auto;padding:16px;border-radius:12px;background:#fff7ed;color:#9a3412;font:13px/1.5 ui-monospace,monospace';pre.textContent='Preview error: '+message;pre.setAttribute('role','alert');document.body.append(pre);console.error(e)}finally{try{installArcadeSeats()}catch(e){window.__arcadeRuntime={status:'error',message:'Agent play bridge: '+String(e?.message??e)};console.error(e)}}})();</script>`
   const policy = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://esm.sh; connect-src https://esm.sh; style-src 'unsafe-inline'; img-src data: blob: https:; media-src data: blob: https:; font-src data:; worker-src blob:; form-action 'none'; base-uri 'none'">`
   html = /<head\b[^>]*>/i.test(html)
     ? html.replace(/<head\b[^>]*>/i, (m) => m + policy)

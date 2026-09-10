@@ -43,13 +43,19 @@ export async function seal(data: Record<string, unknown>, ttl = '7d') {
 export async function unseal<T>(value: string): Promise<T> {
   return (await jwtDecrypt(value, await secret())).payload as T
 }
-export async function readSession(): Promise<ArcadeSession | null> {
+// Copilot keeps the submitted credential for its ten-minute worker lifetime.
+// Refresh before dispatch, while the encrypted browser session can renew it.
+export const copilotCredentialLifetimeMs = 11 * 60_000
+
+export async function readSession(
+  minimumLifetimeMs = 30_000,
+): Promise<ArcadeSession | null> {
   const jar = await cookies(),
     value = jar.get(sessionCookie)?.value
   if (!value) return null
   try {
     let session = await unseal<ArcadeSession>(value)
-    if (session.expiresAt < Date.now() + 30_000) {
+    if (session.expiresAt < Date.now() + minimumLifetimeMs) {
       if (!session.refreshToken) return null
       const token = await exchange(
         new URLSearchParams({
@@ -68,6 +74,7 @@ export async function readSession(): Promise<ArcadeSession | null> {
         maxAge: 7 * 86400,
       })
     }
+    if (session.expiresAt < Date.now() + minimumLifetimeMs) return null
     return session
   } catch {
     return null
