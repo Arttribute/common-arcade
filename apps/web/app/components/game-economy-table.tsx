@@ -60,11 +60,16 @@ function provider() {
     )
   return value
 }
-export function GameEconomyTable({ releaseId }: { releaseId?: string } = {}) {
+export function GameEconomyTable({
+  releaseId,
+  initialEconomy,
+}: { releaseId?: string; initialEconomy?: EconomyConfig } = {}) {
   const [observation, setObservation] = useState<Observation>()
   const [account, setAccount] = useState<Address>(),
     [other, setOther] = useState(''),
-    [economy, setEconomy] = useState<EconomyConfig>({ mode: 'free' }),
+    [economy, setEconomy] = useState<EconomyConfig>(
+      initialEconomy ?? { mode: 'free' },
+    ),
     [table, setTable] = useState<Table>(),
     [matchInput, setMatchInput] = useState(''),
     [busy, setBusy] = useState(false),

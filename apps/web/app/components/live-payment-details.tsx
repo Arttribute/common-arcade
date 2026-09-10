@@ -13,7 +13,7 @@ export default function LivePaymentDetails({
   agentId,
 }: {
   releaseId: string
-  matchId?: string
+  matchId: string
   agentId?: string
 }) {
   const [release, setRelease] = useState<StudioRelease>()
@@ -56,13 +56,6 @@ export default function LivePaymentDetails({
       })
     return () => controller.abort()
   }, [])
-  const terms = release?.document.monetization
-  const paidReady =
-    Boolean(networks?.length) &&
-    terms?.mode === 'revenue-share' &&
-    release?.manifest.spec.mode === 'turn-based' &&
-    release.manifest.spec.seats.min <= 2 &&
-    release.manifest.spec.seats.max >= 2
   return (
     <div className="live-payment-content">
       <section className="live-payment-summary">
@@ -95,39 +88,6 @@ export default function LivePaymentDetails({
         {!release && !error && (
           <p role="status">Checking this release’s payment options…</p>
         )}
-        {release &&
-          (paidReady ? (
-            <>
-              <p>
-                Open a paid match to choose the entry stake, fund a prize pool,
-                and claim winnings after settlement.
-              </p>
-              {terms?.mode === 'revenue-share' && (
-                <p>
-                  Success fee: {terms.feeBps / 100}%.{' '}
-                  {terms.creatorShareBps / 100}% of that fee supports the
-                  creator.
-                </p>
-              )}
-              <a
-                className="primary"
-                href={`/play/paid/${encodeURIComponent(releaseId)}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open paid match & claims
-              </a>
-            </>
-          ) : (
-            <p>
-              {release.manifest.spec.mode !== 'turn-based'
-                ? 'Entry stakes and prize pools are not available for this realtime release yet.'
-                : terms?.mode !== 'revenue-share'
-                  ? 'The creator has not enabled paid matches for this release.'
-                  : 'Paid match services are currently unavailable.'}{' '}
-              You can manage an agent’s wallet and service payments below.
-            </p>
-          ))}
       </section>
       <AgentWalletPanel
         initialAgentId={agentId}

@@ -14,7 +14,7 @@ export const LivePaymentPanel = memo(function LivePaymentPanel({
   agentId,
 }: {
   releaseId: string
-  matchId?: string
+  matchId: string
   agentId?: string
 }) {
   const dialog = useRef<HTMLDialogElement>(null)

@@ -1,5 +1,6 @@
 'use client'
 import { NETWORKS, usdcUnits, type EconomyConfig } from '@common-arcade/economy'
+import { formatUnits } from 'viem'
 export function EconomySettings({
   value,
   onChange,
@@ -68,7 +69,7 @@ export function EconomySettings({
             Stake per player (USDC){' '}
             <input
               inputMode="decimal"
-              defaultValue="1"
+              defaultValue={formatUnits(BigInt(value.stakeUnits), 6)}
               onChange={(e) => {
                 try {
                   onChange({
