@@ -2,6 +2,8 @@
 
 Owners can coach a running browser playtest or an owned agent seat in a live match. The selected Commons agent turns the coaching message into a complete replacement strategy. Planning runs separately from gameplay, with a 45-second request budget. A failed plan leaves the active strategy intact.
 
+Coaching and model-driven game decisions are schema-validated before use. An empty, malformed, incomplete, or schema-invalid reply gets one automatic correction attempt within the original request budget. A complete valid streamed answer can be used if the final message is malformed. The controller never installs partial JSON or invents missing strategy fields. If correction fails, coaching reports that the existing strategy remains active. Authentication, credit, rate-limit, and transport failures are not automatically replayed.
+
 The strategy is bounded JSON: action weights, avoided actions, and conditional rules over seat-visible state. There is no generated JavaScript. Preview and live controllers run the same policy evaluator. Rules are game independent; their paths and action IDs come from the game's observation and legal actions. Full live action payloads retain distinct identities, including different targets or coordinates.
 
 ## Replacement behavior
