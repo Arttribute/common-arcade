@@ -1,0 +1,120 @@
+{
+  "network": "arc-testnet",
+  "chainId": 5042002,
+  "contract": "0xbe529edf75ebeb609dcf7ab26783dc558b735851",
+  "administrator": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+  "runId": "arc-testnet-1789034374937",
+  "transactions": [
+    {
+      "operation": "approve",
+      "hash": "0x366ab7bd57ed7167d08634ec8b1daf04806de7b7698626511fb4555463d2be37",
+      "blockNumber": "61380131",
+      "status": "success"
+    },
+    {
+      "operation": "createMatch",
+      "hash": "0x146b243102ba8f3bea2e893f59aced98920d80dc8bd4d2e11fede8ac027839cf",
+      "blockNumber": "61380135",
+      "status": "success"
+    },
+    {
+      "operation": "stake",
+      "hash": "0x430117621c19b9f1d511971e2ba9ff33104ee5206f7a0c214d482eebb1985b05",
+      "blockNumber": "61380141",
+      "status": "success"
+    },
+    {
+      "operation": "stake",
+      "hash": "0x0172659214f001de39c9b5e89f13a1fa44db41c151b740a6e1b1270ef1df3a29",
+      "blockNumber": "61380146",
+      "status": "success"
+    },
+    {
+      "operation": "fundBounty",
+      "hash": "0x5582a9326365375705b11d1eb7a1443c099c5ba4e5d02710318a58f6cf492af1",
+      "blockNumber": "61380150",
+      "status": "success"
+    },
+    {
+      "operation": "placeBet",
+      "hash": "0xc064822f8dd899f8ad5053d278ec2d724fe6e182ef1b230141932c86b6fa6553",
+      "blockNumber": "61380155",
+      "status": "success"
+    },
+    {
+      "operation": "placeBet",
+      "hash": "0x46b32cea290c5ac9a62257ecf337cca4d4f25fc44b4f1da98c4406df311fbefb",
+      "blockNumber": "61380161",
+      "status": "success"
+    },
+    {
+      "operation": "lock",
+      "hash": "0x277175c333fc1e6d1aba058b65cc88ed8c1c25b0b76758a546137c4fbc47065e",
+      "blockNumber": "61380166",
+      "status": "success"
+    },
+    {
+      "operation": "settle",
+      "hash": "0x8e8367aeded21cf40d69aa22b85e0f95d305e0d111971e8c1966609d153e45b4",
+      "blockNumber": "61380170",
+      "status": "success"
+    },
+    {
+      "operation": "claimBet",
+      "hash": "0xb704cb835e44d527de753906036c702517ada2c3367103ba5a888a5ade2915b5",
+      "blockNumber": "61380176",
+      "status": "success"
+    },
+    {
+      "operation": "withdraw",
+      "hash": "0xa9b6044ea2dbd731e5e380711779df86f20c59641e50728bcfd2a5fd711d6d55",
+      "blockNumber": "61380183",
+      "status": "success"
+    },
+    {
+      "operation": "createMatch",
+      "hash": "0x0974cdcba5653a0933f75243973cae13a13644aa13f3e42b4cbb1ee4e8bc7a8f",
+      "blockNumber": "61380189",
+      "status": "success"
+    },
+    {
+      "operation": "fundBounty",
+      "hash": "0x1e2fc9d533c2691e0e6df46e76529d5e2904b59d0a596b10c6ade2c6e88cd94d",
+      "blockNumber": "61380194",
+      "status": "success"
+    },
+    {
+      "operation": "voidMatch",
+      "hash": "0xbeb99146909a0d2ea54fbc8879ce84ac8c489c338970292fc5ec22e5f1eb28d1",
+      "blockNumber": "61380199",
+      "status": "success"
+    },
+    {
+      "operation": "claimRefund",
+      "hash": "0x084bf44eb801df7ebe59d6c3f258ccb834ca92ed2934ab7e80878601127827a0",
+      "blockNumber": "61380205",
+      "status": "success"
+    },
+    {
+      "operation": "approve",
+      "hash": "0x78587e8b8b0c7814aadfae3a537e8a8621d6eaf3bace8f38e54f4a8054aebd88",
+      "blockNumber": "61380211",
+      "status": "success"
+    }
+  ],
+  "verified": true,
+  "verifiedAt": "2026-09-10T10:00:20.887Z",
+  "checks": [
+    "canonical USDC approval",
+    "two player stakes",
+    "sponsor bounty",
+    "winning and losing spectator deposits",
+    "lock",
+    "settlement and fee accounting",
+    "spectator claim",
+    "withdrawal",
+    "sponsored pool cancellation and refund",
+    "escrow balance conservation",
+    "allowance cleared"
+  ]
+}
