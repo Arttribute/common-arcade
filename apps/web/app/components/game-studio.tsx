@@ -828,16 +828,18 @@ export function GameStudio({ projectId }: { projectId: string }) {
         epochs.set(batch.epoch, prior)
       }
       setBrowserEvents(
-        [...epochs.values()]
-          .sort((a, b) => a.started.localeCompare(b.started))
-          .flatMap((epoch) =>
-            [
-              ...new Map(
-                epoch.events.map((event) => [event.step, event]),
-              ).values(),
-            ].sort((a, b) => a.step - b.step),
-          )
-          .slice(-120),
+        [
+          ...(saved.events ?? []),
+          ...[...epochs.values()]
+            .sort((a, b) => a.started.localeCompare(b.started))
+            .flatMap((epoch) =>
+              [
+                ...new Map(
+                  epoch.events.map((event) => [event.step, event]),
+                ).values(),
+              ].sort((a, b) => a.step - b.step),
+            ),
+        ].slice(-120),
       )
       setNotice(
         `Reviewing saved diagnostics from revision ${saved.revision}. Start a new session to play. Timed playtests cannot be reconstructed from samples.`,
@@ -2656,7 +2658,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       error: `The source could not compile: ${compiled.error} Check the entry file and local imports, or ask your copilot to fix the project.`,
                     }
               }
-              interactive={tool === 'select'}
+              interactive={tool === 'select' && !reviewingBrowserRun}
               title={`${document.title} compiled game`}
               revision={`${previewKey}:${view}:${run?.steps ?? 0}`}
             />
