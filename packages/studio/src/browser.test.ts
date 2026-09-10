@@ -11,7 +11,7 @@ describe('browser game projects', () => {
     const html = compilePresentation({
       ...emptyBrowserDocument,
       play: {
-        mode: 'realtime',
+        mode: 'realtime' as const,
         seats: { min: 1, max: 1, default: 1 },
         maxDecisionsPerSecond: 10,
       },

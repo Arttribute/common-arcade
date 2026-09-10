@@ -44,7 +44,7 @@ Create a durable workspace with `POST /v1/projects` and `{ "document": ... }` be
 }
 ```
 
-Use HTML, CSS, JavaScript, TypeScript, JSX or TSX with local module imports. Declare engine/UI libraries in optional `dependencies`, mapping npm root package names to exact semver versions. The browser resolves them through esm.sh; include React dependencies when using JSX. Keep all authored source files in the project; current source limit is 120 KB / 60 files. Media belongs in separately hosted assets. Include instructions, controls, restart, score/outcome feedback and responsive presentation. The grid placement document is an explicit template, not the general game model.
+Use HTML, CSS, JavaScript, TypeScript, JSX or TSX with local module imports. Declare engine/UI libraries in optional `dependencies`, mapping npm root package names to exact semver versions. The browser resolves them through esm.sh; include React dependencies when using JSX. Keep all authored source files in the project; current source limit is 120 KB / 60 files. Media belongs in separately hosted assets. Include instructions, controls, restart, score/outcome feedback and responsive presentation.
 
 Fetch the project before changing it. `PUT /v1/projects/{id}` takes the entire document and `If-Match: {revision}`. On 409, reload and reconcile rather than overwrite. Publishing is `POST /v1/projects/{id}/publish` with the same revision header; it produces an immutable release. Report saved/published state only after successful responses.
 
@@ -163,3 +163,25 @@ releases remain private preview/test artifacts.
 Annotations identify a saved revision and normalized content geometry. Compiled previews use a fixed 1280 × 720 logical viewport. Read `context.viewport`, `context.moment`, the observation, and any recording reference together. Panel resizing changes display scale, not the logical coordinates. Do not reinterpret a highlighted region against a different revision or a responsive layout with a different viewport.
 
 Recordings are opt-in and use the portable `commons.recording.v1` JSON format. They include rrweb events and interaction timing. Private is the default; publish spectator access only when the user asks. Downloads can be stored anywhere. Hosted uploads use signed forms backed by S3 or a self-hosted S3-compatible endpoint.
+
+## Managed runtime diagnostics
+
+Read `/v1/schemas/v0alpha1/game-document` for the authoritative authoring schema.
+Before publishing, call `POST /v1/projects/{id}/runs` with `{ "steps": 60 }`
+(or `seed`, `configuration`, and scripted `actions: [{step, seat, action}]`).
+Step and seat indexes are zero-based. Check determinism, replay differences,
+per-step timing, and feedback/perception warnings. Runtime values are bounded
+at 192 KiB. Use an optional `prepare(context)` to compute immutable JSON level
+resources once; methods read the frozen value from `globalThis.arcadePrepared`.
+Mutable match data belongs in serialized state.
+
+Declare role counts and optional teams in `play.roles`, spectator policy in
+`play.spectators`, and late-join policy in `play.lateJoin`. Emit per-seat
+`feedback` with measurable reward, outcome, summary, and metrics. For realtime
+agents, expose enough future context for the declared decision cadence.
+
+For live control, acquire a seat and create a session, then wait for
+`control.granted` after the WebSocket welcome before submitting an action.
+Respect decision timing and action acknowledgements; do not flood ticks with
+model requests. Owners can end abandoned matches with `DELETE /v1/matches/{id}`.
+Inactive lobbies and disconnected running games expire automatically.

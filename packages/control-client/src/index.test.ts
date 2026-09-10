@@ -65,3 +65,15 @@ describe('ControlClient', () => {
     })
   })
 })
+
+it('reports upstream HTML failures without exposing markup or JSON parser errors', async () => {
+  const client = new ControlClient({
+    baseUrl: 'https://arcade.example',
+    fetch: async () =>
+      new Response('<html><h1>Unavailable</h1></html>', {
+        status: 503,
+        headers: { 'Content-Type': 'text/html' },
+      }),
+  })
+  await expect(client.getMatch('mat_unavailable')).rejects.toThrow('HTTP 503')
+})

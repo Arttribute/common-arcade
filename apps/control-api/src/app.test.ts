@@ -44,7 +44,7 @@ describe('control API foundation', () => {
     const games = (await gamesResponse.json()) as {
       games: { metadata: { id: string }; spec: unknown }[]
     }
-    expect(games.games[0]?.metadata.id).toBe('gam_tictactoe1')
+    expect(games.games).toEqual([])
     expect(
       await (await app.request('/v1/games/gam_tictactoe1/releases')).json(),
     ).toMatchObject({
@@ -270,4 +270,130 @@ describe('control API foundation', () => {
     })
     expect(forbidden.status).toBe(403)
   })
+})
+
+it('lists unlisted and private sessions only for their authenticated host or participant', async () => {
+  const platform = await LocalArcadePlatform.create()
+  const app = createApp({ platform, allowLocalAuth: true, logRequests: false })
+  try {
+    const hidden = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      ownerId: 'host_one',
+      idempotencyKey: 'hidden-one',
+      visibility: 'unlisted',
+    })
+    const privateMatch = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      ownerId: 'host_two',
+      idempotencyKey: 'private-two',
+      visibility: 'private',
+    })
+    const listed = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      ownerId: 'host_one',
+      idempotencyKey: 'public-three',
+      visibility: 'public',
+    })
+    await platform.claimSeat({
+      matchId: hidden.id,
+      seatId: hidden.seats[0]!.id,
+      actorId: 'player_one',
+      controllerId: 'agent-one',
+      controllerKind: 'agent',
+    })
+    const read = async (path: string, actor?: string) =>
+      (
+        await app.request(
+          path,
+          actor ? { headers: { Authorization: `Bearer local:${actor}` } } : {},
+        )
+      ).json()
+    expect((await read('/v1/matches')).matches.map((m: any) => m.id)).toEqual([
+      listed.id,
+    ])
+    expect((await app.request('/v1/matches?scope=mine')).status).toBe(401)
+    expect(
+      (await read('/v1/matches?scope=mine', 'host_one')).matches
+        .map((m: any) => m.id)
+        .sort(),
+    ).toEqual([hidden.id, listed.id].sort())
+    expect(
+      (await read('/v1/matches?scope=mine', 'player_one')).matches.map(
+        (m: any) => m.id,
+      ),
+    ).toEqual([hidden.id])
+    expect((await read('/v1/matches?scope=mine', 'unrelated')).matches).toEqual(
+      [],
+    )
+    expect(
+      (await read('/v1/matches?scope=mine', 'host_two')).matches[0].id,
+    ).toBe(privateMatch.id)
+    await platform.abandonMatch(hidden.id, 'host_one')
+    expect(
+      (await read('/v1/matches?scope=mine', 'player_one')).matches,
+    ).toEqual([])
+  } finally {
+    platform.close()
+  }
+})
+
+it('authenticates controller handoff and rejects stale or foreign release requests', async () => {
+  const platform = await LocalArcadePlatform.create()
+  const app = createApp({ platform })
+  try {
+    const match = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      idempotencyKey: 'handoff-api',
+      ownerId: 'owner',
+    })
+    const seatId = match.seats[0]!.id
+    await platform.claimSeat({
+      matchId: match.id,
+      seatId,
+      actorId: 'owner',
+      controllerId: 'human',
+    })
+    const request = (operation: string, body: unknown, actor?: string) =>
+      app.request(`/v1/matches/${match.id}/seats/${seatId}/${operation}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(actor ? { Authorization: `Bearer local:${actor}` } : {}),
+        },
+        body: JSON.stringify(body),
+      })
+    expect(
+      (await request('release', { expectedControllerId: 'human' })).status,
+    ).toBe(401)
+    expect(
+      (await request('release', { expectedControllerId: 'human' }, 'other'))
+        .status,
+    ).toBe(403)
+    const changed = await request(
+      'controller',
+      {
+        expectedControllerId: 'human',
+        controllerId: 'external-test',
+        controllerKind: 'agent',
+      },
+      'owner',
+    )
+    expect(changed.status).toBe(200)
+    expect((await changed.json()).seats[0].controllerId).toBe('external-test')
+    expect(
+      (await request('release', { expectedControllerId: 'human' }, 'owner'))
+        .status,
+    ).toBe(409)
+    expect(
+      (
+        await request(
+          'release',
+          { expectedControllerId: 'external-test' },
+          'owner',
+        )
+      ).status,
+    ).toBe(200)
+  } finally {
+    platform.close()
+  }
 })

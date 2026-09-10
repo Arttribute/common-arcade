@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LocalArcadePlatform } from './index.js'
 
 afterEach(() => vi.useRealTimers())
-async function setup() {
+async function setup(controllerId = 'agent0') {
   const platform = await LocalArcadePlatform.create()
   const match = await platform.createMatch({
     releaseId: 'rel_tictactoe1',
@@ -13,7 +13,7 @@ async function setup() {
       matchId: match.id,
       seatId: seat.id,
       actorId: `owner${i}`,
-      controllerId: `agent${i}`,
+      controllerId: i === 0 ? controllerId : `agent${i}`,
       controllerKind: 'agent',
     })
   return { platform, match, seat: match.seats[0]! }
@@ -30,6 +30,64 @@ function plan(actionId: string) {
   }
 }
 describe('live strategy replacement', () => {
+  it('accepts Commons UI controller IDs and cancels coaching on handoff', async () => {
+    const { platform, match, seat } = await setup('commons-agent-player')
+    try {
+      const prepared = platform.beginCoaching(
+        match.id,
+        seat.id,
+        'owner0',
+        'player',
+      )
+      await platform.applyCoaching(
+        match.id,
+        seat.id,
+        'owner0',
+        prepared.requestId,
+        'commons-agent-player',
+        plan(prepared.observation.actions[0]!.id),
+      )
+      const pending = platform.beginCoaching(
+        match.id,
+        seat.id,
+        'owner0',
+        'player',
+      )
+      await platform.changeSeatController({
+        matchId: match.id,
+        seatId: seat.id,
+        actorId: 'owner0',
+        expectedControllerId: 'commons-agent-player',
+        controllerId: 'human',
+        controllerKind: 'human',
+      })
+      // Returning to the same agent must not revive a pending plan or the old policy.
+      await platform.changeSeatController({
+        matchId: match.id,
+        seatId: seat.id,
+        actorId: 'owner0',
+        expectedControllerId: 'human',
+        controllerId: 'commons-agent-player',
+        controllerKind: 'agent',
+      })
+      await expect(
+        platform.applyCoaching(
+          match.id,
+          seat.id,
+          'owner0',
+          pending.requestId,
+          'commons-agent-player',
+          plan(prepared.observation.actions[0]!.id),
+        ),
+      ).rejects.toMatchObject({ code: 'CONFLICT' })
+      expect(
+        platform.beginCoaching(match.id, seat.id, 'owner0', 'player')
+          .strategyEpoch,
+      ).toBe(0)
+    } finally {
+      platform.close()
+    }
+  })
   it('uses a new strategy immediately and fences the old controller', async () => {
     const { platform, match, seat } = await setup()
     const ticket = await platform.createSession({

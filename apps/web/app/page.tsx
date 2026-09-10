@@ -34,12 +34,10 @@ export default function HomePage() {
             <span>Common Arcade Studio</span>
           </div>
           <div className="home-preview-body">
-            <div className="home-preview-board">
-              <div className="home-grid">
-                {['X', '', 'O', '', 'X', '', 'O', '', ''].map((mark, i) => (
-                  <span key={i}>{mark}</span>
-                ))}
-              </div>
+            <div className="home-preview-canvas">
+              <Gamepad2 size={64} strokeWidth={1} aria-hidden="true" />
+              <strong>Any world. Your rules.</strong>
+              <span>Race, explore, cooperate, compete.</span>
             </div>
             <aside className="home-preview-note">
               <Sparkles size={22} color="#a8a29e" />

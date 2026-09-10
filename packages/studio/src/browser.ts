@@ -88,7 +88,7 @@ function installArcadeSeats(){
     const safe=(sourceId.replace(/[^A-Za-z0-9_-]/g,'_').slice(0,40)||'seat')+'-'+(index+1);
     return{id:safe,label:String(typeof seat==='string'?('Player '+(index+1)):(seat.label??('Player '+(index+1)))),sourceId};
   });
-  const publicSeats=seats.map(({id,label})=>({id,label}));
+  const publicSeats=seats.map(({id,label,sourceId},index)=>({id,label,sourceId,index}));
   const observe=typeof api.observe==='function'?api.observe.bind(api):()=>({text:document.body.innerText.slice(0,8000)});
   const actions=typeof api.actions==='function'?api.actions.bind(api):()=>[];
   const step=typeof api.step==='function'?api.step.bind(api):undefined;
@@ -120,7 +120,12 @@ function installArcadeSeats(){
     return match?step(decodeURIComponent(match[2]),decodeURIComponent(match[1])):step(encoded);
   };
   if(release)api.release=(id)=>release(seats.find(seat=>seat.id===id)?.sourceId??id);
-  let authoritative=false;
+  let authoritative=false,inputEnabled=false,inputFocused=true;
+  const heldKeys=new Map;
+  window.addEventListener('keydown',event=>heldKeys.set(event.code,event.key));
+  window.addEventListener('keyup',event=>heldKeys.delete(event.code));
+  window.addEventListener('focus',()=>{inputFocused=true});
+  window.addEventListener('blur',()=>{inputFocused=false;if(authoritative){window.parent.postMessage({type:'arcade.release-input'},'*');for(const [code,key] of [...heldKeys])window.dispatchEvent(new KeyboardEvent('keyup',{code,key,bubbles:true}));heldKeys.clear()}});
   const agents=step&&bridge==='semantic'&&['realtime','hybrid'].includes(configured?.mode)
     ? (__ARCADE_AGENT_RUNTIME__)({
         api,policy:(__ARCADE_AGENT_POLICY__)(),
@@ -146,11 +151,12 @@ function installArcadeSeats(){
     if(event.source!==window.parent||event.data?.type!=='arcade.authoritative-state')return;
     authoritative=true;
     agents?.stop('Authoritative runtime owns these controls');
-    if(render)render(event.data.state,{observation:event.data.observation,match:event.data.match});
+    inputEnabled=event.data.inputEnabled !== false && Boolean(event.data.observation?.seatId) && event.data.match?.status === 'running';
+    if(render)render(event.data.state,{observation:event.data.observation,match:event.data.match,mode:event.data.mode,controllerKind:event.data.controllerKind,inputEnabled});
     window.dispatchEvent(new CustomEvent('arcade:authoritative-state',{detail:event.data}));
   });
   api.submit=(action)=>{
-    if(authoritative){window.parent.postMessage({type:'arcade.action',action},'*');return true}
+    if(authoritative){if(!inputEnabled||!inputFocused)return false;window.parent.postMessage({type:'arcade.action',action},'*');return true}
     return step?step(action):false;
   };
   api.__multiSeatBridge=true;

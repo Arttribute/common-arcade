@@ -16,3 +16,4 @@ cdk.context.json
 .idea/
 .vscode/
 tmp/
+.payment-data/

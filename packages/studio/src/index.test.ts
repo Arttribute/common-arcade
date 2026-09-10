@@ -158,6 +158,7 @@ describe('bounded game authoring', () => {
     expect(
       assessLiveReadiness({
         ...emptyBrowserDocument,
+        kind: 'browser',
         capabilities: {
           genres: [],
           world: {

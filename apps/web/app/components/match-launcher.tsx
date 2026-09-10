@@ -32,7 +32,7 @@ export function MatchLauncher({
   const [mode, setMode] = useState<'commons' | 'external'>('commons')
   const [visibility, setVisibility] = useState<
     'public' | 'unlisted' | 'private'
-  >('unlisted')
+  >('public')
   const [joinPolicy, setJoinPolicy] = useState<'open' | 'invite-only'>('open')
   const [invites, setInvites] = useState('')
   const [allowHumans, setAllowHumans] = useState(true)
@@ -229,6 +229,13 @@ export function MatchLauncher({
                   <option value="private">Private · owner only</option>
                 </select>
               </label>
+              <p className="match-setup-wide match-rule-note">
+                {visibility === 'public'
+                  ? 'This session will appear on the Live page.'
+                  : visibility === 'unlisted'
+                    ? 'Link only. Find it in Your sessions; it will not appear in the public feed.'
+                    : 'Only you can access this session. Find it in Your sessions.'}
+              </p>
               <label>
                 Joining
                 <select

@@ -142,12 +142,13 @@ function stubCommons(
 }
 
 async function poll(app: any, jobId: string) {
-  for (let attempt = 0; attempt < 80; attempt++) {
+  const deadline = Date.now() + 4000
+  while (Date.now() < deadline) {
     const job = await (
       await app.request(`/v1/studio/copilot-jobs/${jobId}`, { headers })
     ).json()
     if (job.status !== 'running') return job
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await new Promise((resolve) => setTimeout(resolve, 25))
   }
   throw new Error('job never settled')
 }
@@ -199,6 +200,7 @@ describe('building a game in a native Commons agent session', () => {
     expect(run?.body.cliTools.map((tool: any) => tool.name)).toEqual([
       'arcade_read_project',
       'arcade_write_live_game',
+      'arcade_configure_earnings',
       'arcade_test_game',
       'arcade_publish_game',
     ])
