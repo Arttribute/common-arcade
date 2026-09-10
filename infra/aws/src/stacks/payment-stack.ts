@@ -90,7 +90,9 @@ export class PaymentStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     })
     const task = new ecs.FargateTaskDefinition(this, 'Task', {
-      cpu: celoEnabled ? 1024 : 512,
+      // Facilitators wait on RPC calls; retain rollout headroom in the shared
+      // regional Fargate quota while keeping memory for all four processes.
+      cpu: 512,
       memoryLimitMiB: celoEnabled ? 2048 : 1024,
     })
     const container = task.addContainer('payments', {
