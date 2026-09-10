@@ -4,6 +4,7 @@ import {
   CfnOutput,
   Duration,
   Stack,
+  SecretValue,
   type StackProps,
 } from 'aws-cdk-lib'
 import * as apigateway from 'aws-cdk-lib/aws-apigatewayv2'
@@ -52,6 +53,33 @@ export class ControlPlaneStack extends Stack {
         sourceMap: true,
       },
     })
+
+    // Opt-in only after the dedicated Privy app, wallet policies and funded
+    // smoke checks are complete. Templates contain secret references, not keys.
+    const privySecret =
+      this.node.tryGetContext('privyWalletSecretName') ??
+      process.env.PRIVY_WALLET_SECRET_NAME
+    if (typeof privySecret === 'string' && privySecret.length > 0) {
+      for (const [name, jsonField] of Object.entries({
+        PRIVY_APP_ID: 'appId',
+        PRIVY_APP_SECRET: 'appSecret',
+        PRIVY_WALLET_OWNER_ID: 'ownerId',
+        PRIVY_AUTHORIZATION_KEY: 'authorizationKey',
+        ARCADE_PAYMENT_URL: 'paymentUrl',
+        ARCADE_PRIVY_NETWORKS: 'networksJson',
+      }))
+        handler.addEnvironment(
+          name,
+          SecretValue.secretsManager(privySecret, { jsonField }).unsafeUnwrap(),
+        )
+      handler.addEnvironment(
+        'ARCADE_MANAGED_WALLETS_ENABLED',
+        (this.node.tryGetContext('managedWallets') ??
+          process.env.MANAGED_WALLETS_ENABLED) === 'true'
+          ? 'true'
+          : 'false',
+      )
+    }
 
     props.table.grantReadWriteData(handler)
     props.recordingsBucket.grantReadWrite(handler)

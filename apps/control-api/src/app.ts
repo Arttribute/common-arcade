@@ -1,4 +1,6 @@
 import { planCoaching } from './coaching.js'
+import { createAgentWalletApi } from './agent-wallets.js'
+import { privyWalletProviderFromEnvironment } from './privy-wallets.js'
 import { createBrowserTestApi } from './browser-tests.js'
 import { createRecordingApi } from './recordings.js'
 import { bodyLimit } from 'hono/body-limit'
@@ -431,6 +433,14 @@ export function createApp(options: ControlApiOptions = {}) {
     }),
   )
   app.route('/', createRecordingApi(store, authenticate))
+  app.route(
+    '/',
+    createAgentWalletApi(
+      store,
+      authenticate,
+      privyWalletProviderFromEnvironment(),
+    ),
+  )
   app.route('/', createBrowserTestApi(store, authenticate))
 
   app.get('/healthz', (context) =>
@@ -1109,6 +1119,40 @@ function openApiDocument(serverUrl: string) {
         get: { summary: 'List access key metadata' },
         post: { summary: 'Create an expiring scoped access key' },
       },
+      '/v1/agent-wallets/config': {
+        get: { summary: 'Inspect managed wallet readiness and testnets' },
+      },
+      '/v1/agent-wallets': {
+        get: { summary: 'List owned external-agent wallets' },
+        post: { summary: 'Approve and provision a dedicated Privy wallet' },
+      },
+      '/v1/agent-wallets/connect': {
+        post: {
+          summary:
+            'Redeem a one-use connection code for a client-generated credential hash',
+        },
+      },
+      '/v1/agent-wallets/{id}/connection': {
+        post: { summary: 'Replace an owned wallet connection' },
+        delete: { summary: 'Revoke an owned wallet connection' },
+      },
+      '/v1/agent-wallets/{id}/balance': {
+        get: { summary: 'Inspect an owned wallet balance' },
+      },
+      '/v1/agent-wallets/{id}/recover': {
+        post: { summary: 'Owner-only winnings claim or USDC withdrawal' },
+      },
+      '/v1/agent-wallet/me': {
+        get: { summary: 'Inspect the connected wallet and its allowance' },
+      },
+      '/v1/agent-wallet/execute': {
+        post: {
+          summary: 'Execute an idempotent action within the wallet allowance',
+        },
+      },
+      '/v1/agent-wallet/logout': {
+        post: { summary: 'Revoke the current wallet connection' },
+      },
       '/v1/access-keys/{id}': {
         delete: { summary: 'Revoke an owned access key' },
       },
@@ -1195,11 +1239,14 @@ function openApiDocument(serverUrl: string) {
         path.startsWith('/v1/projects') ||
         path === '/v1/me' ||
         path.startsWith('/v1/access-keys') ||
+        (path.startsWith('/v1/agent-wallet') &&
+          path !== '/v1/agent-wallets/config') ||
         path.startsWith('/v1/commons') ||
         path.startsWith('/v1/studio/browser-runs') ||
         path.startsWith('/v1/studio/runs')
       )
         operation.security = [{ bearerAuth: [] }]
+      if (path === '/v1/agent-wallets/connect') operation.security = []
       if (path === '/v1/projects/{id}' && method === 'put')
         operation.requestBody = {
           required: true,
