@@ -77,9 +77,9 @@ function harness(
     decisionsPerSecond: rate,
   }
   runtime.start(config)
-  function advance(ms: number, heartbeat = true) {
-    for (let elapsed = 0; elapsed < ms; elapsed += 10) {
-      now += 10
+  function advance(ms: number, heartbeat = true, frameMs = 10) {
+    for (let elapsed = 0; elapsed < ms; elapsed += frameMs) {
+      now += frameMs
       if (heartbeat) runtime.heartbeat('epoch')
       const batch = [...frames.values()]
       frames.clear()
@@ -102,6 +102,20 @@ function harness(
 }
 
 describe('frame-synchronized preview control', () => {
+  it('reports integer feedback durations from fractional animation frame timestamps', () => {
+    const h = harness()
+    h.advance(1200, true, 1000 / 60)
+    const feedback = h.messages
+      .filter((message) => message.type === 'arcade.preview-policy.sample')
+      .flatMap((message) =>
+        message.event.feedback ? [message.event.feedback] : [],
+      )
+    expect(feedback.length).toBeGreaterThan(0)
+    for (const sample of feedback) {
+      expect(Number.isInteger(sample.observedAfterMs)).toBe(true)
+      expect(sample.observedAfterMs).toBeGreaterThanOrEqual(0)
+    }
+  })
   it('renews arbitrary short inputs for both seats without waiting on diagnostics', () => {
     const h = harness('pulse', 2, 2)
     h.advance(5000)

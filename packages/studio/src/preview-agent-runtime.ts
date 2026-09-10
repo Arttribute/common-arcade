@@ -265,7 +265,7 @@ export function createPreviewAgentRuntime(env: Environment) {
               seat.prior.state,
               state,
               seat.prior.actionId,
-              now - seat.prior.at,
+              Math.max(0, Math.round(now - seat.prior.at)),
             )
           : undefined
         const learned = env.policy.learn(seat.controller, feedback)
