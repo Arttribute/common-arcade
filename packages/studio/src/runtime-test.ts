@@ -68,6 +68,7 @@ export async function testGameRuntime(
     match.start()
     const observations: string[] = []
     let sequence = 0
+    const seatDecisions = roster.map(() => 0)
     for (
       let step = 0;
       step < steps && match.getStatus() === 'running';
@@ -118,7 +119,8 @@ export async function testGameRuntime(
               0
           )
             return []
-          const action = match.observation(seat.seatId).legalActions[0]
+          const legal = match.observation(seat.seatId).legalActions
+          const action = legal[seatDecisions[index]!++ % legal.length]
           return action === undefined ? [] : [{ seat: index, action }]
         })
       for (const entry of actions) {

@@ -397,3 +397,25 @@ it('authenticates controller handoff and rejects stale or foreign release reques
     platform.close()
   }
 })
+
+it('returns structured validation failures even when they are not native Error objects', async () => {
+  const app = createApp({ logRequests: false })
+  app.get('/test-nonnative-error', () => {
+    throw {
+      name: 'ZodError',
+      issues: [
+        {
+          path: ['document', 'runtime'],
+          code: 'custom',
+          message: 'Headless test exceeded its budget',
+        },
+      ],
+    }
+  })
+  const response = await app.request('/test-nonnative-error')
+  expect(response.status).toBe(422)
+  expect(await response.json()).toMatchObject({
+    code: 'INVALID_REQUEST',
+    violations: [{ message: 'Headless test exceeded its budget' }],
+  })
+})

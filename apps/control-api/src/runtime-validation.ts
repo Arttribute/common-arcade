@@ -88,6 +88,17 @@ async function validateRuntime(document: GameDocument, digest: string) {
             `Seat ${seat.seatId} advertises an illegal action: ${rejection.detail}. Make observe().legalActions agree with validateAction().`,
           )
       }
+      // Opaque IDs must be checked by the rules too. A fallback-to-home game
+      // can advertise moves for both seats while routing every move to one player.
+      if (
+        !game.validateAction(state, game.parseAction(candidate), {
+          ...context,
+          seatId: 'sea_unregistered_probe',
+        })
+      )
+        throw new Error(
+          'The runtime accepts actions for an unregistered seat. Initialize players from context.roster and reject unknown context.seatId values.',
+        )
       const action = game.parseAction(candidate)
       const applied = game.applyAction(state, action, context)
       state = applied.state

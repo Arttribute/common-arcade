@@ -58,6 +58,10 @@ describe('managed Studio preview', () => {
         return 1
       },
       clearInterval: vi.fn(),
+      requestAnimationFrame: (fn: () => void) => {
+        fn()
+        return 1
+      },
       console,
       Response,
       URL,
