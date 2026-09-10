@@ -156,7 +156,7 @@ pnpm --filter @common-arcade/payment-service smoke:x402-testnet base-sepolia --b
 Use `arc-testnet` or `hedera-testnet` for the other designated networks. The first
 command checks the RPC chain, gas balance and canonical token without sending a
 transaction. Broadcasting checks the signer, deploys escrow, authorizes canonical
-USDC and the resolver, and associates escrow with USDC on Hedera. Fund the
+USDC and the resolver, and associates both escrow and the EOA treasury with USDC on Hedera. Fund the
 administrator with native gas first; Hedera recipients also require account
 activation and USDC association. Public network/token references:
 [Arc contracts](https://docs.arc.io/arc/references/contract-addresses) and

@@ -5,6 +5,7 @@ import {
   http,
   erc20Abi,
   formatEther,
+  parseAbi,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { NETWORKS } from '@common-arcade/economy'
@@ -159,8 +160,37 @@ try {
     await write('allowUSDC', 'setToken', [network.token, true])
   if (!(await read('resolvers', [account.address])))
     await write('allowResolver', 'setResolver', [account.address, true])
-  if (network.chain.id === 296)
+  if (network.chain.id === 296) {
     await write('associateEscrowUSDC', 'associateHederaToken', [network.token])
+    // The EOA treasury must also be able to receive canonical HTS USDC.
+    // HRC-719 runs association in the context of the transaction's signer.
+    const associationAbi = parseAbi([
+      'function isAssociated() view returns (bool)',
+      'function associate() returns (int64)',
+    ])
+    const associated = () =>
+      reader.readContract({
+        address: network.token,
+        abi: associationAbi,
+        functionName: 'isAssociated',
+        account,
+      })
+    if (!(await associated())) {
+      await receipt('associateTreasuryUSDC', async () => {
+        const { request, result } = await reader.simulateContract({
+          address: network.token,
+          abi: associationAbi,
+          functionName: 'associate',
+          account,
+        })
+        if (result !== 22n && result !== 194n)
+          throw new Error(`Hedera treasury association returned ${result}`)
+        return wallet.writeContract(request)
+      })
+    }
+    if (!(await associated()))
+      throw new Error('Hedera treasury is not associated with USDC')
+  }
   record.verifiedAt = new Date().toISOString()
   record.settings = metadata.settings
   await save()
