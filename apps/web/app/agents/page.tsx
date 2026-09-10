@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { Bot, KeyRound, Plus } from 'lucide-react'
+import { AgentWalletPanel } from '../components/agent-wallet-panel'
 import { Header } from '../components/header'
 import { arcade } from '../../lib/api'
 type Agent = { agentId: string; name: string }
@@ -71,6 +72,7 @@ export default function AgentsPage() {
           </a>
         ) : (
           <>
+            <AgentWalletPanel />
             <section className="launch-card">
               <h2 style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
                 <Bot size={20} />

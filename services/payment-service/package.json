@@ -1,0 +1,44 @@
+{
+  "name": "@common-arcade/payment-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup src/app.ts src/server.ts src/facilitator-server.ts --format esm --dts --clean",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "dev:facilitator": "tsx src/facilitator-server.ts",
+    "deploy:testnet": "node scripts/deploy-testnet.mjs",
+    "smoke:testnet": "node scripts/smoke-testnet.mjs",
+    "smoke:x402-testnet": "tsx scripts/smoke-x402-testnet.mjs"
+  },
+  "dependencies": {
+    "@common-arcade/economy": "workspace:^",
+    "@hono/node-server": "^2.1.1",
+    "hono": "^4.13.5",
+    "@x402/core": "2.25.0",
+    "@x402/evm": "2.25.0",
+    "@x402/hedera": "2.25.0",
+    "@x402/hono": "2.25.0",
+    "@x402/fetch": "2.25.0",
+    "viem": "2.56.3",
+    "zod": "catalog:",
+    "ws": "^8.21.0",
+    "@common-arcade/example-blackjack": "workspace:^",
+    "@common-arcade/match-runtime": "workspace:^",
+    "@common-arcade/protocol": "workspace:^",
+    "@common-arcade/studio": "workspace:^",
+    "@common-arcade/manifest": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/ws": "^8.18.1",
+    "tsup": "catalog:",
+    "tsx": "^4.21.0",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

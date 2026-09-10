@@ -35,11 +35,38 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Setup Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.5.1
+
+      - name: Install pinned contract dependencies
+        run: bash packages/contracts/setup.sh
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Verify formatting, types, tests, and builds
         run: pnpm verify
+
+      - name: Exercise onchain payment flow
+        run: |
+          anvil --port 18545 --silent --block-time 1 > /tmp/arcade-anvil.log 2>&1 &
+          arcade_anvil_pid=$!
+          trap 'kill "$arcade_anvil_pid"' EXIT
+          ARCADE_ANVIL_URL=http://127.0.0.1:18545 pnpm --filter @common-arcade/payment-service run test
+
+      - name: Build and smoke test standalone payment container
+        run: |
+          docker build -f services/payment-service/Dockerfile -t arcade-payment-preview:ci .
+          docker run --detach --name arcade-payment-smoke --read-only --tmpfs /data:uid=1000,gid=1000 --tmpfs /tmp -p 127.0.0.1:14021:4021 arcade-payment-preview:ci
+          trap 'docker rm --force arcade-payment-smoke' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:14021/healthz; then exit 0; fi
+            sleep 1
+          done
+          docker logs arcade-payment-smoke
+          exit 1
 
       - name: Synthesize AWS infrastructure
         run: pnpm infra:synth

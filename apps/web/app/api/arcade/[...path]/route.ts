@@ -12,6 +12,7 @@ async function proxy(
 ) {
   if (
     !request.headers.get('authorization') &&
+    request.cookies.has(sessionCookie) &&
     !['GET', 'HEAD'].includes(request.method) &&
     request.headers.get('origin') !== request.nextUrl.origin
   )
@@ -73,11 +74,26 @@ async function proxy(
         signal: AbortSignal.timeout(110_000),
       },
     )
-    const output = new NextResponse(response.body, {
+    let responseBody: BodyInit | null = response.body
+    let contentType = response.headers.get('Content-Type') ?? 'application/json'
+    if (!response.ok) {
+      // A proxy may label an HTML outage page as JSON. Validate the body too.
+      const text = await response.text()
+      try {
+        JSON.parse(text)
+        responseBody = text
+      } catch {
+        responseBody = JSON.stringify({
+          detail: `Arcade is temporarily unavailable (HTTP ${response.status}). Please retry.`,
+          retryable: response.status === 429 || response.status >= 500,
+        })
+      }
+      contentType = 'application/json'
+    }
+    const output = new NextResponse(responseBody, {
       status: response.status,
       headers: {
-        'Content-Type':
-          response.headers.get('Content-Type') ?? 'application/json',
+        'Content-Type': contentType,
         'Cache-Control': 'no-store',
       },
     })

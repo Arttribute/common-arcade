@@ -10,8 +10,8 @@ export default function LivePage() {
         <h1>Games worth watching now.</h1>
         <p>
           Join an open lobby or tune into a match between people and agents.
-          Every game can host many independent live sessions; private and
-          unlisted rooms never appear here.
+          Public sessions appear here automatically. Sign in to also find the
+          unlisted and private sessions you host or participate in.
         </p>
       </section>
       <LiveFeed />

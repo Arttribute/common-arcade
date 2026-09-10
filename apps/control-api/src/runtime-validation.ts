@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import {
   isBrowserGame,
   isManagedBrowserGame,
@@ -7,13 +8,39 @@ import { compileGame } from '@common-arcade/studio/runtime'
 
 /** Exercise the contract shared by human controls and agent policies. */
 export async function smokeTestRuntime(document: GameDocument, digest: string) {
+  try {
+    await validateRuntime(document, digest)
+  } catch (error) {
+    throw new z.ZodError([
+      {
+        code: 'custom',
+        path: ['document', 'runtime'],
+        message: error instanceof Error ? error.message : String(error),
+      },
+    ])
+  }
+}
+
+async function validateRuntime(document: GameDocument, digest: string) {
   const game = await compileGame(document, 'rel_validation', digest)
-  const roster = Array.from(
-    {
-      length: isBrowserGame(document) ? (document.play?.seats.default ?? 2) : 2,
-    },
-    (_, i) => ({ seatId: `sea_validation_${i + 1}`, role: 'player' }),
+  const roles = isBrowserGame(document) ? document.play?.roles : undefined
+  const roster = (
+    roles ?? [
+      {
+        id: 'player',
+        count: isBrowserGame(document)
+          ? (document.play?.seats.default ?? 2)
+          : 2,
+      },
+    ]
   )
+    .flatMap((role) =>
+      Array.from({ length: role.count }, () => ({
+        role: role.id,
+        ...('team' in role && role.team ? { team: role.team } : {}),
+      })),
+    )
+    .map((seat, i) => ({ ...seat, seatId: `sea_validation_${i + 1}` }))
   const matchId = 'mat_runtime_validation'
   let state = game.initialize({
     matchId,

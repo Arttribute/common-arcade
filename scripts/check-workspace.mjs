@@ -16,6 +16,7 @@ const firstLevel = [
   ...(await childPackageDirectories('services')),
   ...(await childPackageDirectories('packages')),
   'examples/tic-tac-toe',
+  'examples/blackjack',
   'infra/aws',
 ]
 const adapterRootIndex = firstLevel.indexOf('packages/adapters')

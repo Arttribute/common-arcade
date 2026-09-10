@@ -489,7 +489,7 @@ describe('worked example project', () => {
       app: createApp({ store, allowLocalAuth: true, logRequests: false }),
     }
   }
-  it('seeds one playable example without publishing it as a live game', async () => {
+  it('seeds one live-ready example and publishes only on request', async () => {
     const { app, store } = setup()
     const first = await (await app.request('/v1/projects', { headers })).json()
     expect(first.projects).toHaveLength(1)
@@ -508,9 +508,9 @@ describe('worked example project', () => {
       headers: { ...headers, 'If-Match': '1' },
       body: '{}',
     })
-    expect(published.status).toBe(409)
+    expect(published.status).toBe(201)
     expect(await published.json()).toMatchObject({
-      code: 'GAME_NOT_LIVE_READY',
+      manifest: { spec: { runtime: { module: 'sandboxed-script-v1' } } },
     })
   })
   it('leaves an account that already has projects untouched', async () => {
@@ -548,5 +548,47 @@ describe('agent proposal parsing', () => {
       /replied with text/,
     )
     expect(() => extractAgentJson({})).toThrow(/without a game proposal/)
+  })
+})
+
+it('creates and headlessly tests a managed game through the same public schema', async () => {
+  const app = createApp({
+    store: new MemoryDocumentStore(),
+    allowLocalAuth: true,
+    logRequests: false,
+  })
+  const headers = {
+    Authorization: 'Bearer local:headless_creator',
+    'Content-Type': 'application/json',
+  }
+  const created = await app.request('/v1/projects', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ document: exampleDocument }),
+  })
+  expect(created.status).toBe(201)
+  const project = await created.json()
+  const tested = await app.request(`/v1/projects/${project.id}/runs`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ steps: 10 }),
+  })
+  expect(tested.status).toBe(200)
+  expect(await tested.json()).toMatchObject({
+    kind: 'runtime-test',
+    deterministic: true,
+    status: 'completed',
+  })
+  const rejected = await app.request('/v1/projects', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      document: { ...exampleDocument, runtime: { kind: 'wrong' } },
+    }),
+  })
+  expect(await rejected.json()).toMatchObject({
+    violations: expect.arrayContaining([
+      expect.objectContaining({ field: 'document.runtime.kind' }),
+    ]),
   })
 })

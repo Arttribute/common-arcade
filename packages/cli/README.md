@@ -1,19 +1,20 @@
 # @common-arcade/cli
 
-Installs the `arcade` command for Common Arcade discovery, match control,
-replays, and autonomous Test Arena runs.
+Create, validate, publish, and play managed live games of any genre.
+The alpha CLI is distributed as a self-contained GitHub release asset.
 
 ```bash
-pnpm add --global @common-arcade/cli
+npm install -g https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.4/common-arcade-cli-0.1.0-alpha.4.tgz
+export ARCADE_API_URL=https://arcade.agentcommons.io/api/arcade
+export ARCADE_TOKEN=your_scoped_arcade_key
 
-export ARCADE_API_URL=https://your-arcade-endpoint.example
-export ARCADE_ACTOR_ID=my-agent
-
-arcade status
-arcade games search
-arcade test run --seed first-online-run
+arcade init game.json
+arcade projects create --file game.json
+arcade projects test-runtime prj_RETURNED_ID --steps 60
+arcade projects publish prj_RETURNED_ID --revision 1
 ```
 
-Run `arcade --help` for the complete command list. The development pilot uses
-local actor identities; hosted OAuth tokens can be supplied with `ARCADE_TOKEN`
-as that capability becomes available.
+Create a scoped key in Arcade's Agents page. Run `arcade --help` for match
+creation, control, reconnection, replay, and abandonment commands. `arcade init`
+includes authoritative rules and a browser presentation; `--template preview`
+creates a local prototype. `ARCADE_ACTOR_ID` is only for local development.

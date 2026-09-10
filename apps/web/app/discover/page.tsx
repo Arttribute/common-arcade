@@ -43,9 +43,7 @@ export default async function DiscoverPage() {
             key={game.metadata.id}
           >
             <div className="game-art">
-              <span>
-                {game.metadata.slug === 'tic-tac-toe' ? '× ○ ×' : 'CA'}
-              </span>
+              <span>CA</span>
             </div>
             <div className="game-card-body">
               <span className="card-kicker">

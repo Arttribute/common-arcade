@@ -401,3 +401,311 @@ describe('durable match recovery', () => {
     expect(saved?.replay.commands).toHaveLength(0)
   })
 })
+
+it('bounds concurrent creation and allows owners to abandon matches', async () => {
+  const platform = await LocalArcadePlatform.create()
+  const results = await Promise.allSettled(
+    Array.from({ length: 6 }, (_, index) =>
+      platform.createMatch({
+        releaseId: 'rel_tictactoe1',
+        ownerId: 'limited_owner',
+        idempotencyKey: `capacity-test-${index}`,
+      }),
+    ),
+  )
+  expect(
+    results.filter((result) => result.status === 'fulfilled'),
+  ).toHaveLength(4)
+  const first = results.find((result) => result.status === 'fulfilled')!
+  if (first.status !== 'fulfilled') throw new Error('Missing match')
+  await expect(
+    platform.abandonMatch(first.value.id, 'someone_else'),
+  ).rejects.toThrow('owner')
+  expect(
+    (await platform.abandonMatch(first.value.id, 'limited_owner')).status,
+  ).toBe('canceled')
+  expect(
+    (
+      await platform.createMatch({
+        releaseId: 'rel_tictactoe1',
+        ownerId: 'limited_owner',
+        idempotencyKey: 'capacity-after-end',
+      })
+    ).status,
+  ).toBe('lobby')
+  platform.close()
+})
+
+it('expires unattended lobbies without making their descriptors disappear', async () => {
+  vi.useFakeTimers()
+  const platform = await LocalArcadePlatform.create()
+  const match = await platform.createMatch({
+    releaseId: 'rel_tictactoe1',
+    ownerId: 'idle_owner',
+    idempotencyKey: 'idle-lobby-test',
+  })
+  await vi.advanceTimersByTimeAsync(305_000)
+  expect((await platform.getMatch(match.id)).status).toBe('expired')
+  platform.close()
+})
+
+it('quarantines an unavailable release without preventing other matches from recovering', async () => {
+  let saved: import('./index.js').PersistedMatch | undefined
+  const platform = await LocalArcadePlatform.create({
+    persistMatch: async (record) => {
+      saved = structuredClone(record)
+    },
+  })
+  const match = await platform.createMatch({
+    releaseId: 'rel_tictactoe1',
+    idempotencyKey: 'healthy-recovery-test',
+  })
+  const damaged = structuredClone(saved!)
+  damaged.replay.matchId = 'mat_unavailable'
+  damaged.replay.releaseId = 'rel_unavailable'
+  const recovered = await LocalArcadePlatform.create({
+    savedMatches: [damaged, saved!],
+  })
+  expect((await recovered.getMatch(match.id)).status).toBe('lobby')
+  platform.close()
+  recovered.close()
+})
+
+it('keeps exact seat controller identity and connection status through overlapping reconnects', async () => {
+  const platform = await LocalArcadePlatform.create()
+  try {
+    const match = await platform.createMatch({
+      releaseId: 'rel_tictactoe1',
+      ownerId: 'seat_host',
+      idempotencyKey: 'seat-identity-test',
+    })
+    const seatId = match.seats[0]!.id
+    await platform.claimSeat({
+      matchId: match.id,
+      seatId,
+      actorId: 'seat_host',
+      controllerId: 'agent_one',
+      controllerKind: 'agent',
+    })
+    const connect = async () => {
+      const ticket = await platform.createSession({
+        matchId: match.id,
+        seatId,
+        actorId: 'seat_host',
+        controllerId: 'agent_one',
+        mode: 'control',
+      })
+      return platform.connectWithTicket(ticket.ticket, match.id)
+    }
+    const first = await connect(),
+      second = await connect()
+    platform.suspendSession(first.sessionId)
+    platform.disconnectSession(first.sessionId)
+    expect((await platform.getMatch(match.id)).seats[0]).toMatchObject({
+      id: seatId,
+      controllerId: 'agent_one',
+      controllerKind: 'agent',
+      status: 'connected',
+      joinable: false,
+    })
+    expect((await platform.getMatch(match.id)).seats[1]).toMatchObject({
+      status: 'open',
+      joinable: true,
+    })
+    platform.suspendSession(second.sessionId)
+    expect((await platform.getMatch(match.id)).seats[0]?.status).toBe(
+      'disconnected',
+    )
+    platform.resumeSession(second.sessionId, match.id)
+    expect((await platform.getMatch(match.id)).seats[0]?.status).toBe(
+      'connected',
+    )
+  } finally {
+    platform.close()
+  }
+})
+
+it('hands a running seat between controllers, revoking sessions and previously minted tickets', async () => {
+  const { platform, match, first } = await setup()
+  try {
+    const binding = {
+      matchId: match.id,
+      seatId: first.id,
+      actorId: 'actor_one',
+      controllerId: 'controller_one',
+      mode: 'control' as const,
+    }
+    const ticket = await platform.createSession(binding)
+    const old = await platform.connectWithTicket(ticket.ticket, match.id)
+    const unused = await platform.createSession(binding)
+    const changed = await platform.changeSeatController({
+      matchId: match.id,
+      seatId: first.id,
+      actorId: 'actor_one',
+      expectedControllerId: 'controller_one',
+      controllerId: 'agent_one',
+      controllerKind: 'agent',
+    })
+    expect(changed.status).toBe('running')
+    expect(changed.seats[0]).toMatchObject({
+      controllerId: 'agent_one',
+      controllerKind: 'agent',
+      status: 'claimed',
+    })
+    expect(() => platform.observation(old.sessionId)).toThrow(
+      'Session does not exist',
+    )
+    expect(() => platform.resumeSession(old.sessionId, match.id)).toThrow(
+      'Session does not exist',
+    )
+    await expect(
+      platform.connectWithTicket(unused.ticket, match.id),
+    ).rejects.toThrow('Ticket no longer matches')
+    await expect(
+      platform.releaseSeat({
+        matchId: match.id,
+        seatId: first.id,
+        actorId: 'actor_two',
+        expectedControllerId: 'agent_one',
+      }),
+    ).rejects.toMatchObject({ status: 403 })
+    await expect(
+      platform.releaseSeat({
+        matchId: match.id,
+        seatId: first.id,
+        actorId: 'actor_one',
+        expectedControllerId: 'controller_one',
+      }),
+    ).rejects.toMatchObject({ status: 409 })
+    const reserved = await platform.createSession({
+      ...binding,
+      controllerId: 'agent_one',
+    })
+    await platform.releaseSeat({
+      matchId: match.id,
+      seatId: first.id,
+      actorId: 'actor_one',
+      expectedControllerId: 'agent_one',
+    })
+    expect((await platform.getMatch(match.id)).seats[0]).toMatchObject({
+      status: 'open',
+      joinable: true,
+    })
+    await platform.claimSeat({
+      ...binding,
+      controllerId: 'agent_one',
+      controllerKind: 'agent',
+    })
+    await expect(
+      platform.connectWithTicket(reserved.ticket, match.id),
+    ).rejects.toThrow('Ticket no longer matches')
+    const fresh = await platform.createSession({
+      ...binding,
+      controllerId: 'agent_one',
+    })
+    expect(
+      (await platform.connectWithTicket(fresh.ticket, match.id)).seatId,
+    ).toBe(first.id)
+  } finally {
+    platform.close()
+  }
+})
+
+it('cancels a declared held action before handing its seat to another controller', async () => {
+  const document = gameDocumentSchema.parse({
+    kind: 'browser',
+    title: 'Held input',
+    description: 'Controller handoff fixture',
+    entryFile: 'index.html',
+    play: { mode: 'realtime', seats: { min: 1, max: 1, default: 1 } },
+    runtime: {
+      kind: 'sandboxed-script',
+      entryFile: 'server.js',
+      tickRate: 10,
+      memoryMiB: 8,
+      timeoutMs: 20,
+    },
+    files: [
+      { path: 'index.html', content: '<main>Input</main>' },
+      {
+        path: 'server.js',
+        content: `globalThis.arcadeGame={initialize:()=>({moving:false}),validateAction:()=>null,applyAction:(s,a)=>({state:{moving:a.id==='go'},events:[]}),tick:s=>({state:s,events:[]}),observe:s=>({visibleState:s,legalActions:[{id:'go',control:{mode:'hold',releaseActionId:'stop'}},{id:'stop'}]}),result:()=>null};`,
+      },
+    ],
+  })
+  const digest = await documentDigest(document)
+  const project = {
+    id: 'prj_heldinput',
+    ownerId: 'owner',
+    revision: 1,
+    digest,
+    document,
+    annotations: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+  const release = {
+    id: 'rel_heldinput',
+    projectId: project.id,
+    revision: 1,
+    document,
+    digest,
+    manifest: await releaseManifest(project, 'rel_heldinput'),
+    ownerId: 'owner',
+    publishedAt: project.createdAt,
+  }
+  const platform = await LocalArcadePlatform.create({
+    loadRelease: async () => release,
+  })
+  try {
+    const match = await platform.createMatch({
+      releaseId: release.id,
+      idempotencyKey: 'held-input-handoff',
+    })
+    const seatId = match.seats[0]!.id
+    await platform.claimSeat({
+      matchId: match.id,
+      seatId,
+      actorId: 'owner',
+      controllerId: 'human',
+    })
+    const ticket = await platform.createSession({
+      matchId: match.id,
+      seatId,
+      actorId: 'owner',
+      controllerId: 'human',
+      mode: 'control',
+    })
+    const session = await platform.connectWithTicket(ticket.ticket, match.id)
+    const observation = platform.observation(session.sessionId)
+    const result = await platform.submitAction(session.sessionId, {
+      actionId: 'act_holdtest',
+      matchId: match.id,
+      seatId,
+      controlLease: session.controlLease!,
+      clientSequence: 1,
+      basedOnStateSequence: observation.stateSequence,
+      payload: { id: 'go' },
+    })
+    expect(result.disposition).toBe('accepted')
+    expect(platform.observation(session.sessionId).visibleState).toEqual({
+      moving: true,
+    })
+    await platform.changeSeatController({
+      matchId: match.id,
+      seatId,
+      actorId: 'owner',
+      expectedControllerId: 'human',
+      controllerId: 'agent',
+      controllerKind: 'agent',
+    })
+    expect((await platform.getMatchView(match.id)).publicState).toEqual({
+      moving: false,
+    })
+    expect(replaySchema.safeParse(platform.getReplay(match.id)).success).toBe(
+      true,
+    )
+  } finally {
+    platform.close()
+  }
+})

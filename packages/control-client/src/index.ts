@@ -93,6 +93,16 @@ export interface ClaimSeatInput {
   readonly controllerKind?: 'human' | 'agent'
 }
 
+export interface ReleaseSeatInput {
+  readonly matchId: string
+  readonly seatId: string
+  readonly expectedControllerId: string
+}
+export interface ChangeSeatControllerInput extends ReleaseSeatInput {
+  readonly controllerId: string
+  readonly controllerKind: 'human' | 'agent'
+}
+
 export interface JoinMatchInput {
   readonly matchId: string
   readonly controllerId: string
@@ -231,6 +241,33 @@ export class ControlClient {
     )
   }
 
+  async testRuntime(
+    projectId: string,
+    input: {
+      seed?: string
+      steps?: number
+      configuration?: JsonValue
+      actions?: { step: number; seat: number; action: JsonValue }[]
+    } = {},
+  ): Promise<unknown> {
+    return this.request(`/v1/projects/${encodeURIComponent(projectId)}/runs`, {
+      method: 'POST',
+      body: input,
+    })
+  }
+
+  async abandonMatch(
+    matchId: string,
+    signal?: AbortSignal,
+  ): Promise<MatchDescriptor> {
+    return matchDescriptorSchema.parse(
+      await this.request(`/v1/matches/${encodeURIComponent(matchId)}`, {
+        method: 'DELETE',
+        signal,
+      }),
+    )
+  }
+
   async findMatch(
     input: FindMatchInput,
     signal?: AbortSignal,
@@ -248,8 +285,14 @@ export class ControlClient {
     }
   }
 
-  async listLiveMatches(signal?: AbortSignal): Promise<readonly LiveMatch[]> {
-    const body = (await this.request('/v1/matches', { signal })) as {
+  async listLiveMatches(
+    signal?: AbortSignal,
+    scope: 'public' | 'mine' = 'public',
+  ): Promise<readonly LiveMatch[]> {
+    const body = (await this.request(
+      scope === 'mine' ? '/v1/matches?scope=mine' : '/v1/matches',
+      { signal },
+    )) as {
       matches: Array<{
         gameId: string
         gameTitle: string
@@ -304,6 +347,32 @@ export class ControlClient {
           },
           signal,
         },
+      ),
+    )
+  }
+
+  async releaseSeat(
+    input: ReleaseSeatInput,
+    signal?: AbortSignal,
+  ): Promise<MatchDescriptor> {
+    const { matchId, seatId, ...body } = input
+    return matchDescriptorSchema.parse(
+      await this.request(
+        `/v1/matches/${encodeURIComponent(matchId)}/seats/${encodeURIComponent(seatId)}/release`,
+        { method: 'POST', body, signal },
+      ),
+    )
+  }
+
+  async changeSeatController(
+    input: ChangeSeatControllerInput,
+    signal?: AbortSignal,
+  ): Promise<MatchDescriptor> {
+    const { matchId, seatId, ...body } = input
+    return matchDescriptorSchema.parse(
+      await this.request(
+        `/v1/matches/${encodeURIComponent(matchId)}/seats/${encodeURIComponent(seatId)}/controller`,
+        { method: 'POST', body, signal },
       ),
     )
   }
@@ -577,7 +646,16 @@ export class ControlClient {
         signal: options.signal,
       },
     )
-    const body: unknown = await response.json()
+    let body: unknown
+    try {
+      body = JSON.parse(await response.text())
+    } catch {
+      throw new Error(
+        response.ok
+          ? 'Common Arcade returned an invalid JSON response.'
+          : `Common Arcade is temporarily unavailable (HTTP ${response.status}). Please retry.`,
+      )
+    }
     if (!response.ok) {
       const parsed = problemDetailsSchema.safeParse(body)
       if (parsed.success) throw new ArcadeApiError(parsed.data)

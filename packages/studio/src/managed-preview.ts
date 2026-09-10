@@ -9,20 +9,36 @@ export function managedPreviewRuntime(document: BrowserGameDocument): string {
   const source = document.files.find(
     (file) => file.path === document.runtime!.entryFile,
   )!.content
+  const roster = (
+    document.play?.roles ?? [
+      { id: 'player', count: document.play?.seats.default ?? 2 },
+    ]
+  )
+    .flatMap((role) =>
+      Array.from({ length: role.count }, () => ({
+        role: role.id,
+        ...('team' in role && role.team ? { team: role.team } : {}),
+      })),
+    )
+    .map((seat, i) => ({ ...seat, seatId: `seat-${i + 1}` }))
   return `
 function installManagedPreview(){
-  const game=(()=>{const globalThis={};${source}\n;return globalThis.arcadeGame})();
+  const rules=(()=>{const globalThis={arcadePrepared:null};${source}\n;return {game:globalThis.arcadeGame,scope:globalThis}})();
+  const game=rules.game;
   const api=window.arcade;
   if(typeof api?.render!=='function')throw Error('Managed presentation must define window.arcade.render.');
   const render=api.render.bind(api);
-  const roster=Array.from({length:${document.play?.seats.default ?? 2}},(_,i)=>({seatId:'seat-'+(i+1),role:'player'}));
+  const roster=${JSON.stringify(roster).replace(/</g, '\\u003c')};
   const clone=value=>JSON.parse(JSON.stringify(value));
-  let state=clone(game.initialize({matchId:'mat_studio_preview',seed:'arcade-preview-seed',configuration:{},roster}));
+  const initialization={matchId:'mat_studio_preview',seed:'arcade-preview-seed',configuration:{},roster};
+  const freeze=value=>{if(value&&typeof value==='object'){Object.values(value).forEach(freeze);Object.freeze(value)}return value};
+  rules.scope.arcadePrepared=freeze(clone(game.prepare?game.prepare(clone(initialization)):null));
+  let state=clone(game.initialize(clone(initialization)));
   let elapsedMs=0,stateSequence=0,eventSequence=0,tick=0,stopped=false;
   const context=seatId=>({matchId:'mat_studio_preview',seatId,stateSequence,eventSequence,elapsedMs,authoritativeTime:new Date(elapsedMs).toISOString()});
   const result=()=>game.result(clone(state));
   const observe=seatId=>game.observe(clone(state),seatId,context(seatId));
-  const draw=()=>{const observation=observe(roster[0].seatId);render(observation.visibleState,{observation,match:{id:'mat_studio_preview',status:result()?'completed':'running',seats:roster.map(s=>({id:s.seatId,role:s.role}))},preview:true})};
+  const draw=()=>{const observation=observe(roster[0].seatId);render(observation.visibleState,{observation,inputEnabled:!stopped&&!result(),match:{id:'mat_studio_preview',status:result()?'completed':'running',seats:roster.map(s=>({id:s.seatId,role:s.role}))},preview:true})};
   const transition=next=>{state=clone(next.state);stateSequence++;eventSequence+=(next.events??[]).length;draw()};
   api.seats=()=>roster.map((s,i)=>({id:s.seatId,label:'Player '+(i+1)}));
   api.observe=seatId=>{const o=observe(seatId);return{...o.visibleState,visibleState:o.visibleState,feedback:o.feedback??null,result:result(),elapsedMs}};
