@@ -80,10 +80,7 @@ export function LiveControls({
     <section className="human-controls" aria-label="Your game controls">
       <div className="human-controls-heading">
         <strong>Your controls</strong>
-        <span>
-          Tap an action, or hold a marked control. Tab moves between controls;
-          Enter or Space activates them.
-        </span>
+        <span>Your move.</span>
       </div>
       <div className="control-mode" aria-label="Control method">
         <button
@@ -93,7 +90,7 @@ export function LiveControls({
             onInputMode('standard')
           }}
         >
-          Standard controls
+          Action buttons
         </button>
         <button
           aria-pressed={inputMode === 'game'}
@@ -102,13 +99,13 @@ export function LiveControls({
             onInputMode('game')
           }}
         >
-          Use game controls
+          In-game controls
         </button>
       </div>
       {inputMode === 'game' ? (
         <p>
           Click inside the game to use its keyboard, pointer or touch controls.
-          Switch to standard controls for the complete action list.
+          Switch to action buttons if you need them.
         </p>
       ) : null}
       {disabled ? (
@@ -169,17 +166,23 @@ export function LiveControls({
         <p>Waiting for your next available action.</p>
       ) : null}
       <p className="live-control-feedback" role="status" aria-live="polite">
-        {feedback ||
-          'Choose an action to play. Changes appear in the game above.'}
+        {feedback}
       </p>
-      <dl className="human-state-summary">
-        {stateFields(observation.visibleState).map(([key, value]) => (
-          <div key={key}>
-            <dt>{key}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
-      </dl>
+      <details className="human-game-state">
+        <summary>Game status & keyboard help</summary>
+        <p>
+          Tab moves between actions. Enter or Space activates an action. Hold
+          marked controls to keep them pressed.
+        </p>
+        <dl className="human-state-summary">
+          {stateFields(observation.visibleState).map(([key, value]) => (
+            <div key={key}>
+              <dt>{key}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
       <details className="human-game-state">
         <summary>Your current game state</summary>
         <pre>{JSON.stringify(observation.visibleState, null, 2)}</pre>

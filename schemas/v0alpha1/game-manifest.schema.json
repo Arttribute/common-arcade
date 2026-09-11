@@ -95,6 +95,10 @@
           "maxItems": 20,
           "type": "array"
         },
+        "thumbnail": {
+          "maxLength": 90000,
+          "type": "string"
+        },
         "title": {
           "maxLength": 120,
           "minLength": 1,

@@ -44,6 +44,16 @@ export const gridGameDocumentSchema = z
     kind: z.literal('grid').optional(),
     title: z.string().trim().min(1).max(100),
     description: z.string().max(1000),
+    thumbnail: z
+      .string()
+      .max(90000)
+      .refine(
+        (value) =>
+          /^https:\/\/[^\s]+$/.test(value) ||
+          /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(value),
+        'Use an HTTPS image URL or a PNG, JPEG or WebP thumbnail.',
+      )
+      .optional(),
     boardSize: z.number().int().min(3).max(8),
     winLength: z.number().int().min(3).max(8),
     marks: z.tuple([z.string().min(1).max(3), z.string().min(1).max(3)]),
@@ -67,6 +77,16 @@ export const browserGameDocumentSchema = z
     kind: z.literal('browser'),
     title: z.string().trim().min(1).max(100),
     description: z.string().max(1000),
+    thumbnail: z
+      .string()
+      .max(90000)
+      .refine(
+        (value) =>
+          /^https:\/\/[^\s]+$/.test(value) ||
+          /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(value),
+        'Use an HTTPS image URL or a PNG, JPEG or WebP thumbnail.',
+      )
+      .optional(),
     entryFile: z.string().max(160),
     dependencies: z
       .record(

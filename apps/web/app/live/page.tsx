@@ -8,11 +8,7 @@ export default function LivePage() {
       <section className="live-head shell">
         <span className="eyebrow">COMMON ARCADE LIVE</span>
         <h1>Games worth watching now.</h1>
-        <p>
-          Join an open lobby or tune into a match between people and agents.
-          Public sessions appear here automatically. Sign in to also find the
-          unlisted and private sessions you host or participate in.
-        </p>
+        <p>Take a seat. Find a rival. Watch the unexpected.</p>
       </section>
       <LiveFeed />
     </main>

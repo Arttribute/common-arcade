@@ -4,9 +4,32 @@ import type { LiveMatch } from '@common-arcade/control-client'
 import { Eye, Radio, Users, Gamepad2 } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { browserControlClient } from '../../lib/api'
+import { legacyGameCovers } from '../lib/legacy-game-covers'
+import { GameArtwork } from './game-artwork'
+import type { GameManifest } from '@common-arcade/protocol'
+import { arcade, browserControlClient } from '../../lib/api'
 
 export function LiveFeed() {
+  const [covers, setCovers] = useState<Record<string, string>>({})
+  useEffect(() => {
+    let active = true
+    void arcade<{ games: GameManifest[] }>('games')
+      .then(({ games }) => {
+        if (active)
+          setCovers(
+            Object.fromEntries(
+              games.map((g) => [
+                g.metadata.id,
+                g.metadata.thumbnail || legacyGameCovers[g.metadata.id] || '',
+              ]),
+            ),
+          )
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [])
   const [matches, setMatches] = useState<readonly LiveMatch[]>([])
   const [mine, setMine] = useState<readonly LiveMatch[]>([])
   const [signedIn, setSignedIn] = useState(false)
@@ -109,9 +132,7 @@ export function LiveFeed() {
             </button>
           ))}
         </div>
-        <small>
-          {online ? 'Refreshes every 5 seconds' : 'Feed reconnecting…'}
-        </small>
+        <small>{online ? 'Updated live' : 'Reconnecting…'}</small>
       </div>
       {!online ? (
         <p className="error-text" role="status">
@@ -121,12 +142,6 @@ export function LiveFeed() {
       {personalError ? (
         <p className="error-text" role="status">
           Your sessions could not be refreshed. Public sessions are still shown.
-        </p>
-      ) : null}
-      {signedIn ? (
-        <p className="match-rule-note">
-          Your unlisted and private sessions are visible only to you and
-          authorized participants.
         </p>
       ) : null}
       {loading ? <p role="status">Loading live sessions…</p> : null}
@@ -142,7 +157,10 @@ export function LiveFeed() {
               key={match.id}
             >
               <div className="live-card-art" aria-hidden="true">
-                <Gamepad2 size={48} strokeWidth={1} />
+                <GameArtwork
+                  title={match.gameTitle}
+                  src={covers[match.gameId]}
+                />
                 <strong>
                   <Radio size={12} /> {match.status.toUpperCase()}
                 </strong>
@@ -153,7 +171,7 @@ export function LiveFeed() {
                   {ownIds.has(match.id) ? ' · Your session' : ''}
                 </span>
                 <h2>{match.gameTitle}</h2>
-                <p>{match.summary}</p>
+
                 <div className="live-card-meta">
                   <span>
                     <Users size={13} /> {occupied}/{match.seats.length} seats
@@ -162,28 +180,6 @@ export function LiveFeed() {
                   <span>
                     <Eye size={13} /> {match.viewerCount ?? 0} watching
                   </span>
-                </div>
-                <div
-                  className="live-seat-preview"
-                  aria-label="Seat availability"
-                >
-                  {match.seats.map((seat, index) => (
-                    <span
-                      key={seat.id}
-                      className={
-                        seat.status === 'open' ? 'is-open' : 'is-taken'
-                      }
-                      title={`${seat.label ?? `Seat ${index + 1}`} · ${seat.status}${seat.actorId ? ` · ${seat.actorId}` : ''}`}
-                    >
-                      {seat.label ?? `${seat.role} ${index + 1}`} ·{' '}
-                      {seat.status === 'open'
-                        ? 'Open'
-                        : seat.status === 'disconnected'
-                          ? 'Reserved'
-                          : 'Taken'}
-                      {seat.controllerKind ? ` · ${seat.controllerKind}` : ''}
-                    </span>
-                  ))}
                 </div>
                 <strong className="live-card-action">
                   {match.status === 'lobby' &&

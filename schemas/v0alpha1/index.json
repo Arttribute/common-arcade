@@ -19,11 +19,11 @@
       "file": "event.schema.json"
     },
     "game-document": {
-      "digest": "sha256:70078d51b3223f6c3c742b2dec3a672054bfe7d8449fd22ec9722d72338a17c1",
+      "digest": "sha256:f7c9100e02d7e16cc28bea056e0fb5a34c31e3b678d1873dc2f4a8802660a11a",
       "file": "game-document.schema.json"
     },
     "game-manifest": {
-      "digest": "sha256:2c1599a491819cb334c20c4590feec6b8df7ded1c4b10dabdee3993466f01c25",
+      "digest": "sha256:93d6b658c0677b565a4b04067ccdf7ee1ba839de99c477aa2b3e4742a9b5fb5c",
       "file": "game-manifest.schema.json"
     },
     "game-release": {

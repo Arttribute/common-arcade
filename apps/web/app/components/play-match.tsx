@@ -9,7 +9,16 @@ import type {
   RealtimeEnvelope,
 } from '@common-arcade/protocol'
 import { useEffect, useRef, useState } from 'react'
-import { Check, RotateCcw, Share2, User, Bot, Circle } from 'lucide-react'
+import {
+  Check,
+  RotateCcw,
+  Share2,
+  User,
+  Bot,
+  Circle,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react'
 
 import { LiveControls, actionLabel } from './live-controls'
 import { ExternalSeatAgent } from './external-seat-agent'
@@ -36,6 +45,22 @@ export function PlayMatch({
   matchId: string
   initialActor: string
 }) {
+  const stageRef = useRef<HTMLElement>(null)
+  const [fullscreen, setFullscreen] = useState(false)
+  useEffect(() => {
+    const changed = () =>
+      setFullscreen(document.fullscreenElement === stageRef.current)
+    document.addEventListener('fullscreenchange', changed)
+    return () => document.removeEventListener('fullscreenchange', changed)
+  }, [])
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen()
+      else await stageRef.current?.requestFullscreen()
+    } catch {
+      setError('Fullscreen is unavailable in this browser.')
+    }
+  }
   const [actorId] = useState(initialActor)
   const [viewer, setViewer] = useState<{ id: string; name: string } | null>(
     null,
@@ -1015,8 +1040,16 @@ export function PlayMatch({
         </p>
       </aside>
 
-      <section className="game-stage">
+      <section className="game-stage" ref={stageRef}>
         <div className="stage-meta">
+          <button
+            className="fullscreen-toggle"
+            aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            onClick={() => void toggleFullscreen()}
+          >
+            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            {fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          </button>
           <span>{match?.status ?? 'loading'}</span>
           <span>
             Round {match?.series?.currentRound ?? 1}/
@@ -1112,25 +1145,27 @@ export function PlayMatch({
       </section>
 
       <aside className="match-panel inspector">
-        <span className="panel-label">AGENT / PROTOCOL</span>
-        <dl>
-          <dt>Match</dt>
-          <dd>{matchId}</dd>
-          <dt>State sequence</dt>
-          <dd>{observation?.stateSequence ?? match?.stateSequence ?? 0}</dd>
-          <dt>Event sequence</dt>
-          <dd>{observation?.eventSequence ?? match?.eventSequence ?? 0}</dd>
-          <dt>Last action</dt>
-          <dd>{lastResult ?? '—'}</dd>
-          <dt>Series score</dt>
-          <dd>
-            {Object.entries(match?.series?.scores ?? {})
-              .map(([seat, score]) => `${seat.slice(-5)}: ${score}`)
-              .join(' · ') || 'No wins yet'}
-          </dd>
-          <dt>Restart rule</dt>
-          <dd>{match?.series?.restartPolicy ?? 'owner'}</dd>
-        </dl>
+        <details>
+          <summary>Session details</summary>
+          <dl>
+            <dt>Match</dt>
+            <dd>{matchId}</dd>
+            <dt>State sequence</dt>
+            <dd>{observation?.stateSequence ?? match?.stateSequence ?? 0}</dd>
+            <dt>Event sequence</dt>
+            <dd>{observation?.eventSequence ?? match?.eventSequence ?? 0}</dd>
+            <dt>Last action</dt>
+            <dd>{lastResult ?? '—'}</dd>
+            <dt>Series score</dt>
+            <dd>
+              {Object.entries(match?.series?.scores ?? {})
+                .map(([seat, score]) => `${seat.slice(-5)}: ${score}`)
+                .join(' · ') || 'No wins yet'}
+            </dd>
+            <dt>Restart rule</dt>
+            <dd>{match?.series?.restartPolicy ?? 'owner'}</dd>
+          </dl>
+        </details>
         {connection === 'disconnected' && !terminal ? (
           <button
             className="secondary compact"

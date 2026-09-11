@@ -4,6 +4,7 @@ import { RootProvider } from 'fumadocs-ui/provider/next'
 import 'fumadocs-ui/style.css'
 import '@agent-commons/ui/styles.css'
 import './styles.css'
+import './refresh.css'
 
 export const metadata: Metadata = {
   title: {
