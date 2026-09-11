@@ -267,6 +267,9 @@ export async function releaseManifest(
       version: `0.1.${project.revision}`,
       digest: `sha256:${'0'.repeat(64)}`,
       title: project.document.title,
+      ...(project.document.thumbnail
+        ? { thumbnail: project.document.thumbnail }
+        : {}),
       summary: project.document.description.trim() || project.document.title,
       publisher: {
         id: `pub_${project.ownerId.replace(/[^a-zA-Z0-9_]/g, '_')}`,

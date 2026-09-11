@@ -5,8 +5,11 @@ import { MemoryDocumentStore } from './store.js'
 import {
   emptyBrowserDocument,
   exampleDocument,
-  starterDocument,
+  starterDocument as originalStarterDocument,
 } from '@common-arcade/studio'
+
+const thumbnail = 'https://example.com/game-cover.webp'
+const starterDocument = { ...originalStarterDocument, thumbnail }
 
 describe('hosted Studio boundary', () => {
   const headers = {
@@ -57,6 +60,23 @@ describe('hosted Studio boundary', () => {
       ).status,
     ).toBe(403)
   })
+  it('requires artwork for a new publication but allows thumbnail-free drafts', async () => {
+    const { app } = setup()
+    const created = await app.request('/v1/projects', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ document: originalStarterDocument }),
+    })
+    expect(created.status).toBe(201)
+    const project = await created.json()
+    const published = await app.request(`/v1/projects/${project.id}/publish`, {
+      method: 'POST',
+      headers: { ...headers, 'If-Match': '1' },
+      body: '{}',
+    })
+    expect(published.status).toBe(422)
+    expect((await published.json()).code).toBe('THUMBNAIL_REQUIRED')
+  })
   it('publishes an immutable game discoverable to unauthenticated clients', async () => {
     const { app } = setup()
     const p = await (
@@ -75,6 +95,7 @@ describe('hosted Studio boundary', () => {
     const response = await publish()
     expect(response.status).toBe(201)
     const release = await response.json()
+    expect(release.manifest.metadata.thumbnail).toBe(thumbnail)
     expect((await (await publish()).json()).id).toBe(release.id)
     const catalog = await (await app.request('/v1/games')).json()
     expect(
@@ -503,9 +524,14 @@ describe('worked example project', () => {
     ).toHaveLength(1)
     const preview = await app.request(`/v1/projects/${example.id}`, { headers })
     expect(preview.status).toBe(200)
+    await app.request(`/v1/projects/${example.id}`, {
+      method: 'PUT',
+      headers: { ...headers, 'If-Match': '1' },
+      body: JSON.stringify({ ...example.document, thumbnail }),
+    })
     const published = await app.request(`/v1/projects/${example.id}/publish`, {
       method: 'POST',
-      headers: { ...headers, 'If-Match': '1' },
+      headers: { ...headers, 'If-Match': '2' },
       body: '{}',
     })
     expect(published.status).toBe(201)

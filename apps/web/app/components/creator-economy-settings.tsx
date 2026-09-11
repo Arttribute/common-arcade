@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import {
   gameMonetizationSchema,
   type GameMonetization,
@@ -13,6 +14,9 @@ export function CreatorEconomySettings({
   disabled?: boolean
 }) {
   const policy = value ?? { mode: 'free' }
+  const [network, setNetwork] = useState<
+    'base-sepolia' | 'arc-testnet' | 'hedera-testnet' | 'celo-sepolia'
+  >('base-sepolia')
   const validation = gameMonetizationSchema.safeParse(policy)
   return (
     <fieldset disabled={disabled} className="studio-section economy-settings">
@@ -50,29 +54,51 @@ export function CreatorEconomySettings({
               before saving or publishing paid matches.
             </p>
           )}
-          <label>
-            Earning mode
-            <select
-              value={
-                policy.allowedModes.length === 2
-                  ? 'both'
-                  : policy.allowedModes[0]
-              }
-              onChange={(e) =>
-                onChange({
-                  ...policy,
-                  allowedModes:
-                    e.target.value === 'both'
-                      ? ['sponsored', 'staked']
-                      : [e.target.value as 'sponsored' | 'staked'],
-                })
-              }
-            >
-              <option value="both">Sponsored rewards & player stakes</option>
-              <option value="sponsored">Sponsored rewards · free entry</option>
-              <option value="staked">Player stakes · winner takes prize</option>
-            </select>
-          </label>
+          <fieldset className="earning-modes">
+            <legend>Earning mode</legend>
+            {(
+              [
+                [
+                  'sponsored',
+                  'Sponsored rewards',
+                  'Free entry. A sponsor funds the prizes.',
+                ],
+                [
+                  'staked',
+                  'Player stakes',
+                  'Players contribute to the prize pool.',
+                ],
+                [
+                  'both',
+                  'Both options',
+                  'Let the host choose when starting a session.',
+                ],
+              ] as const
+            ).map(([id, title, hint]) => (
+              <label key={id}>
+                <input
+                  type="radio"
+                  name="earning-mode"
+                  checked={
+                    policy.allowedModes.length === 2
+                      ? id === 'both'
+                      : policy.allowedModes[0] === id
+                  }
+                  onChange={() =>
+                    onChange({
+                      ...policy,
+                      allowedModes:
+                        id === 'both' ? ['sponsored', 'staked'] : [id],
+                    })
+                  }
+                />
+                <span>
+                  <strong>{title}</strong>
+                  <small>{hint}</small>
+                </span>
+              </label>
+            ))}
+          </fieldset>
           <label>
             Creator share of the success fee
             <select
@@ -96,28 +122,44 @@ export function CreatorEconomySettings({
             the platform. Draws and cancellations refund contributions without a
             fee.
           </p>
-          {(
-            [
-              'base-sepolia',
-              'arc-testnet',
-              'hedera-testnet',
-              'celo-sepolia',
-            ] as const
-          ).map((network) => (
-            <label key={network}>
-              {network} payout address
-              <input
-                placeholder="0x… · leave empty to disable this network"
-                value={policy.payouts[network] ?? ''}
-                onChange={(e) => {
-                  const payouts = { ...policy.payouts }
-                  if (e.target.value) payouts[network] = e.target.value
-                  else delete payouts[network]
-                  onChange({ ...policy, payouts })
-                }}
-              />
-            </label>
-          ))}
+          <label>
+            Payout network
+            <select
+              value={network}
+              onChange={(e) => setNetwork(e.target.value as typeof network)}
+            >
+              {(
+                [
+                  'base-sepolia',
+                  'arc-testnet',
+                  'hedera-testnet',
+                  'celo-sepolia',
+                ] as const
+              ).map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                  {policy.payouts[id] ? ' · configured' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {network} payout address
+            <input
+              placeholder="0x…"
+              value={policy.payouts[network] ?? ''}
+              onChange={(e) => {
+                const payouts = { ...policy.payouts }
+                if (e.target.value) payouts[network] = e.target.value
+                else delete payouts[network]
+                onChange({ ...policy, payouts })
+              }}
+            />
+          </label>
+          <p className="studio-help">
+            Configure at least one network. You can switch networks to add or
+            remove another payout address.
+          </p>
           <label>
             <input
               type="checkbox"

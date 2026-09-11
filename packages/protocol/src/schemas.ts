@@ -116,6 +116,7 @@ export const gameManifestSchema = z
       digest: digestSchema,
       title: z.string().min(1).max(120),
       summary: z.string().min(1).max(500),
+      thumbnail: z.string().max(90000).optional(),
       publisher: z.object({
         id: z.string().min(1).max(200),
         name: z.string().min(1).max(120),

@@ -147,6 +147,7 @@ describe('local REST and realtime stack', () => {
         document: {
           title: 'Four square',
           description: 'Local authoring test',
+          thumbnail: 'https://example.com/four-square.png',
           boardSize: 4,
           winLength: 3,
           marks: ['X', 'O'],

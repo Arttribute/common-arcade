@@ -673,6 +673,17 @@ export function createStudioApi(
     const releaseId = `rel_${project.id.slice(4)}_${project.revision}_${project.digest.slice(7, 19)}`
     const existing = await store.get<ReleaseRecord>('releases', releaseId)
     if (existing) return c.json(existing.release)
+    if (!project.document.thumbnail)
+      return c.json(
+        {
+          title: 'Game thumbnail required',
+          detail:
+            'Add a game thumbnail in Studio → Publishing before publishing.',
+          code: 'THUMBNAIL_REQUIRED',
+          status: 422,
+        },
+        422,
+      )
     if (
       project.forkedFrom &&
       (project.document.monetization?.mode === 'revenue-share' ||

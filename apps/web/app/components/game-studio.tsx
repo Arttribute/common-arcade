@@ -1,6 +1,9 @@
 'use client'
 import { CreatorEconomySettings } from './creator-economy-settings'
 import { AccountMenu } from './account-menu'
+import { GeneralChat } from './general-chat'
+import { ThumbnailField } from './thumbnail-field'
+import { StudioCodeEditor } from './studio-code-editor'
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -15,6 +18,8 @@ import {
   Download,
   FlaskConical,
   Folder,
+  Wallet,
+  Film,
   Gamepad2,
   History,
   Loader2,
@@ -46,7 +51,6 @@ import {
   CompiledArtifactFrame,
   type AnnotationGeometry,
   CanvasToolButton,
-  CodeFileBrowser,
   CommonsWindow,
   type CompiledFrameHandle,
   type CanvasObservation,
@@ -228,6 +232,8 @@ export function GameStudio({ projectId }: { projectId: string }) {
   const [browserDeciding, setBrowserDeciding] = useState(false)
   const [frameDecisions, setFrameDecisions] = useState(0)
   const [logsOpen, setLogsOpen] = useState(true)
+  const [logsExpanded, setLogsExpanded] = useState(false)
+  const [workspaceGroup, setWorkspaceGroup] = useState('project')
   const [browserAction, setBrowserAction] = useState<{
     seat: string
     action: string
@@ -460,7 +466,9 @@ export function GameStudio({ projectId }: { projectId: string }) {
     JSON.stringify(emptyBrowserDocument, null, 2),
   )
   const [view, setView] = useState<'preview' | 'code' | 'test'>('preview')
-  const [right, setRight] = useState<'copilot' | 'notes' | 'history'>('copilot')
+  const [right, setRight] = useState<'copilot' | 'chat' | 'notes' | 'history'>(
+    'copilot',
+  )
   const [elapsed, setElapsed] = useState(0)
   const [pendingPrompt, setPendingPrompt] = useState('')
   const [leftOpen, setLeftOpen] = useState(true),
@@ -1095,628 +1103,680 @@ export function GameStudio({ projectId }: { projectId: string }) {
     </CanvasToolButton>
   )
   return (
-    <CanvasShell
-      toolbar={
-        <>
-          <Link
-            href="/discover"
-            className="studio-back"
-            aria-label="Back to Arcade"
+    <div className="studio-workspace">
+      <nav className="studio-rail" aria-label="Studio sections">
+        <Link href="/studio" className="rail-brand" aria-label="All projects">
+          <Gamepad2 size={23} />
+        </Link>
+        {(
+          [
+            ['project', 'Project', Folder],
+            ['testing', 'Testing', FlaskConical],
+            ['recordings', 'Recordings', Film],
+            ['publishing', 'Publishing', Upload],
+            ['payments', 'Payments', Wallet],
+            ['team', 'Team', Users],
+          ] as const
+        ).map(([id, label, Icon]) => (
+          <button
+            key={id}
+            title={label}
+            aria-label={label}
+            aria-pressed={leftOpen && workspaceGroup === id}
+            onClick={() => {
+              setWorkspaceGroup(id)
+              setLeftOpen(workspaceGroup === id ? !leftOpen : true)
+            }}
           >
-            <ArrowLeft size={16} />
-          </Link>
-          <span className="studio-divider" />
-          <Gamepad2 size={18} />
-          <span className="studio-project-title">{title}</span>
-          <span className="studio-saved">
-            {busy ? (
-              <Loader2 size={12} className="spin" />
-            ) : dirty ? (
-              '•'
-            ) : (
-              <Check size={12} />
-            )}{' '}
-            {busy
-              ? busy === 'copilot'
-                ? 'Copilot is working'
-                : 'Working'
-              : dirty
-                ? 'Unsaved changes'
-                : project
-                  ? `Revision ${project.revision}`
-                  : 'Draft preview'}
-          </span>
-          <span
-            className={`studio-live-readiness ${liveReadiness.liveReady ? 'is-ready' : 'is-preview'}`}
-            title={liveReadiness.blockers.join(' ')}
-          >
-            {liveReadiness.liveReady ? 'Live-ready' : 'Preview only'}
-          </span>
-          <div className="studio-toolbar-end">
-            {user ? (
-              <>
-                {canEdit ? (
-                  <Button
-                    disabled={!!busy}
-                    onClick={() =>
-                      void task('save', async () => {
-                        await save()
-                        setNotice('Revision saved.')
-                      })
-                    }
-                  >
-                    <Save size={14} />
-                    Save
-                  </Button>
-                ) : null}
-                {isOwner && liveReadiness.liveReady ? (
-                  <Button
-                    disabled={!!busy}
-                    onClick={() =>
-                      void task('publish', async () => {
-                        const p = !project || dirty ? await save() : project
-                        const release = await arcade<StudioRelease>(
-                          `projects/${p.id}/publish`,
-                          {},
-                          'POST',
-                          { 'If-Match': String(p.revision) },
-                        )
-                        setProject({ ...p, releaseId: release.id })
-                        setNotice('Published. Your game is now in the Arcade.')
-                      })
-                    }
-                    variant="primary"
-                  >
-                    <Upload size={14} />
-                    Publish
-                  </Button>
-                ) : null}
-              </>
-            ) : (
-              <a
-                className="ac-button ac-button-primary"
-                href="/api/auth/login?next=/studio"
-              >
-                Sign in to create
-              </a>
-            )}
-            <AccountMenu
-              user={user}
-              beforeSignOut={async () => {
-                if (dirty) await save()
-              }}
-            />
-            {icon(
-              <PanelRightClose size={16} />,
-              'Toggle assistant panel',
-              () => setRightOpen(!rightOpen),
-              rightOpen,
-            )}
-          </div>
-        </>
-      }
-      left={
-        leftOpen && (
+            <Icon size={19} />
+            <span>{label}</span>
+          </button>
+        ))}
+        <div className="rail-account">
+          <AccountMenu
+            user={user}
+            beforeSignOut={async () => {
+              if (dirty) await save()
+            }}
+          />
+        </div>
+      </nav>
+      <CanvasShell
+        className={logsExpanded && logsOpen ? 'studio-logs-expanded' : ''}
+        toolbar={
           <>
-            <div className="studio-panel-heading">
-              <span>Workspace</span>
-              {icon(
-                <PanelLeftClose size={14} />,
-                'Collapse project panel',
-                () => setLeftOpen(false),
-              )}
-            </div>
-            <CreatorEconomySettings
-              value={document.monetization}
-              onChange={(monetization) => update({ monetization })}
-              disabled={!isOwner}
-            />
-            {project?.unresolvedRemixRoyalty && (
-              <p className="studio-help">
-                This source has legacy royalty terms without payout addresses.
-                Free remix publication is available; paid publication is blocked
-                until the source terms can be resolved.
-              </p>
-            )}
-            {project?.inheritedEconomy?.mode === 'revenue-share' && (
-              <details className="studio-section">
-                <summary>Inherited source royalties</summary>
-                {Object.entries(
-                  project.inheritedEconomy.royalties ?? {},
-                ).flatMap(([network, shares]) =>
-                  shares.map((share) => (
-                    <p
-                      key={`${network}:${share.recipient}`}
-                      className="studio-help"
-                      style={{ overflowWrap: 'anywhere' }}
-                    >
-                      {network}: {share.bps / 100}% of creator earnings →{' '}
-                      {share.recipient}
-                    </p>
-                  )),
-                )}
-              </details>
-            )}
-            <div className="studio-section economy-settings">
-              <div className="studio-section-label">
-                <Share2 size={13} />
-                Publishing & remixes
-              </div>
-              <label>
-                License
-                <select
-                  value={
-                    document.distribution?.license ??
-                    defaultGameDistribution.license
-                  }
-                  onChange={(event) =>
-                    update({
-                      distribution: {
-                        ...(document.distribution ?? defaultGameDistribution),
-                        license: event.target.value as
-                          | 'all-rights-reserved'
-                          | 'cc-by-4.0'
-                          | 'cc-by-sa-4.0'
-                          | 'cc0-1.0',
-                      },
-                    })
-                  }
-                >
-                  <option value="all-rights-reserved">
-                    All rights reserved
-                  </option>
-                  <option value="cc-by-4.0">CC BY 4.0</option>
-                  <option value="cc-by-sa-4.0">CC BY-SA 4.0</option>
-                  <option value="cc0-1.0">CC0 1.0</option>
-                </select>
-              </label>
-              <label>
-                Remixing
-                <select
-                  value={
-                    document.distribution?.remixing ??
-                    defaultGameDistribution.remixing
-                  }
-                  onChange={(event) =>
-                    update({
-                      distribution: {
-                        ...(document.distribution ?? defaultGameDistribution),
-                        remixing: event.target.value as 'disabled' | 'allowed',
-                      },
-                    })
-                  }
-                >
-                  <option value="disabled">Disabled</option>
-                  <option value="allowed">Allow attributed remixes</option>
-                </select>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={document.distribution?.commercialUse ?? false}
-                  onChange={(event) =>
-                    update({
-                      distribution: {
-                        ...(document.distribution ?? defaultGameDistribution),
-                        commercialUse: event.target.checked,
-                      },
-                    })
-                  }
-                />{' '}
-                Allow remixes to earn money
-              </label>
-              <label>
-                Royalty from new remixes
-                <select
-                  value={
-                    document.distribution?.revenueShareBps ??
-                    defaultGameDistribution.revenueShareBps
-                  }
-                  onChange={(event) =>
-                    update({
-                      distribution: {
-                        ...(document.distribution ?? defaultGameDistribution),
-                        revenueShareBps: Number(event.target.value),
-                      },
-                    })
-                  }
-                >
-                  {[0, 500, 1000, 2000, 3000, 5000].map((bps) => (
-                    <option key={bps} value={bps}>
-                      {bps === 0
-                        ? 'Free remixes · no new royalty'
-                        : `${bps / 100}% of remaining creator earnings`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <p className="studio-help">
-                Remixes are isolated projects with immutable source attribution.
-                Choose 0% for free remixes. Royalties come from creator
-                earnings, never an extra player fee. Existing inherited
-                royalties remain.
-              </p>
-            </div>
-            {project && isOwner ? (
-              <div className="studio-section">
-                <div className="studio-section-label">
-                  <Users size={13} />
-                  Team access
-                </div>
-                <label>
-                  Commons user ID
-                  <input
-                    value={collaboratorId}
-                    onChange={(event) => setCollaboratorId(event.target.value)}
-                    placeholder="user_…"
-                  />
-                </label>
-                <label>
-                  Permission
-                  <select
-                    value={collaboratorPermission}
-                    onChange={(event) =>
-                      setCollaboratorPermission(
-                        event.target.value as typeof collaboratorPermission,
-                      )
-                    }
-                  >
-                    <option value="test">Can test</option>
-                    <option value="comment">Can comment</option>
-                    <option value="edit">Can edit</option>
-                  </select>
-                </label>
-                <button
-                  className="studio-access-add"
-                  disabled={!collaboratorId.trim() || !!busy}
-                  onClick={() =>
-                    void task('access', async () => {
-                      const actorId = collaboratorId.trim()
-                      const current = project.collaborators ?? []
-                      await setCollaborators([
-                        ...current.filter(
-                          (member) => member.actorId !== actorId,
-                        ),
-                        { actorId, permissions: [collaboratorPermission] },
-                      ])
-                      setCollaboratorId('')
-                      setNotice('Team access updated.')
-                    })
-                  }
-                >
-                  Add team member
-                </button>
-                <div className="studio-access-list">
-                  {(project.collaborators ?? []).map((member) => (
-                    <div key={member.actorId}>
-                      <span>
-                        <strong>{member.actorId}</strong>
-                        <small>{member.permissions.join(', ')}</small>
-                      </span>
-                      <button
-                        aria-label={`Remove ${member.actorId}`}
-                        onClick={() =>
-                          void task('access', async () => {
-                            await setCollaborators(
-                              (project.collaborators ?? []).filter(
-                                (candidate) =>
-                                  candidate.actorId !== member.actorId,
-                              ),
-                            )
-                            setNotice('Team member removed.')
-                          })
-                        }
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : project ? (
-              <div className="studio-section">
-                <div className="studio-section-label">
-                  <Users size={13} /> Shared workspace
-                </div>
-                <p className="studio-help">
-                  Your access: {myPermissions.join(', ') || 'view only'}. Only
-                  the owner can publish or change team permissions.
-                </p>
-              </div>
-            ) : null}
-            <div className="studio-project-switch">
-              <Folder size={14} />
-              <select
-                aria-label="Open project"
-                value={project?.id ?? ''}
-                disabled={!!busy || dirty}
-                onChange={(e) => {
-                  const p = projects.find((p) => p.id === e.target.value)
-                  if (p) router.push(`/studio/${p.id}`)
-                }}
-              >
-                <option value="">New game</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.document.title}
-                  </option>
-                ))}
-              </select>
-              <button
-                aria-label="Create new game"
-                disabled={!user || !!busy || dirty}
-                onClick={() => {
-                  router.push('/studio')
-                }}
-              >
-                <Plus size={14} />
-              </button>
-            </div>
-            <div className="studio-section">
-              <div className="studio-section-label">
-                <Settings2 size={13} />
-                Game properties
-              </div>
-              <label>
-                Name
-                <input
-                  value={document.title}
-                  maxLength={100}
-                  onChange={(e) => update({ title: e.target.value })}
-                />
-              </label>
-              <label>
-                Description
-                <textarea
-                  rows={3}
-                  maxLength={1000}
-                  value={document.description}
-                  onChange={(e) => update({ description: e.target.value })}
-                />
-              </label>
-              {!isBrowserGame(document) && (
+            <Link
+              href="/discover"
+              className="studio-back"
+              aria-label="Back to Arcade"
+            >
+              <ArrowLeft size={16} />
+            </Link>
+            <span className="studio-divider" />
+            <Gamepad2 size={18} />
+            <span className="studio-project-title">{title}</span>
+            <span className="studio-saved">
+              {busy ? (
+                <Loader2 size={12} className="spin" />
+              ) : dirty ? (
+                '•'
+              ) : (
+                <Check size={12} />
+              )}{' '}
+              {busy
+                ? busy === 'copilot'
+                  ? 'Copilot is working'
+                  : 'Working'
+                : dirty
+                  ? 'Unsaved changes'
+                  : project
+                    ? `Revision ${project.revision}`
+                    : 'Draft preview'}
+            </span>
+            <span
+              className={`studio-live-readiness ${liveReadiness.liveReady ? 'is-ready' : 'is-preview'}`}
+              title={liveReadiness.blockers.join(' ')}
+            >
+              {liveReadiness.liveReady ? 'Live-ready' : 'Preview only'}
+            </span>
+            <div className="studio-toolbar-end">
+              {user ? (
                 <>
-                  {' '}
-                  <div className="studio-field-pair">
-                    <label>
-                      Board
-                      <select
-                        value={document.boardSize}
-                        onChange={(e) => {
-                          const n = Number(e.target.value)
-                          update({
-                            boardSize: n,
-                            winLength: Math.min(
-                              n,
-                              !isBrowserGame(document) ? document.winLength : 3,
-                            ),
-                          })
-                        }}
-                      >
-                        {[3, 4, 5, 6, 7, 8].map((n) => (
-                          <option key={n} value={n}>
-                            {n} × {n}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      In a row
-                      <select
-                        value={document.winLength}
-                        onChange={(e) =>
-                          update({ winLength: Number(e.target.value) })
-                        }
-                      >
-                        {Array.from(
-                          { length: document.boardSize - 2 },
-                          (_, i) => i + 3,
-                        ).map((n) => (
-                          <option key={n}>{n}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <div className="studio-field-pair">
-                    {[0, 1].map((i) => (
-                      <label key={i}>
-                        Player {i + 1}
-                        <input
-                          value={
-                            !isBrowserGame(document) ? document.marks[i] : ''
+                  {canEdit ? (
+                    <Button
+                      disabled={!!busy}
+                      onClick={() =>
+                        void task('save', async () => {
+                          await save()
+                          setNotice('Revision saved.')
+                        })
+                      }
+                    >
+                      <Save size={14} />
+                      Save
+                    </Button>
+                  ) : null}
+                  {isOwner && liveReadiness.liveReady ? (
+                    <Button
+                      disabled={!!busy}
+                      onClick={() =>
+                        void task('publish', async () => {
+                          if (!document.thumbnail) {
+                            setWorkspaceGroup('publishing')
+                            setLeftOpen(true)
+                            throw new Error(
+                              'Add a game thumbnail in Publishing before publishing.',
+                            )
                           }
-                          maxLength={3}
-                          onChange={(e) => {
-                            const marks: [string, string] = [
-                              ...(!isBrowserGame(document)
-                                ? document.marks
-                                : (['X', 'O'] as [string, string])),
-                            ]
-                            marks[i] = e.target.value || (i === 0 ? 'X' : 'O')
-                            update({ marks })
-                          }}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                  <div className="studio-field-pair">
-                    <label>
-                      Accent
-                      <input
-                        type="color"
-                        value={document.accent}
-                        onChange={(e) => update({ accent: e.target.value })}
-                      />
-                    </label>
-                    <label>
-                      Canvas
-                      <input
-                        type="color"
-                        value={document.background}
-                        onChange={(e) => update({ background: e.target.value })}
-                      />
-                    </label>
-                  </div>
+                          const p = !project || dirty ? await save() : project
+                          const release = await arcade<StudioRelease>(
+                            `projects/${p.id}/publish`,
+                            {},
+                            'POST',
+                            { 'If-Match': String(p.revision) },
+                          )
+                          setProject({ ...p, releaseId: release.id })
+                          setNotice(
+                            'Published. Your game is now in the Arcade.',
+                          )
+                        })
+                      }
+                      variant="primary"
+                    >
+                      <Upload size={14} />
+                      Publish
+                    </Button>
+                  ) : null}
                 </>
+              ) : (
+                <a
+                  className="ac-button ac-button-primary"
+                  href="/api/auth/login?next=/studio"
+                >
+                  Sign in to create
+                </a>
               )}
-              {isBrowserGame(document) && (
-                <p className="studio-help">
-                  {document.files.length} source files · Browser game
-                  <br />
-                  Edit every file in Code, or describe a change to your agent.
-                </p>
+              {icon(
+                <PanelRightClose size={16} />,
+                'Toggle assistant panel',
+                () => setRightOpen(!rightOpen),
+                rightOpen,
               )}
             </div>
-            {!isBrowserGame(document) && (
-              <>
-                {' '}
-                <div className="studio-section">
+          </>
+        }
+        left={
+          leftOpen && (
+            <>
+              <div className="studio-panel-heading">
+                <span>
+                  {workspaceGroup.charAt(0).toUpperCase() +
+                    workspaceGroup.slice(1)}
+                </span>
+                {icon(
+                  <PanelLeftClose size={14} />,
+                  'Collapse project panel',
+                  () => setLeftOpen(false),
+                )}
+              </div>
+              <div hidden={workspaceGroup !== 'payments'}>
+                <CreatorEconomySettings
+                  value={document.monetization}
+                  onChange={(monetization) => update({ monetization })}
+                  disabled={!isOwner}
+                />
+                {project?.unresolvedRemixRoyalty && (
+                  <p className="studio-help">
+                    This source has legacy royalty terms without payout
+                    addresses. Free remix publication is available; paid
+                    publication is blocked until the source terms can be
+                    resolved.
+                  </p>
+                )}
+                {project?.inheritedEconomy?.mode === 'revenue-share' && (
+                  <details className="studio-section">
+                    <summary>Inherited source royalties</summary>
+                    {Object.entries(
+                      project.inheritedEconomy.royalties ?? {},
+                    ).flatMap(([network, shares]) =>
+                      shares.map((share) => (
+                        <p
+                          key={`${network}:${share.recipient}`}
+                          className="studio-help"
+                          style={{ overflowWrap: 'anywhere' }}
+                        >
+                          {network}: {share.bps / 100}% of creator earnings →{' '}
+                          {share.recipient}
+                        </p>
+                      )),
+                    )}
+                  </details>
+                )}
+              </div>
+              <div hidden={workspaceGroup !== 'publishing'}>
+                <ThumbnailField
+                  value={document.thumbnail}
+                  onChange={(thumbnail) => update({ thumbnail })}
+                  disabled={!canEdit}
+                />
+                <div className="studio-section economy-settings">
                   <div className="studio-section-label">
-                    <Bot size={13} />
-                    Test players
+                    <Share2 size={13} />
+                    Publishing & remixes
                   </div>
-                  {[0, 1].map((i) => (
-                    <label key={i}>
-                      Seat {i + 1}
-                      <select
-                        value={selectedAgents[i]}
-                        onChange={(e) =>
-                          setSelectedAgents((ids) => {
-                            const next: [string, string] = [...ids]
-                            next[i] = e.target.value
-                            return next
-                          })
-                        }
-                      >
-                        <option value="">Create a Commons agent</option>
-                        {agents.map((a) => (
-                          <option key={a.agentId} value={a.agentId}>
-                            {a.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ))}
                   <label>
-                    Scenario seed
+                    License
+                    <select
+                      value={
+                        document.distribution?.license ??
+                        defaultGameDistribution.license
+                      }
+                      onChange={(event) =>
+                        update({
+                          distribution: {
+                            ...(document.distribution ??
+                              defaultGameDistribution),
+                            license: event.target.value as
+                              | 'all-rights-reserved'
+                              | 'cc-by-4.0'
+                              | 'cc-by-sa-4.0'
+                              | 'cc0-1.0',
+                          },
+                        })
+                      }
+                    >
+                      <option value="all-rights-reserved">
+                        All rights reserved
+                      </option>
+                      <option value="cc-by-4.0">CC BY 4.0</option>
+                      <option value="cc-by-sa-4.0">CC BY-SA 4.0</option>
+                      <option value="cc0-1.0">CC0 1.0</option>
+                    </select>
+                  </label>
+                  <label>
+                    Remixing
+                    <select
+                      value={
+                        document.distribution?.remixing ??
+                        defaultGameDistribution.remixing
+                      }
+                      onChange={(event) =>
+                        update({
+                          distribution: {
+                            ...(document.distribution ??
+                              defaultGameDistribution),
+                            remixing: event.target.value as
+                              'disabled' | 'allowed',
+                          },
+                        })
+                      }
+                    >
+                      <option value="disabled">Disabled</option>
+                      <option value="allowed">Allow attributed remixes</option>
+                    </select>
+                  </label>
+                  <label>
                     <input
-                      value={seed}
-                      onChange={(e) => setSeed(e.target.value)}
-                      maxLength={200}
-                    />
+                      type="checkbox"
+                      checked={document.distribution?.commercialUse ?? false}
+                      onChange={(event) =>
+                        update({
+                          distribution: {
+                            ...(document.distribution ??
+                              defaultGameDistribution),
+                            commercialUse: event.target.checked,
+                          },
+                        })
+                      }
+                    />{' '}
+                    Allow remixes to earn money
+                  </label>
+                  <label>
+                    Royalty from new remixes
+                    <select
+                      value={
+                        document.distribution?.revenueShareBps ??
+                        defaultGameDistribution.revenueShareBps
+                      }
+                      onChange={(event) =>
+                        update({
+                          distribution: {
+                            ...(document.distribution ??
+                              defaultGameDistribution),
+                            revenueShareBps: Number(event.target.value),
+                          },
+                        })
+                      }
+                    >
+                      {[0, 500, 1000, 2000, 3000, 5000].map((bps) => (
+                        <option key={bps} value={bps}>
+                          {bps === 0
+                            ? 'Free remixes · no new royalty'
+                            : `${bps / 100}% of remaining creator earnings`}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <p className="studio-help">
-                    Commons agents choose a bounded play policy. Every move uses
-                    the same game rules.
+                    Remixes are isolated projects with immutable source
+                    attribution. Choose 0% for free remixes. Royalties come from
+                    creator earnings, never an extra player fee. Existing
+                    inherited royalties remain.
                   </p>
                 </div>
-              </>
-            )}
-            {isBrowserGame(document) && (
-              <div className="studio-section">
-                <div className="studio-section-label">
-                  <Bot size={13} />
-                  Test Arena seats
-                </div>
-                <label>
-                  Players
-                  <select
-                    value={browserControllers.length}
-                    disabled={!!browserRun}
-                    onChange={(event) => {
-                      const count = Number(event.target.value)
-                      setBrowserControllers((current) =>
-                        Array.from(
-                          { length: count },
-                          (_, index) =>
-                            current[index] ?? {
-                              seatId: `seat-${index + 1}`,
-                              label: `Player ${index + 1}`,
-                              kind: 'agent',
-                              strategy:
-                                'Play to win, adapt to the opponent, and use only legal actions.',
-                            },
-                        ),
-                      )
-                    }}
-                  >
-                    {Array.from(
-                      {
-                        length:
-                          (document.play?.seats.max ?? 8) -
-                          (document.play?.seats.min ?? 1) +
-                          1,
-                      },
-                      (_, index) => (document.play?.seats.min ?? 1) + index,
-                    ).map((count) => (
-                      <option value={count} key={count}>
-                        {count}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="studio-controller-list">
-                  {browserControllers.map((controller, index) => (
-                    <div className="studio-controller" key={controller.seatId}>
-                      <div>
-                        <strong>{controller.label}</strong>
-                        {controller.strategyEpoch ? (
-                          <small>Strategy {controller.strategyEpoch}</small>
-                        ) : null}
-                      </div>
-                      {controller.performance ? (
-                        <div className="studio-learning-summary">
-                          <span>
-                            {controller.performance.improving ? '↗' : '→'}{' '}
-                            {controller.performance.feedbackSamples} feedback
-                            samples
-                          </span>
-                          <span>
-                            reward{' '}
-                            {controller.performance.cumulativeReward >= 0
-                              ? '+'
-                              : ''}
-                            {controller.performance.cumulativeReward.toFixed(1)}
-                          </span>
-                        </div>
-                      ) : null}
-                      {controller.policyMemory?.preferredDefense ? (
-                        <small className="studio-learned-policy">
-                          Learned defense:{' '}
-                          {controller.policyMemory.preferredDefense}
-                        </small>
-                      ) : null}
-                      <select
-                        aria-label={`${controller.label} controller`}
-                        value={controller.kind}
-                        disabled={!!browserRun}
+              </div>
+              <div hidden={workspaceGroup !== 'team'}>
+                {project && isOwner ? (
+                  <div className="studio-section">
+                    <div className="studio-section-label">
+                      <Users size={13} />
+                      Team access
+                    </div>
+                    <label>
+                      Commons user ID
+                      <input
+                        value={collaboratorId}
                         onChange={(event) =>
-                          setBrowserControllers((current) =>
-                            current.map((candidate, candidateIndex) =>
-                              candidateIndex === index
-                                ? {
-                                    ...candidate,
-                                    kind: event.target.value as
-                                      'human' | 'agent',
-                                    agentId: undefined,
-                                    strategy:
-                                      event.target.value === 'human'
-                                        ? 'Human controlled.'
-                                        : 'Play to win, adapt to the opponent, and use only legal actions.',
-                                  }
-                                : candidate,
-                            ),
+                          setCollaboratorId(event.target.value)
+                        }
+                        placeholder="user_…"
+                      />
+                    </label>
+                    <label>
+                      Permission
+                      <select
+                        value={collaboratorPermission}
+                        onChange={(event) =>
+                          setCollaboratorPermission(
+                            event.target.value as typeof collaboratorPermission,
                           )
                         }
                       >
-                        <option value="human">Human</option>
-                        <option value="agent">Agent</option>
+                        <option value="test">Can test</option>
+                        <option value="comment">Can comment</option>
+                        <option value="edit">Can edit</option>
                       </select>
-                      {controller.kind === 'agent' ? (
-                        <>
+                    </label>
+                    <button
+                      className="studio-access-add"
+                      disabled={!collaboratorId.trim() || !!busy}
+                      onClick={() =>
+                        void task('access', async () => {
+                          const actorId = collaboratorId.trim()
+                          const current = project.collaborators ?? []
+                          await setCollaborators([
+                            ...current.filter(
+                              (member) => member.actorId !== actorId,
+                            ),
+                            { actorId, permissions: [collaboratorPermission] },
+                          ])
+                          setCollaboratorId('')
+                          setNotice('Team access updated.')
+                        })
+                      }
+                    >
+                      Add team member
+                    </button>
+                    <div className="studio-access-list">
+                      {(project.collaborators ?? []).map((member) => (
+                        <div key={member.actorId}>
+                          <span>
+                            <strong>{member.actorId}</strong>
+                            <small>{member.permissions.join(', ')}</small>
+                          </span>
+                          <button
+                            aria-label={`Remove ${member.actorId}`}
+                            onClick={() =>
+                              void task('access', async () => {
+                                await setCollaborators(
+                                  (project.collaborators ?? []).filter(
+                                    (candidate) =>
+                                      candidate.actorId !== member.actorId,
+                                  ),
+                                )
+                                setNotice('Team member removed.')
+                              })
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : project ? (
+                  <div className="studio-section">
+                    <div className="studio-section-label">
+                      <Users size={13} /> Shared workspace
+                    </div>
+                    <p className="studio-help">
+                      Your access: {myPermissions.join(', ') || 'view only'}.
+                      Only the owner can publish or change team permissions.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+              <div hidden={workspaceGroup !== 'project'}>
+                <div className="studio-project-switch">
+                  <Folder size={14} />
+                  <select
+                    aria-label="Open project"
+                    value={project?.id ?? ''}
+                    disabled={!!busy || dirty}
+                    onChange={(e) => {
+                      const p = projects.find((p) => p.id === e.target.value)
+                      if (p) router.push(`/studio/${p.id}`)
+                    }}
+                  >
+                    <option value="">New game</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.document.title}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    aria-label="Create new game"
+                    disabled={!user || !!busy || dirty}
+                    onClick={() => {
+                      router.push('/studio')
+                    }}
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+                <div className="studio-section">
+                  <div className="studio-section-label">
+                    <Settings2 size={13} />
+                    Game properties
+                  </div>
+                  <label>
+                    Name
+                    <input
+                      value={document.title}
+                      maxLength={100}
+                      onChange={(e) => update({ title: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Description
+                    <textarea
+                      rows={3}
+                      maxLength={1000}
+                      value={document.description}
+                      onChange={(e) => update({ description: e.target.value })}
+                    />
+                  </label>
+                  {!isBrowserGame(document) && (
+                    <>
+                      {' '}
+                      <div className="studio-field-pair">
+                        <label>
+                          Board
                           <select
-                            aria-label={`${controller.label} agent`}
-                            value={controller.agentId ?? ''}
+                            value={document.boardSize}
+                            onChange={(e) => {
+                              const n = Number(e.target.value)
+                              update({
+                                boardSize: n,
+                                winLength: Math.min(
+                                  n,
+                                  !isBrowserGame(document)
+                                    ? document.winLength
+                                    : 3,
+                                ),
+                              })
+                            }}
+                          >
+                            {[3, 4, 5, 6, 7, 8].map((n) => (
+                              <option key={n} value={n}>
+                                {n} × {n}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          In a row
+                          <select
+                            value={document.winLength}
+                            onChange={(e) =>
+                              update({ winLength: Number(e.target.value) })
+                            }
+                          >
+                            {Array.from(
+                              { length: document.boardSize - 2 },
+                              (_, i) => i + 3,
+                            ).map((n) => (
+                              <option key={n}>{n}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <div className="studio-field-pair">
+                        {[0, 1].map((i) => (
+                          <label key={i}>
+                            Player {i + 1}
+                            <input
+                              value={
+                                !isBrowserGame(document)
+                                  ? document.marks[i]
+                                  : ''
+                              }
+                              maxLength={3}
+                              onChange={(e) => {
+                                const marks: [string, string] = [
+                                  ...(!isBrowserGame(document)
+                                    ? document.marks
+                                    : (['X', 'O'] as [string, string])),
+                                ]
+                                marks[i] =
+                                  e.target.value || (i === 0 ? 'X' : 'O')
+                                update({ marks })
+                              }}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <div className="studio-field-pair">
+                        <label>
+                          Accent
+                          <input
+                            type="color"
+                            value={document.accent}
+                            onChange={(e) => update({ accent: e.target.value })}
+                          />
+                        </label>
+                        <label>
+                          Canvas
+                          <input
+                            type="color"
+                            value={document.background}
+                            onChange={(e) =>
+                              update({ background: e.target.value })
+                            }
+                          />
+                        </label>
+                      </div>
+                    </>
+                  )}
+                  {isBrowserGame(document) && (
+                    <p className="studio-help">
+                      {document.files.length} source files · Browser game
+                      <br />
+                      Edit every file in Code, or describe a change to your
+                      agent.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div hidden={workspaceGroup !== 'testing'}>
+                {!isBrowserGame(document) && (
+                  <>
+                    {' '}
+                    <div className="studio-section">
+                      <div className="studio-section-label">
+                        <Bot size={13} />
+                        Test players
+                      </div>
+                      {[0, 1].map((i) => (
+                        <label key={i}>
+                          Seat {i + 1}
+                          <select
+                            value={selectedAgents[i]}
+                            onChange={(e) =>
+                              setSelectedAgents((ids) => {
+                                const next: [string, string] = [...ids]
+                                next[i] = e.target.value
+                                return next
+                              })
+                            }
+                          >
+                            <option value="">Create a Commons agent</option>
+                            {agents.map((a) => (
+                              <option key={a.agentId} value={a.agentId}>
+                                {a.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ))}
+                      <label>
+                        Scenario seed
+                        <input
+                          value={seed}
+                          onChange={(e) => setSeed(e.target.value)}
+                          maxLength={200}
+                        />
+                      </label>
+                      <p className="studio-help">
+                        Commons agents choose a bounded play policy. Every move
+                        uses the same game rules.
+                      </p>
+                    </div>
+                  </>
+                )}
+                {isBrowserGame(document) && (
+                  <div className="studio-section">
+                    <div className="studio-section-label">
+                      <Bot size={13} />
+                      Test Arena seats
+                    </div>
+                    <label>
+                      Players
+                      <select
+                        value={browserControllers.length}
+                        disabled={!!browserRun}
+                        onChange={(event) => {
+                          const count = Number(event.target.value)
+                          setBrowserControllers((current) =>
+                            Array.from(
+                              { length: count },
+                              (_, index) =>
+                                current[index] ?? {
+                                  seatId: `seat-${index + 1}`,
+                                  label: `Player ${index + 1}`,
+                                  kind: 'agent',
+                                  strategy:
+                                    'Play to win, adapt to the opponent, and use only legal actions.',
+                                },
+                            ),
+                          )
+                        }}
+                      >
+                        {Array.from(
+                          {
+                            length:
+                              (document.play?.seats.max ?? 8) -
+                              (document.play?.seats.min ?? 1) +
+                              1,
+                          },
+                          (_, index) => (document.play?.seats.min ?? 1) + index,
+                        ).map((count) => (
+                          <option value={count} key={count}>
+                            {count}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="studio-controller-list">
+                      {browserControllers.map((controller, index) => (
+                        <div
+                          className="studio-controller"
+                          key={controller.seatId}
+                        >
+                          <div>
+                            <strong>{controller.label}</strong>
+                            {controller.strategyEpoch ? (
+                              <small>Strategy {controller.strategyEpoch}</small>
+                            ) : null}
+                          </div>
+                          {controller.performance ? (
+                            <div className="studio-learning-summary">
+                              <span>
+                                {controller.performance.improving ? '↗' : '→'}{' '}
+                                {controller.performance.feedbackSamples}{' '}
+                                feedback samples
+                              </span>
+                              <span>
+                                reward{' '}
+                                {controller.performance.cumulativeReward >= 0
+                                  ? '+'
+                                  : ''}
+                                {controller.performance.cumulativeReward.toFixed(
+                                  1,
+                                )}
+                              </span>
+                            </div>
+                          ) : null}
+                          {controller.policyMemory?.preferredDefense ? (
+                            <small className="studio-learned-policy">
+                              Learned defense:{' '}
+                              {controller.policyMemory.preferredDefense}
+                            </small>
+                          ) : null}
+                          <select
+                            aria-label={`${controller.label} controller`}
+                            value={controller.kind}
                             disabled={!!browserRun}
                             onChange={(event) =>
                               setBrowserControllers((current) =>
@@ -1724,626 +1784,646 @@ export function GameStudio({ projectId }: { projectId: string }) {
                                   candidateIndex === index
                                     ? {
                                         ...candidate,
-                                        agentId:
-                                          event.target.value || undefined,
+                                        kind: event.target.value as
+                                          'human' | 'agent',
+                                        agentId: undefined,
+                                        strategy:
+                                          event.target.value === 'human'
+                                            ? 'Human controlled.'
+                                            : 'Play to win, adapt to the opponent, and use only legal actions.',
                                       }
                                     : candidate,
                                 ),
                               )
                             }
                           >
-                            <option value="">Create a player agent</option>
-                            {agents.map((agent) => (
-                              <option value={agent.agentId} key={agent.agentId}>
-                                {agent.name}
-                              </option>
-                            ))}
+                            <option value="human">Human</option>
+                            <option value="agent">Agent</option>
                           </select>
-                          <textarea
-                            rows={2}
-                            aria-label={`${controller.label} coaching`}
-                            value={controller.strategy}
-                            onChange={(event) =>
-                              setBrowserControllers((current) =>
-                                current.map((candidate, candidateIndex) =>
-                                  candidateIndex === index
-                                    ? {
-                                        ...candidate,
-                                        strategy: event.target.value,
-                                      }
-                                    : candidate,
-                                ),
-                              )
-                            }
-                          />
-                          {browserRun ? (
-                            <Button
-                              variant="ghost"
-                              disabled={!!busy || !controller.strategy.trim()}
-                              onClick={() =>
-                                void updateBrowserStrategy(
-                                  controller,
-                                  controller.strategy,
-                                ).catch((cause) =>
-                                  setError(
-                                    cause instanceof Error
-                                      ? cause.message
-                                      : String(cause),
-                                  ),
-                                )
-                              }
-                            >
-                              Coach agent
-                            </Button>
-                          ) : null}
-                        </>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-                {browserRun && browserObservation
-                  ? browserRun.controllers.map((controller) => {
-                      if (controller.kind !== 'human') return null
-                      const actions = actionsForSeat(
-                        browserObservation.actions,
-                        controller.seatId,
-                      )
-                      if (!actions.length) return null
-                      return (
-                        <div
-                          className="studio-human-actions"
-                          key={`actions:${controller.seatId}`}
-                        >
-                          <strong>{controller.label}&apos;s turn</strong>
-                          <div>
-                            {actions.map((action) => (
-                              <Button
-                                key={action.id}
-                                variant="ghost"
-                                disabled={
-                                  !!busy ||
-                                  browserPlaying ||
-                                  reviewingBrowserRun
-                                }
-                                onClick={() =>
-                                  void task('human move', () =>
-                                    browserHumanDecision(controller, action.id),
+                          {controller.kind === 'agent' ? (
+                            <>
+                              <select
+                                aria-label={`${controller.label} agent`}
+                                value={controller.agentId ?? ''}
+                                disabled={!!browserRun}
+                                onChange={(event) =>
+                                  setBrowserControllers((current) =>
+                                    current.map((candidate, candidateIndex) =>
+                                      candidateIndex === index
+                                        ? {
+                                            ...candidate,
+                                            agentId:
+                                              event.target.value || undefined,
+                                          }
+                                        : candidate,
+                                    ),
                                   )
                                 }
                               >
-                                {action.label}
-                              </Button>
+                                <option value="">Create a player agent</option>
+                                {agents.map((agent) => (
+                                  <option
+                                    value={agent.agentId}
+                                    key={agent.agentId}
+                                  >
+                                    {agent.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <textarea
+                                rows={2}
+                                aria-label={`${controller.label} coaching`}
+                                value={controller.strategy}
+                                onChange={(event) =>
+                                  setBrowserControllers((current) =>
+                                    current.map((candidate, candidateIndex) =>
+                                      candidateIndex === index
+                                        ? {
+                                            ...candidate,
+                                            strategy: event.target.value,
+                                          }
+                                        : candidate,
+                                    ),
+                                  )
+                                }
+                              />
+                              {browserRun ? (
+                                <Button
+                                  variant="ghost"
+                                  disabled={
+                                    !!busy || !controller.strategy.trim()
+                                  }
+                                  onClick={() =>
+                                    void updateBrowserStrategy(
+                                      controller,
+                                      controller.strategy,
+                                    ).catch((cause) =>
+                                      setError(
+                                        cause instanceof Error
+                                          ? cause.message
+                                          : String(cause),
+                                      ),
+                                    )
+                                  }
+                                >
+                                  Coach agent
+                                </Button>
+                              ) : null}
+                            </>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                    {browserRun && browserObservation
+                      ? browserRun.controllers.map((controller) => {
+                          if (controller.kind !== 'human') return null
+                          const actions = actionsForSeat(
+                            browserObservation.actions,
+                            controller.seatId,
+                          )
+                          if (!actions.length) return null
+                          return (
+                            <div
+                              className="studio-human-actions"
+                              key={`actions:${controller.seatId}`}
+                            >
+                              <strong>{controller.label}&apos;s turn</strong>
+                              <div>
+                                {actions.map((action) => (
+                                  <Button
+                                    key={action.id}
+                                    variant="ghost"
+                                    disabled={
+                                      !!busy ||
+                                      browserPlaying ||
+                                      reviewingBrowserRun
+                                    }
+                                    onClick={() =>
+                                      void task('human move', () =>
+                                        browserHumanDecision(
+                                          controller,
+                                          action.id,
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    {action.label}
+                                  </Button>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })
+                      : null}
+                    {!browserRun ? (
+                      <Button
+                        disabled={
+                          !!busy || !user || dirty || view !== 'preview'
+                        }
+                        onClick={() =>
+                          void task('start playtest', async () => {
+                            await startBrowserRun()
+                          })
+                        }
+                      >
+                        <Play size={13} /> Start session
+                      </Button>
+                    ) : (
+                      <div className="studio-controller-actions">
+                        <Button
+                          disabled={
+                            reviewingBrowserRun ||
+                            (!realtimePreview && browserRun.step >= 200)
+                          }
+                          onClick={() => setBrowserPlaying((active) => !active)}
+                        >
+                          {browserPlaying ? (
+                            <Pause size={13} />
+                          ) : browserDeciding ? (
+                            <Loader2 size={13} className="spin" />
+                          ) : (
+                            <Play size={13} />
+                          )}
+                          {browserPlaying
+                            ? browserDeciding
+                              ? 'Stop after this move'
+                              : 'Pause agents'
+                            : browserDeciding
+                              ? 'Stopping…'
+                              : 'Run agents'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          disabled={
+                            !!busy ||
+                            reviewingBrowserRun ||
+                            browserDeciding ||
+                            browserPlaying ||
+                            browserRun.step >= 200
+                          }
+                          onClick={() => void runBrowserDecision()}
+                        >
+                          <SkipForward size={13} /> One decision
+                        </Button>
+                      </div>
+                    )}
+                    {browserRun && (
+                      <Button
+                        variant="ghost"
+                        disabled={browserDeciding}
+                        onClick={() => {
+                          setBrowserPlaying(false)
+                          setReviewingBrowserRun(false)
+                          setBrowserRun(undefined)
+                          setBrowserEvents([])
+                          setBrowserObservation(undefined)
+                          setBrowserAction(undefined)
+                          setBrowserControllers(
+                            defaultBrowserControllers(document),
+                          )
+                        }}
+                      >
+                        New session
+                      </Button>
+                    )}
+                    <p className="studio-help">
+                      Private, unrated and not prize eligible. Humans and agents
+                      use the same legal controls. Timed sessions save
+                      diagnostics for review; hosted matches support reconnects.{' '}
+                      {realtimePreview
+                        ? `${frameDecisions} local decisions · five-minute sessions · sampled diagnostics`
+                        : `${browserRun?.step ?? 0} / 200 decisions.`}
+                    </p>
+                    {browserRuns.length ? (
+                      <label>
+                        Session history
+                        <select
+                          value={browserRun?.id ?? ''}
+                          disabled={!!busy}
+                          onChange={(event) => {
+                            const selected = browserRuns.find(
+                              (run) => run.id === event.target.value,
+                            )
+                            if (selected)
+                              void task('resume playtest', () =>
+                                resumeBrowserRun(selected),
+                              )
+                          }}
+                        >
+                          <option value="">Choose a prior session</option>
+                          {browserRuns.map((run) => (
+                            <option key={run.id} value={run.id}>
+                              {new Date(run.createdAt).toLocaleString()} ·{' '}
+                              {run.preview?.decisions
+                                ? `${run.preview.decisions} recorded decisions · ${run.preview.samples} samples`
+                                : `${run.step} moves`}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+              <div hidden={workspaceGroup !== 'recordings'}>
+                {project && (
+                  <div className="studio-section">
+                    <label className="studio-help">
+                      <input
+                        type="checkbox"
+                        checked={shareRecordings}
+                        onChange={(e) => setShareRecordings(e.target.checked)}
+                      />
+                      Share new recordings with spectators
+                    </label>
+                    <RecordingShelf
+                      projectId={project.id}
+                      refresh={recordingsRefresh}
+                      annotations={project.annotations}
+                      onAnnotate={async (
+                        recordingId,
+                        timeMs,
+                        revision,
+                        geometry,
+                        body,
+                      ) => {
+                        const updated = await arcade<StudioProject>(
+                          `projects/${project.id}/annotations`,
+                          {
+                            ...geometry,
+                            body,
+                            revision,
+                            context: {
+                              viewport: { width: 1280, height: 720 },
+                              moment: { recordingId, timeMs },
+                            },
+                          },
+                        )
+                        setProject(updated)
+                        setNotice(
+                          `Annotation saved at ${(timeMs / 1000).toFixed(1)}s.`,
+                        )
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+              <div
+                hidden={workspaceGroup !== 'project'}
+                className="studio-section"
+              >
+                <Button onClick={() => file.current?.click()}>
+                  <Code2 size={13} />
+                  Import game JSON
+                </Button>
+                <input
+                  type="file"
+                  ref={file}
+                  accept="application/json,.json"
+                  hidden
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f)
+                      void task('import', async () => {
+                        const d = gameDocumentSchema.parse(
+                          JSON.parse(await f.text()),
+                        )
+                        update(d)
+                        setView('preview')
+                      })
+                    e.target.value = ''
+                  }}
+                />
+                <p className="studio-help">
+                  <Link href="/docs">Authoring contract ↗</Link>
+                </p>
+              </div>
+            </>
+          )
+        }
+        right={
+          rightOpen && (
+            <>
+              <div className="studio-tabs">
+                <button
+                  onClick={() => setRight('copilot')}
+                  className={right === 'copilot' ? 'is-active' : ''}
+                >
+                  <Sparkles size={13} />
+                  Build
+                </button>
+                <button
+                  onClick={() => setRight('chat')}
+                  className={right === 'chat' ? 'is-active' : ''}
+                >
+                  <MessageSquare size={13} /> Chat
+                </button>
+                <button
+                  onClick={() => setRight('notes')}
+                  className={right === 'notes' ? 'is-active' : ''}
+                >
+                  <MessageSquare size={13} />
+                  Notes {visibleNotes.length || ''}
+                </button>
+                <button
+                  aria-label="Revision history"
+                  title="Revision history"
+                  onClick={() => {
+                    setRight('history')
+                    if (project)
+                      void task('history', async () =>
+                        setHistory(
+                          (
+                            await arcade<{ revisions: StudioProject[] }>(
+                              `projects/${project.id}/revisions`,
+                            )
+                          ).revisions,
+                        ),
+                      )
+                  }}
+                  className={right === 'history' ? 'is-active' : ''}
+                >
+                  <History size={14} />
+                </button>
+              </div>
+              {right === 'chat' ? (
+                <GeneralChat identity={{ ...identity, copilotId }} />
+              ) : right === 'copilot' ? (
+                <div className="studio-copilot">
+                  <div className="studio-conversation">
+                    {messages.length === 0 && (
+                      <div className="studio-copilot-welcome">
+                        <h2>Make something worth playing.</h2>
+                        <p>
+                          Describe a change, select part of the game, or bring a
+                          test result into the conversation.
+                        </p>
+                        <button
+                          onClick={() =>
+                            setPrompt(
+                              'Improve the controls and add clear feedback when the player scores or loses. Keep the current visual style.',
+                            )
+                          }
+                        >
+                          Improve the play experience <ArrowUp size={12} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setTool('point')
+                            setRight('notes')
+                          }}
+                        >
+                          Point to something to improve <MapPin size={12} />
+                        </button>
+                      </div>
+                    )}
+                    {messages.map((m, i) => (
+                      <div key={i} className={`studio-message ${m.role}`}>
+                        <small>
+                          {m.role === 'user' ? 'You' : 'Arcade Copilot'}
+                        </small>
+                        {m.activities?.length ? (
+                          <div className="studio-agent-activity">
+                            <span>
+                              {m.durationSeconds
+                                ? `Worked for ${m.durationSeconds}s`
+                                : `Used ${m.activities.length} ${m.activities.length === 1 ? 'tool' : 'tools'}`}
+                            </span>
+                            {m.activities.map((activity) => (
+                              <div key={activity.sequence}>
+                                {activity.status === 'running' ? (
+                                  <Loader2 size={12} className="spin" />
+                                ) : (
+                                  <Check size={12} />
+                                )}
+                                <span>{activity.label}</span>
+                              </div>
                             ))}
                           </div>
-                        </div>
-                      )
-                    })
-                  : null}
-                {!browserRun ? (
-                  <Button
-                    disabled={!!busy || !user || dirty || view !== 'preview'}
-                    onClick={() =>
-                      void task('start playtest', async () => {
-                        await startBrowserRun()
-                      })
-                    }
-                  >
-                    <Play size={13} /> Start session
-                  </Button>
-                ) : (
-                  <div className="studio-controller-actions">
-                    <Button
-                      disabled={
-                        reviewingBrowserRun ||
-                        (!realtimePreview && browserRun.step >= 200)
-                      }
-                      onClick={() => setBrowserPlaying((active) => !active)}
-                    >
-                      {browserPlaying ? (
-                        <Pause size={13} />
-                      ) : browserDeciding ? (
-                        <Loader2 size={13} className="spin" />
-                      ) : (
-                        <Play size={13} />
-                      )}
-                      {browserPlaying
-                        ? browserDeciding
-                          ? 'Stop after this move'
-                          : 'Pause agents'
-                        : browserDeciding
-                          ? 'Stopping…'
-                          : 'Run agents'}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      disabled={
-                        !!busy ||
-                        reviewingBrowserRun ||
-                        browserDeciding ||
-                        browserPlaying ||
-                        browserRun.step >= 200
-                      }
-                      onClick={() => void runBrowserDecision()}
-                    >
-                      <SkipForward size={13} /> One decision
-                    </Button>
-                  </div>
-                )}
-                {browserRun && (
-                  <Button
-                    variant="ghost"
-                    disabled={browserDeciding}
-                    onClick={() => {
-                      setBrowserPlaying(false)
-                      setReviewingBrowserRun(false)
-                      setBrowserRun(undefined)
-                      setBrowserEvents([])
-                      setBrowserObservation(undefined)
-                      setBrowserAction(undefined)
-                      setBrowserControllers(defaultBrowserControllers(document))
-                    }}
-                  >
-                    New session
-                  </Button>
-                )}
-                <p className="studio-help">
-                  Private, unrated and not prize eligible. Humans and agents use
-                  the same legal controls. Timed sessions save diagnostics for
-                  review; hosted matches support reconnects.{' '}
-                  {realtimePreview
-                    ? `${frameDecisions} local decisions · five-minute sessions · sampled diagnostics`
-                    : `${browserRun?.step ?? 0} / 200 decisions.`}
-                </p>
-                {browserRuns.length ? (
-                  <label>
-                    Session history
-                    <select
-                      value={browserRun?.id ?? ''}
-                      disabled={!!busy}
-                      onChange={(event) => {
-                        const selected = browserRuns.find(
-                          (run) => run.id === event.target.value,
-                        )
-                        if (selected)
-                          void task('resume playtest', () =>
-                            resumeBrowserRun(selected),
-                          )
-                      }}
-                    >
-                      <option value="">Choose a prior session</option>
-                      {browserRuns.map((run) => (
-                        <option key={run.id} value={run.id}>
-                          {new Date(run.createdAt).toLocaleString()} ·{' '}
-                          {run.preview?.decisions
-                            ? `${run.preview.decisions} recorded decisions · ${run.preview.samples} samples`
-                            : `${run.step} moves`}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-              </div>
-            )}
-            {project && (
-              <div className="studio-section">
-                <label className="studio-help">
-                  <input
-                    type="checkbox"
-                    checked={shareRecordings}
-                    onChange={(e) => setShareRecordings(e.target.checked)}
-                  />
-                  Share new recordings with spectators
-                </label>
-                <RecordingShelf
-                  projectId={project.id}
-                  refresh={recordingsRefresh}
-                  annotations={project.annotations}
-                  onAnnotate={async (
-                    recordingId,
-                    timeMs,
-                    revision,
-                    geometry,
-                    body,
-                  ) => {
-                    const updated = await arcade<StudioProject>(
-                      `projects/${project.id}/annotations`,
-                      {
-                        ...geometry,
-                        body,
-                        revision,
-                        context: {
-                          viewport: { width: 1280, height: 720 },
-                          moment: { recordingId, timeMs },
-                        },
-                      },
-                    )
-                    setProject(updated)
-                    setNotice(
-                      `Annotation saved at ${(timeMs / 1000).toFixed(1)}s.`,
-                    )
-                  }}
-                />
-              </div>
-            )}
-            <div className="studio-section">
-              <Button onClick={() => file.current?.click()}>
-                <Code2 size={13} />
-                Import game JSON
-              </Button>
-              <input
-                type="file"
-                ref={file}
-                accept="application/json,.json"
-                hidden
-                onChange={(e) => {
-                  const f = e.target.files?.[0]
-                  if (f)
-                    void task('import', async () => {
-                      const d = gameDocumentSchema.parse(
-                        JSON.parse(await f.text()),
-                      )
-                      update(d)
-                      setView('preview')
-                    })
-                  e.target.value = ''
-                }}
-              />
-              <p className="studio-help">
-                <Link href="/docs">Authoring contract ↗</Link>
-              </p>
-            </div>
-          </>
-        )
-      }
-      right={
-        rightOpen && (
-          <>
-            <div className="studio-tabs">
-              <button
-                onClick={() => setRight('copilot')}
-                className={right === 'copilot' ? 'is-active' : ''}
-              >
-                <Sparkles size={13} />
-                Copilot
-              </button>
-              <button
-                onClick={() => setRight('notes')}
-                className={right === 'notes' ? 'is-active' : ''}
-              >
-                <MessageSquare size={13} />
-                Notes {visibleNotes.length || ''}
-              </button>
-              <button
-                aria-label="Revision history"
-                title="Revision history"
-                onClick={() => {
-                  setRight('history')
-                  if (project)
-                    void task('history', async () =>
-                      setHistory(
-                        (
-                          await arcade<{ revisions: StudioProject[] }>(
-                            `projects/${project.id}/revisions`,
-                          )
-                        ).revisions,
-                      ),
-                    )
-                }}
-                className={right === 'history' ? 'is-active' : ''}
-              >
-                <History size={14} />
-              </button>
-            </div>
-            {right === 'copilot' ? (
-              <div className="studio-copilot">
-                <div className="studio-agent-heading">
-                  <span className="studio-avatar">
-                    <Sparkles size={17} />
-                  </span>
-                  <div>
-                    <strong>Arcade Copilot</strong>
-                    <small>Powered by your Commons agent</small>
-                  </div>
-                </div>
-                <div className="studio-conversation">
-                  {messages.length === 0 && (
-                    <div className="studio-copilot-welcome">
-                      <h2>Make something worth playing.</h2>
-                      <p>
-                        Describe a change, select part of the game, or bring a
-                        test result into the conversation.
-                      </p>
-                      <button
-                        onClick={() =>
-                          setPrompt(
-                            'Improve the controls and add clear feedback when the player scores or loses. Keep the current visual style.',
-                          )
-                        }
-                      >
-                        Improve the play experience <ArrowUp size={12} />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setTool('point')
-                          setRight('notes')
-                        }}
-                      >
-                        Point to something to improve <MapPin size={12} />
-                      </button>
-                    </div>
-                  )}
-                  {messages.map((m, i) => (
-                    <div key={i} className={`studio-message ${m.role}`}>
-                      <small>
-                        {m.role === 'user' ? 'You' : 'Arcade Copilot'}
-                      </small>
-                      {m.activities?.length ? (
-                        <div className="studio-agent-activity">
-                          <span>
-                            {m.durationSeconds
-                              ? `Worked for ${m.durationSeconds}s`
-                              : `Used ${m.activities.length} ${m.activities.length === 1 ? 'tool' : 'tools'}`}
-                          </span>
-                          {m.activities.map((activity) => (
-                            <div key={activity.sequence}>
-                              {activity.status === 'running' ? (
-                                <Loader2 size={12} className="spin" />
-                              ) : (
-                                <Check size={12} />
-                              )}
-                              <span>{activity.label}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                      <p>{m.text}</p>
-                      {m.role === 'assistant' && m.sessionId ? (
-                        <a
-                          href={`https://www.agentcommons.io/studio/agents/${copilotId}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="studio-session-link"
-                        >
-                          View Commons session
-                        </a>
-                      ) : null}
-                    </div>
-                  ))}
-                  {busy === 'copilot' && (
-                    <div role="status">
-                      <div className="studio-thinking">
-                        {elapsed > 4
-                          ? `Worked for ${elapsed}s`
-                          : 'Arcade Copilot is working…'}
+                        ) : null}
+                        <p>{m.text}</p>
+                        {m.role === 'assistant' && m.sessionId ? (
+                          <a
+                            href={`https://www.agentcommons.io/studio/agents/${copilotId}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="studio-session-link"
+                          >
+                            View Commons session
+                          </a>
+                        ) : null}
                       </div>
-                      {copilotActivity.length ? (
-                        <div className="studio-agent-activity is-live">
-                          {copilotActivity.map((activity) => (
-                            <div key={activity.sequence}>
-                              {activity.status === 'running' ? (
-                                <Loader2 size={12} className="spin" />
-                              ) : (
-                                <Check size={12} />
-                              )}
-                              <span>{activity.label}</span>
-                            </div>
-                          ))}
+                    ))}
+                    {busy === 'copilot' && (
+                      <div role="status">
+                        <div className="studio-thinking">
+                          {elapsed > 4
+                            ? `Worked for ${elapsed}s`
+                            : 'Arcade Copilot is working…'}
                         </div>
-                      ) : null}
-                    </div>
-                  )}
-                </div>
-                <ArcadeComposer
-                  value={prompt}
-                  onChange={setPrompt}
-                  identity={{ ...identity, agents, copilotId }}
-                  onAgentChange={setCopilotId}
-                  busy={!!busy}
-                  context={
-                    project
-                      ? `Revision ${project.revision} · ${visibleNotes.length} notes attached`
-                      : 'Project context'
-                  }
-                  onSubmit={(attachments, model) => {
-                    if (!user || !prompt.trim() || !copilotId) return
-                    const message = prompt
-                    setPrompt('')
-                    void runCopilot(message, attachments, model)
-                  }}
-                />
-              </div>
-            ) : right === 'notes' ? (
-              <div className="studio-notes">
-                {draft && (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      void task('annotation', async () => {
-                        const p = !project || dirty ? await save() : project
-                        setProject(
-                          await arcade<StudioProject>(
-                            `projects/${p.id}/annotations`,
-                            {
-                              ...draft,
-                              context: await annotationContext.current,
-                              body: note,
-                              revision: p.revision,
-                              ...(view === 'test' && run
-                                ? { tick: run.steps }
-                                : {}),
-                            },
-                          ),
-                        )
-                        setDraft(undefined)
-                        setNote('')
-                        setTool('select')
-                      })
+                        {copilotActivity.length ? (
+                          <div className="studio-agent-activity is-live">
+                            {copilotActivity.map((activity) => (
+                              <div key={activity.sequence}>
+                                {activity.status === 'running' ? (
+                                  <Loader2 size={12} className="spin" />
+                                ) : (
+                                  <Check size={12} />
+                                )}
+                                <span>{activity.label}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                  <ArcadeComposer
+                    value={prompt}
+                    onChange={setPrompt}
+                    identity={{ ...identity, agents, copilotId }}
+                    onAgentChange={setCopilotId}
+                    busy={!!busy}
+                    context={
+                      project
+                        ? `Revision ${project.revision} · ${visibleNotes.length} notes attached`
+                        : 'Project context'
+                    }
+                    onSubmit={(attachments, model) => {
+                      if (!user || !prompt.trim() || !copilotId) return
+                      const message = prompt
+                      setPrompt('')
+                      void runCopilot(message, attachments, model)
                     }}
-                  >
-                    <strong>Note on this revision</strong>
-                    <textarea
-                      autoFocus
-                      aria-label="Annotation text"
-                      placeholder="What would you like to change?"
-                      value={note}
-                      onChange={(e) => setNote(e.target.value)}
-                      rows={4}
-                    />
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      disabled={!user || !!busy || !note.trim()}
-                    >
-                      Save note
-                    </Button>
-                    <Button variant="ghost" onClick={() => setDraft(undefined)}>
-                      Cancel
-                    </Button>
-                  </form>
-                )}
-                {project?.annotations.map((a, i) => (
-                  <article
-                    key={a.id}
-                    className={a.status === 'resolved' ? 'resolved' : ''}
-                  >
-                    <span className="studio-note-number">{i + 1}</span>
-                    <p>{a.body}</p>
-                    <small>
-                      Revision {a.revision}
-                      {a.revision !== project.revision
-                        ? ' · Earlier revision — review before applying'
-                        : ''}
-                      {a.tick !== undefined ? ` · Turn ${a.tick}` : ''}
-                    </small>
-                    <div>
-                      <button
-                        onClick={() => {
-                          setPrompt(
-                            `Please address this annotation from revision ${a.revision}: ${a.body}`,
-                          )
-                          setRight('copilot')
-                        }}
-                      >
-                        Ask Copilot
-                      </button>
-                      <button
-                        disabled={!!busy}
-                        onClick={() =>
-                          void task('annotation', async () =>
-                            setProject(
-                              await arcade<StudioProject>(
-                                `projects/${project.id}/annotations/${a.id}`,
-                                {
-                                  status:
-                                    a.status === 'open' ? 'resolved' : 'open',
-                                },
-                                'PATCH',
-                              ),
+                  />
+                </div>
+              ) : right === 'notes' ? (
+                <div className="studio-notes">
+                  {draft && (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        void task('annotation', async () => {
+                          const p = !project || dirty ? await save() : project
+                          setProject(
+                            await arcade<StudioProject>(
+                              `projects/${p.id}/annotations`,
+                              {
+                                ...draft,
+                                context: await annotationContext.current,
+                                body: note,
+                                revision: p.revision,
+                                ...(view === 'test' && run
+                                  ? { tick: run.steps }
+                                  : {}),
+                              },
                             ),
                           )
-                        }
-                      >
-                        {a.status === 'open' ? 'Resolve' : 'Reopen'}
-                      </button>
-                    </div>
-                  </article>
-                ))}
-                {!draft && !project?.annotations.length && (
-                  <div className="studio-empty">
-                    <MessageSquare size={24} />
-                    <p>Notes stay with the revision.</p>
-                    <small>
-                      Choose a point or region in the preview to start a
-                      conversation.
-                    </small>
-                    <Button onClick={() => setDraft({ x: 0.5, y: 0.5 })}>
-                      Add a note
-                    </Button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="studio-notes">
-                {history.map((p) => (
-                  <article key={`${p.revision}:${p.digest}`}>
-                    <strong>Revision {p.revision}</strong>
-                    <p>{p.document.title}</p>
-                    <small>{new Date(p.updatedAt).toLocaleString()}</small>
-                    <Button
-                      disabled={!!busy}
-                      onClick={() => {
-                        update(p.document)
-                        setView('preview')
-                        setNotice(
-                          `Previewing revision ${p.revision}. Save to create a new revision.`,
-                        )
+                          setDraft(undefined)
+                          setNote('')
+                          setTool('select')
+                        })
                       }}
                     >
-                      Restore as draft
-                    </Button>
-                  </article>
-                ))}
-              </div>
-            )}
-          </>
-        )
-      }
-      bottom={
-        !logsOpen ? undefined : isBrowserGame(document) && browserRun ? (
-          <div className="studio-browser-events">
-            <div className="studio-browser-events-heading">
-              <strong>
-                Browser Test Arena · {browserRun.controllers.length} seats ·
-                private / unrated
-              </strong>
-              <span>
-                {browserEvents.length}{' '}
-                {realtimePreview ? 'diagnostic samples' : 'decisions'} ·{' '}
-                {realtimePreview ? 'frame-synchronized policy' : 'model policy'}
-              </span>
-              <button
-                aria-label="Close test logs"
-                title="Close test logs"
-                onClick={() => setLogsOpen(false)}
-              >
-                <X size={14} />
-              </button>
-            </div>
-            {!browserEvents.length ? (
-              <p className="studio-help">
-                Decisions, measured feedback, latency, and strategy changes will
-                appear here.
-              </p>
-            ) : null}
-            {browserEvents.map((event, index) => (
-              <BrowserEventRow
-                key={`${event.epoch ?? 'server'}:${event.step}`}
-                event={event}
-                index={index}
-                sampled={realtimePreview}
-              />
-            ))}
-          </div>
-        ) : (
-          view === 'test' && (
-            <>
-              <div className="studio-log-heading">
-                <FlaskConical size={13} />
-                <strong>Test Arena</strong>
+                      <strong>Note on this revision</strong>
+                      <textarea
+                        autoFocus
+                        aria-label="Annotation text"
+                        placeholder="What would you like to change?"
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                        rows={4}
+                      />
+                      <Button
+                        type="submit"
+                        variant="primary"
+                        disabled={!user || !!busy || !note.trim()}
+                      >
+                        Save note
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => setDraft(undefined)}
+                      >
+                        Cancel
+                      </Button>
+                    </form>
+                  )}
+                  {project?.annotations.map((a, i) => (
+                    <article
+                      key={a.id}
+                      className={a.status === 'resolved' ? 'resolved' : ''}
+                    >
+                      <span className="studio-note-number">{i + 1}</span>
+                      <p>{a.body}</p>
+                      <small>
+                        Revision {a.revision}
+                        {a.revision !== project.revision
+                          ? ' · Earlier revision — review before applying'
+                          : ''}
+                        {a.tick !== undefined ? ` · Turn ${a.tick}` : ''}
+                      </small>
+                      <div>
+                        <button
+                          onClick={() => {
+                            setPrompt(
+                              `Please address this annotation from revision ${a.revision}: ${a.body}`,
+                            )
+                            setRight('copilot')
+                          }}
+                        >
+                          Ask Copilot
+                        </button>
+                        <button
+                          disabled={!!busy}
+                          onClick={() =>
+                            void task('annotation', async () =>
+                              setProject(
+                                await arcade<StudioProject>(
+                                  `projects/${project.id}/annotations/${a.id}`,
+                                  {
+                                    status:
+                                      a.status === 'open' ? 'resolved' : 'open',
+                                  },
+                                  'PATCH',
+                                ),
+                              ),
+                            )
+                          }
+                        >
+                          {a.status === 'open' ? 'Resolve' : 'Reopen'}
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                  {!draft && !project?.annotations.length && (
+                    <div className="studio-empty">
+                      <MessageSquare size={24} />
+                      <p>Notes stay with the revision.</p>
+                      <small>
+                        Choose a point or region in the preview to start a
+                        conversation.
+                      </small>
+                      <Button onClick={() => setDraft({ x: 0.5, y: 0.5 })}>
+                        Add a note
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="studio-notes">
+                  {history.map((p) => (
+                    <article key={`${p.revision}:${p.digest}`}>
+                      <strong>Revision {p.revision}</strong>
+                      <p>{p.document.title}</p>
+                      <small>{new Date(p.updatedAt).toLocaleString()}</small>
+                      <Button
+                        disabled={!!busy}
+                        onClick={() => {
+                          update(p.document)
+                          setView('preview')
+                          setNotice(
+                            `Previewing revision ${p.revision}. Save to create a new revision.`,
+                          )
+                        }}
+                      >
+                        Restore as draft
+                      </Button>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </>
+          )
+        }
+        bottom={
+          !logsOpen ? undefined : isBrowserGame(document) && browserRun ? (
+            <div className="studio-browser-events">
+              <div className="studio-browser-events-heading">
+                <strong>
+                  Browser Test Arena · {browserRun.controllers.length} seats ·
+                  private / unrated
+                </strong>
                 <span>
-                  {run
-                    ? `${run.steps} decisions · ${run.status}`
-                    : 'No run started'}
+                  {browserEvents.length}{' '}
+                  {realtimePreview ? 'diagnostic samples' : 'decisions'} ·{' '}
+                  {realtimePreview
+                    ? 'frame-synchronized policy'
+                    : 'model policy'}
                 </span>
-                <select
-                  aria-label="Filter diagnostics"
-                  value={logFilter}
-                  onChange={(e) => setLogFilter(e.target.value)}
+                <button
+                  aria-label={
+                    logsExpanded ? 'Restore preview' : 'Expand test logs'
+                  }
+                  title={logsExpanded ? 'Restore preview' : 'Expand test logs'}
+                  onClick={() => setLogsExpanded(!logsExpanded)}
                 >
-                  <option value="all">All events</option>
-                  <option value="policy">Observations & decisions</option>
-                  <option value="runtime">Actions & state</option>
-                </select>
+                  {logsExpanded ? (
+                    <Minimize2 size={14} />
+                  ) : (
+                    <Maximize2 size={14} />
+                  )}
+                </button>
                 <button
                   aria-label="Close test logs"
                   title="Close test logs"
@@ -2351,402 +2431,464 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 >
                   <X size={14} />
                 </button>
-                {run && (
-                  <button
-                    onClick={() => {
-                      const blob = new Blob([JSON.stringify(run, null, 2)], {
-                          type: 'application/json',
-                        }),
-                        url = URL.createObjectURL(blob)
-                      const a = window.document.createElement('a')
-                      a.href = url
-                      a.download = `${run.runId}.json`
-                      a.click()
-                      URL.revokeObjectURL(url)
-                    }}
-                    aria-label="Export replay"
-                  >
-                    <Download size={14} />
-                  </button>
-                )}
               </div>
-              <div className="studio-log-body">
-                <div className="studio-log-list">
-                  {logs
-                    .filter(
-                      (l) => logFilter === 'all' || l.category === logFilter,
-                    )
-                    .map((l) => (
-                      <button
-                        key={l.sequence}
-                        className={
-                          selected?.sequence === l.sequence ? 'is-active' : ''
-                        }
-                        onClick={() => setSelected(l)}
-                      >
-                        <span>{String(l.sequence).padStart(3, '0')}</span>
-                        <strong>{l.type}</strong>
-                        <small>{l.summary}</small>
-                      </button>
-                    ))}
-                  {!logs.length && (
-                    <p className="studio-help">
-                      Start a test to inspect agent observations, policy
-                      decisions and accepted actions.
-                    </p>
+              {!browserEvents.length ? (
+                <p className="studio-help">
+                  Decisions, measured feedback, latency, and strategy changes
+                  will appear here.
+                </p>
+              ) : null}
+              {browserEvents.map((event, index) => (
+                <BrowserEventRow
+                  key={`${event.epoch ?? 'server'}:${event.step}`}
+                  event={event}
+                  index={index}
+                  sampled={realtimePreview}
+                />
+              ))}
+            </div>
+          ) : (
+            view === 'test' && (
+              <>
+                <div className="studio-log-heading">
+                  <FlaskConical size={13} />
+                  <strong>Test Arena</strong>
+                  <span>
+                    {run
+                      ? `${run.steps} decisions · ${run.status}`
+                      : 'No run started'}
+                  </span>
+                  <select
+                    aria-label="Filter diagnostics"
+                    value={logFilter}
+                    onChange={(e) => setLogFilter(e.target.value)}
+                  >
+                    <option value="all">All events</option>
+                    <option value="policy">Observations & decisions</option>
+                    <option value="runtime">Actions & state</option>
+                  </select>
+                  <button
+                    aria-label={
+                      logsExpanded ? 'Restore preview' : 'Expand test logs'
+                    }
+                    title={
+                      logsExpanded ? 'Restore preview' : 'Expand test logs'
+                    }
+                    onClick={() => setLogsExpanded(!logsExpanded)}
+                  >
+                    {logsExpanded ? (
+                      <Minimize2 size={14} />
+                    ) : (
+                      <Maximize2 size={14} />
+                    )}
+                  </button>
+                  <button
+                    aria-label="Close test logs"
+                    title="Close test logs"
+                    onClick={() => setLogsOpen(false)}
+                  >
+                    <X size={14} />
+                  </button>
+                  {run && (
+                    <button
+                      onClick={() => {
+                        const blob = new Blob([JSON.stringify(run, null, 2)], {
+                            type: 'application/json',
+                          }),
+                          url = URL.createObjectURL(blob)
+                        const a = window.document.createElement('a')
+                        a.href = url
+                        a.download = `${run.runId}.json`
+                        a.click()
+                        URL.revokeObjectURL(url)
+                      }}
+                      aria-label="Export replay"
+                    >
+                      <Download size={14} />
+                    </button>
                   )}
                 </div>
-                {selected && (
-                  <pre className="studio-log-detail">
-                    {JSON.stringify(selected.data, null, 2)}
-                  </pre>
-                )}
-              </div>
-            </>
+                <div className="studio-log-body">
+                  <div className="studio-log-list">
+                    {logs
+                      .filter(
+                        (l) => logFilter === 'all' || l.category === logFilter,
+                      )
+                      .map((l) => (
+                        <button
+                          key={l.sequence}
+                          className={
+                            selected?.sequence === l.sequence ? 'is-active' : ''
+                          }
+                          onClick={() => setSelected(l)}
+                        >
+                          <span>{String(l.sequence).padStart(3, '0')}</span>
+                          <strong>{l.type}</strong>
+                          <small>{l.summary}</small>
+                        </button>
+                      ))}
+                    {!logs.length && (
+                      <p className="studio-help">
+                        Start a test to inspect agent observations, policy
+                        decisions and accepted actions.
+                      </p>
+                    )}
+                  </div>
+                  {selected && (
+                    <pre className="studio-log-detail">
+                      {JSON.stringify(selected.data, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              </>
+            )
           )
-        )
-      }
-    >
-      {(error || notice) && (
-        <div
-          role={error ? 'alert' : 'status'}
-          className={`studio-banner ${error ? 'error' : ''}`}
-        >
-          <span>{error || notice}</span>
-          {error.includes('credits') && (
-            <a
-              href="https://www.agentcommons.io/settings/billing"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Manage Commons credits ↗
-            </a>
-          )}
-          {notice.startsWith('Published.') && project?.releaseId && (
-            <Link href={`/games/${project.id.replace('prj_', 'gam_')}`}>
-              Open game ↗
-            </Link>
-          )}
-          <button
-            aria-label="Dismiss message"
-            onClick={() => {
-              setError('')
-              setNotice('')
-            }}
+        }
+      >
+        {(error || notice) && (
+          <div
+            role={error ? 'alert' : 'status'}
+            className={`studio-banner ${error ? 'error' : ''}`}
           >
-            <X size={13} />
-          </button>
-        </div>
-      )}
-      <div className="studio-stage-toolbar">
-        <div className="studio-segment">
-          {(isBrowserGame(document)
-            ? (['preview', 'code'] as const)
-            : (['preview', 'code', 'test'] as const)
-          ).map((v) => (
+            <span>{error || notice}</span>
+            {error.includes('credits') && (
+              <a
+                href="https://www.agentcommons.io/settings/billing"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Manage Commons credits ↗
+              </a>
+            )}
+            {notice.startsWith('Published.') && project?.releaseId && (
+              <Link href={`/games/${project.id.replace('prj_', 'gam_')}`}>
+                Open game ↗
+              </Link>
+            )}
             <button
-              key={v}
-              className={view === v ? 'is-active' : ''}
+              aria-label="Dismiss message"
               onClick={() => {
-                if (v !== 'test') setPlaying(false)
-                setView(v)
+                setError('')
+                setNotice('')
               }}
             >
-              {v === 'preview' ? (
-                <Gamepad2 size={13} />
-              ) : v === 'code' ? (
-                <Code2 size={13} />
-              ) : (
-                <FlaskConical size={13} />
-              )}{' '}
-              {v === 'test' ? 'Test Arena' : v[0]!.toUpperCase() + v.slice(1)}
+              <X size={13} />
             </button>
-          ))}
-        </div>
-        <div className="studio-stage-actions">
-          {!logsOpen && (browserRun || view === 'test')
-            ? icon(<FlaskConical size={14} />, 'Open test logs', () =>
-                setLogsOpen(true),
-              )
-            : null}
-          {!leftOpen &&
-            icon(<Folder size={15} />, 'Open project panel', () =>
-              setLeftOpen(true),
-            )}
-          {view === 'test' ? (
-            <>
-              <Button
-                disabled={!user || !!busy}
-                onClick={() => void task('prepare test', startRun)}
+          </div>
+        )}
+        <div className="studio-stage-toolbar">
+          <div className="studio-segment">
+            {(isBrowserGame(document)
+              ? (['preview', 'code'] as const)
+              : (['preview', 'code', 'test'] as const)
+            ).map((v) => (
+              <button
+                key={v}
+                className={view === v ? 'is-active' : ''}
+                onClick={() => {
+                  if (v !== 'test') setPlaying(false)
+                  setView(v)
+                }}
               >
-                <RotateCcw size={13} />
-                {run ? 'New run' : 'Run agents'}
-              </Button>
-              {run && (
-                <>
-                  {icon(
-                    playing ? <Pause size={15} /> : <Play size={15} />,
-                    playing ? 'Pause test' : 'Continue test',
-                    () => setPlaying(!playing),
-                  )}
-                  <button
-                    className="studio-icon"
-                    aria-label="Step one decision"
-                    disabled={!!busy || playing || run.status !== 'running'}
-                    onClick={() => void task('step', stepRun)}
-                  >
-                    <SkipForward size={15} />
-                  </button>
-                </>
+                {v === 'preview' ? (
+                  <Gamepad2 size={13} />
+                ) : v === 'code' ? (
+                  <Code2 size={13} />
+                ) : (
+                  <FlaskConical size={13} />
+                )}{' '}
+                {v === 'test' ? 'Test Arena' : v[0]!.toUpperCase() + v.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div className="studio-stage-actions">
+            {!logsOpen && (browserRun || view === 'test')
+              ? icon(<FlaskConical size={14} />, 'Open test logs', () =>
+                  setLogsOpen(true),
+                )
+              : null}
+            {!leftOpen &&
+              icon(<Folder size={15} />, 'Open project panel', () =>
+                setLeftOpen(true),
               )}
-            </>
-          ) : (
-            <>
-              {icon(
-                <MousePointer2 size={15} />,
-                'Interact with game',
-                () => setTool('select'),
-                tool === 'select',
-              )}
-              {icon(
-                <MapPin size={15} />,
-                'Point annotation',
-                () => {
-                  setTool('point')
-                  setRight('notes')
-                  setRightOpen(true)
-                },
-                tool === 'point',
-              )}
-              {icon(
-                <Scan size={15} />,
-                'Region annotation',
-                () => {
-                  setTool('region')
-                  setRight('notes')
-                  setRightOpen(true)
-                },
-                tool === 'region',
-              )}
-              {icon(<span>−</span>, 'Zoom out', () =>
-                setZoom((z) => Math.max(0.5, z - 0.1)),
-              )}
-              <span className="studio-help">{Math.round(zoom * 100)}%</span>
-              {icon(<span>+</span>, 'Zoom in', () =>
-                setZoom((z) => Math.min(2, z + 0.1)),
-              )}
-              {icon(<RotateCcw size={14} />, 'Restart preview', () =>
-                setPreviewKey((k) => k + 1),
-              )}
-              {icon(
-                fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />,
-                fullscreen ? 'Exit fullscreen preview' : 'Fullscreen preview',
-                () => {
-                  if (globalThis.document.fullscreenElement)
-                    void globalThis.document.exitFullscreen()
-                  else void previewStageRef.current?.requestFullscreen()
-                },
-                fullscreen,
-              )}
-            </>
-          )}
-        </div>
-      </div>
-      {view === 'code' ? (
-        isBrowserGame(document) ? (
-          // Generated source is shown in the same window chrome Commons uses
-          // for an agent's code project, so a game reads as a work product
-          // rather than as a text box inside a settings panel.
-          <CommonsWindow
-            className="studio-window"
-            tone="dark"
-            title={`${title} — source`}
-            status={`${document.files.length} file${document.files.length === 1 ? '' : 's'} · ${sourceSize}`}
-          >
-            <CodeFileBrowser
-              files={document.files}
-              onChange={(path, content) =>
-                update({
-                  files: document.files.map((f) =>
-                    f.path === path ? { ...f, content } : f,
+            {view === 'test' ? (
+              <>
+                <Button
+                  disabled={!user || !!busy}
+                  onClick={() => void task('prepare test', startRun)}
+                >
+                  <RotateCcw size={13} />
+                  {run ? 'New run' : 'Run agents'}
+                </Button>
+                {run && (
+                  <>
+                    {icon(
+                      playing ? <Pause size={15} /> : <Play size={15} />,
+                      playing ? 'Pause test' : 'Continue test',
+                      () => setPlaying(!playing),
+                    )}
+                    <button
+                      className="studio-icon"
+                      aria-label="Step one decision"
+                      disabled={!!busy || playing || run.status !== 'running'}
+                      onClick={() => void task('step', stepRun)}
+                    >
+                      <SkipForward size={15} />
+                    </button>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                {icon(
+                  <MousePointer2 size={15} />,
+                  'Interact with game',
+                  () => setTool('select'),
+                  tool === 'select',
+                )}
+                {icon(
+                  <MapPin size={15} />,
+                  'Point annotation',
+                  () => {
+                    setTool('point')
+                    setRight('notes')
+                    setRightOpen(true)
+                  },
+                  tool === 'point',
+                )}
+                {icon(
+                  <Scan size={15} />,
+                  'Region annotation',
+                  () => {
+                    setTool('region')
+                    setRight('notes')
+                    setRightOpen(true)
+                  },
+                  tool === 'region',
+                )}
+                {icon(<span>−</span>, 'Zoom out', () =>
+                  setZoom((z) => Math.max(0.5, z - 0.1)),
+                )}
+                <span className="studio-help">{Math.round(zoom * 100)}%</span>
+                {icon(<span>+</span>, 'Zoom in', () =>
+                  setZoom((z) => Math.min(2, z + 0.1)),
+                )}
+                {icon(<RotateCcw size={14} />, 'Restart preview', () =>
+                  setPreviewKey((k) => k + 1),
+                )}
+                {icon(
+                  fullscreen ? (
+                    <Minimize2 size={14} />
+                  ) : (
+                    <Maximize2 size={14} />
                   ),
-                })
-              }
-            />
-          </CommonsWindow>
-        ) : (
-          <div className="studio-code">
-            <div>
-              <Code2 size={13} />
-              game.json
-              <Button
-                onClick={() =>
-                  void task('compile', async () => {
-                    update(gameDocumentSchema.parse(JSON.parse(source)))
-                    setView('preview')
+                  fullscreen ? 'Exit fullscreen preview' : 'Fullscreen preview',
+                  () => {
+                    if (globalThis.document.fullscreenElement)
+                      void globalThis.document.exitFullscreen()
+                    else void previewStageRef.current?.requestFullscreen()
+                  },
+                  fullscreen,
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        {view === 'code' ? (
+          isBrowserGame(document) ? (
+            // Generated source is shown in the same window chrome Commons uses
+            // for an agent's code project, so a game reads as a work product
+            // rather than as a text box inside a settings panel.
+            <CommonsWindow
+              className="studio-window"
+              tone="dark"
+              title={`${title} — source`}
+              status={`${document.files.length} file${document.files.length === 1 ? '' : 's'} · ${sourceSize}`}
+            >
+              <StudioCodeEditor
+                files={document.files}
+                onChange={(path, content) =>
+                  update({
+                    files: document.files.map((f) =>
+                      f.path === path ? { ...f, content } : f,
+                    ),
                   })
                 }
-              >
-                Compile preview
-              </Button>
-            </div>
-            <textarea
-              aria-label="Game document source"
-              spellCheck={false}
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-            />
-          </div>
-        )
-      ) : (
-        <div className="studio-preview-stage" ref={previewStageRef}>
-          {fullscreen ? (
-            <button
-              className="studio-fullscreen-exit"
-              onClick={() => void globalThis.document.exitFullscreen()}
-            >
-              <Minimize2 size={15} /> Exit fullscreen
-            </button>
-          ) : null}
-          <div className="studio-preview-meta">
-            <span>
-              {view === 'test'
-                ? `Test run · revision ${run?.revision ?? '—'}`
-                : 'Compiled game preview'}
-            </span>
-            <span>
-              {isBrowserGame(document)
-                ? 'Browser project'
-                : `${document.boardSize} × ${document.boardSize} · Turn based`}
-            </span>
-          </div>
-          <div
-            className="studio-preview-frame"
-            style={{
-              transform: `scale(${zoom})`,
-              transformOrigin: 'top center',
-            }}
-          >
-            {browserRun && browserAction ? (
-              <div
-                className={`studio-live-action${browserAction.fallback ? ' is-fallback' : ''}`}
-                aria-live="polite"
-              >
-                <Bot size={14} />
-                <span>
-                  <strong>{browserAction.seat}</strong>
-                  {browserAction.action}
-                </span>
-                {browserAction.fallback ? (
-                  <small>service fallback</small>
-                ) : null}
+              />
+            </CommonsWindow>
+          ) : (
+            <div className="studio-code">
+              <div>
+                <Code2 size={13} />
+                game.json
+                <Button
+                  onClick={() =>
+                    void task('compile', async () => {
+                      update(gameDocumentSchema.parse(JSON.parse(source)))
+                      setView('preview')
+                    })
+                  }
+                >
+                  Compile preview
+                </Button>
               </div>
+              <StudioCodeEditor
+                files={[{ path: 'game.json', content: source }]}
+                onChange={(_path, content) => setSource(content)}
+              />
+            </div>
+          )
+        ) : (
+          <div className="studio-preview-stage" ref={previewStageRef}>
+            {fullscreen ? (
+              <button
+                className="studio-fullscreen-exit"
+                onClick={() => void globalThis.document.exitFullscreen()}
+              >
+                <Minimize2 size={15} /> Exit fullscreen
+              </button>
             ) : null}
-            {/* A live browser run must keep the shared frame interactive so
+            <div className="studio-preview-meta">
+              <span>
+                {view === 'test'
+                  ? `Test run · revision ${run?.revision ?? '—'}`
+                  : 'Compiled game preview'}
+              </span>
+              <span>
+                {isBrowserGame(document)
+                  ? 'Browser project'
+                  : `${document.boardSize} × ${document.boardSize} · Turn based`}
+              </span>
+            </div>
+            <div
+              className="studio-preview-frame"
+              style={{
+                zoom,
+                width: '100%',
+                marginInline: 'auto',
+              }}
+            >
+              {browserRun && browserAction ? (
+                <div
+                  className={`studio-live-action${browserAction.fallback ? ' is-fallback' : ''}`}
+                  aria-live="polite"
+                >
+                  <Bot size={14} />
+                  <span>
+                    <strong>{browserAction.seat}</strong>
+                    {browserAction.action}
+                  </span>
+                  {browserAction.fallback ? (
+                    <small>service fallback</small>
+                  ) : null}
+                </div>
+              ) : null}
+              {/* A live browser run must keep the shared frame interactive so
                 its animation clocks run. The sibling shield blocks unlogged
                 pointer input without enabling the frame's freeze mode. */}
-            <CompiledArtifactFrame
-              key={previewKey}
-              ref={compiledRef}
-              onRecording={(recording) =>
-                void saveInteractionRecording(recording)
-              }
-              preview={
-                compiled.html
-                  ? { type: 'html', html: compiled.html }
-                  : {
-                      type: 'unavailable',
-                      error: `The source could not compile: ${compiled.error} Check the entry file and local imports, or ask your copilot to fix the project.`,
-                    }
-              }
-              interactive={tool === 'select' && !reviewingBrowserRun}
-              title={`${document.title} compiled game`}
-              revision={`${previewKey}:${view}:${run?.steps ?? 0}`}
-            />
-            {browserRun && !isManagedBrowserGame(document) ? (
-              <div
-                className="studio-agent-input-shield"
-                aria-hidden="true"
-                title="Use the Test Arena controls while this session is running"
+              <CompiledArtifactFrame
+                key={previewKey}
+                ref={compiledRef}
+                onRecording={(recording) =>
+                  void saveInteractionRecording(recording)
+                }
+                preview={
+                  compiled.html
+                    ? { type: 'html', html: compiled.html }
+                    : {
+                        type: 'unavailable',
+                        error: `The source could not compile: ${compiled.error} Check the entry file and local imports, or ask your copilot to fix the project.`,
+                      }
+                }
+                interactive={tool === 'select' && !reviewingBrowserRun}
+                title={`${document.title} compiled game`}
+                revision={`${previewKey}:${view}:${run?.steps ?? 0}`}
               />
-            ) : null}
-            <AnnotationLayer
-              tool={view === 'test' ? 'select' : tool}
-              notes={visibleNotes}
-              onCreate={(g) => {
-                const frame = compiledRef.current
-                const moment = frame?.moment()
-                annotationContext.current = frame
-                  ? Promise.all([
-                      frame.observe(),
-                      frame
-                        .snapshot()
-                        .then(async (snapshot) => {
-                          if (!project || dirty) return undefined
-                          const saved = await storeRecording(
-                            project.id,
-                            project.revision,
-                            snapshot,
-                            false,
-                          )
-                          setRecordingsRefresh((r) => r + 1)
-                          return saved.id
-                        })
-                        .catch((error) => {
-                          setNotice(
-                            error instanceof Error
-                              ? error.message
-                              : 'Could not save the annotation snapshot.',
-                          )
-                          return undefined
-                        }),
-                    ])
-                      .then(([observation, snapshotRecordingId]) => ({
-                        viewport: { width: 1280, height: 720 },
-                        moment,
-                        observation,
-                        snapshotRecordingId,
-                      }))
-                      .catch(() => ({
-                        viewport: { width: 1280, height: 720 },
-                        moment,
-                      }))
-                  : undefined
-                setDraft(g)
-                setRight('notes')
-                setRightOpen(true)
-              }}
-              onSelect={(a) => {
-                setRight('notes')
-                setRightOpen(true)
-                setNotice(a.body)
-              }}
-            />
-          </div>
-          <div className="studio-preview-footer">
-            <span className="studio-status-dot" />
-            {view === 'test'
-              ? run?.status === 'completed'
-                ? 'Run complete · replay available below'
-                : playing
-                  ? 'Agents are playing'
-                  : 'Test paused'
-              : tool !== 'select'
-                ? `Click${tool === 'region' ? ' and drag' : ''} to annotate`
-                : isBrowserGame(document) && browserRun
-                  ? browserPlaying
-                    ? `${browserRun.controllers.filter((controller) => controller.kind === 'agent').length} agents are playing · human turns use the legal-action panel`
-                    : `Session paused · ${realtimePreview ? frameDecisions : browserRun.step} decisions`
-                  : 'Play directly in the preview'}
-            <span className="studio-preview-trust">
+              {browserRun && !isManagedBrowserGame(document) ? (
+                <div
+                  className="studio-agent-input-shield"
+                  aria-hidden="true"
+                  title="Use the Test Arena controls while this session is running"
+                />
+              ) : null}
+              <AnnotationLayer
+                tool={view === 'test' ? 'select' : tool}
+                notes={visibleNotes}
+                onCreate={(g) => {
+                  const frame = compiledRef.current
+                  const moment = frame?.moment()
+                  annotationContext.current = frame
+                    ? Promise.all([
+                        frame.observe(),
+                        frame
+                          .snapshot()
+                          .then(async (snapshot) => {
+                            if (!project || dirty) return undefined
+                            const saved = await storeRecording(
+                              project.id,
+                              project.revision,
+                              snapshot,
+                              false,
+                            )
+                            setRecordingsRefresh((r) => r + 1)
+                            return saved.id
+                          })
+                          .catch((error) => {
+                            setNotice(
+                              error instanceof Error
+                                ? error.message
+                                : 'Could not save the annotation snapshot.',
+                            )
+                            return undefined
+                          }),
+                      ])
+                        .then(([observation, snapshotRecordingId]) => ({
+                          viewport: { width: 1280, height: 720 },
+                          moment,
+                          observation,
+                          snapshotRecordingId,
+                        }))
+                        .catch(() => ({
+                          viewport: { width: 1280, height: 720 },
+                          moment,
+                        }))
+                    : undefined
+                  setDraft(g)
+                  setRight('notes')
+                  setRightOpen(true)
+                }}
+                onSelect={(a) => {
+                  setRight('notes')
+                  setRightOpen(true)
+                  setNotice(a.body)
+                }}
+              />
+            </div>
+            <div className="studio-preview-footer">
+              <span className="studio-status-dot" />
               {view === 'test'
-                ? 'Authoritative test state'
-                : 'Isolated preview'}
-            </span>
+                ? run?.status === 'completed'
+                  ? 'Run complete · replay available below'
+                  : playing
+                    ? 'Agents are playing'
+                    : 'Test paused'
+                : tool !== 'select'
+                  ? `Click${tool === 'region' ? ' and drag' : ''} to annotate`
+                  : isBrowserGame(document) && browserRun
+                    ? browserPlaying
+                      ? `${browserRun.controllers.filter((controller) => controller.kind === 'agent').length} agents are playing · human turns use the legal-action panel`
+                      : `Session paused · ${realtimePreview ? frameDecisions : browserRun.step} decisions`
+                    : 'Play directly in the preview'}
+              <span className="studio-preview-trust">
+                {view === 'test'
+                  ? 'Authoritative test state'
+                  : 'Isolated preview'}
+              </span>
+            </div>
           </div>
-        </div>
-      )}
-    </CanvasShell>
+        )}
+      </CanvasShell>
+    </div>
   )
 }
 

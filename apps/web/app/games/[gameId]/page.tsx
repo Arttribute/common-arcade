@@ -1,3 +1,5 @@
+import { legacyGameCovers } from '../../lib/legacy-game-covers'
+import { GameArtwork } from '../../components/game-artwork'
 import { RecordingShelf } from '../../components/recording-shelf'
 import { CompiledArtifactFrame } from '@agent-commons/ui'
 import {
@@ -52,6 +54,16 @@ export default async function GamePage({
   return (
     <main>
       <Header />
+      <div className="game-detail-cover shell">
+        <GameArtwork
+          title={game.metadata.title}
+          src={
+            game.metadata.thumbnail ??
+            document.thumbnail ??
+            legacyGameCovers[gameId]
+          }
+        />
+      </div>
       <section className="game-detail shell">
         <div>
           <span className="eyebrow">
@@ -77,12 +89,13 @@ export default async function GamePage({
             </p>
           )}
           <div className="profile-list">
-            <span className={browserGame ? 'is-preview' : 'is-live-ready'}>
-              {browserGame ? 'Preview only · no live lobby' : 'Live-ready'}
+            <span>{game.spec.mode.replaceAll('-', ' ')}</span>
+            <span>
+              {game.spec.seats.min}–{game.spec.seats.max} players
             </span>
-            {game.spec.profiles.map((profile) => (
-              <span key={profile}>{profile}</span>
-            ))}
+            <span>
+              {browserGame ? 'Local preview' : 'Play with friends & agents'}
+            </span>
           </div>
         </div>
         <MatchLauncher
@@ -100,6 +113,7 @@ export default async function GamePage({
         />
       </section>
       <section
+        id="game-preview"
         className="shell"
         style={{
           height: 540,
@@ -120,90 +134,93 @@ export default async function GamePage({
       <div className="shell">
         <RecordingShelf gameId={gameId} />
       </div>
-      <section className="contract-grid shell">
-        <article>
-          <span>MODE</span>
-          <strong>{game.spec.mode}</strong>
-          <p>
-            {game.spec.seats.min}–{game.spec.seats.max} seats · spectators{' '}
-            {game.spec.seats.spectators ? 'allowed' : 'disabled'}
-          </p>
-        </article>
-        <article>
-          <span>RUNTIME</span>
-          <strong>{game.spec.runtime.type}</strong>
-          <p>
-            {browserGame
-              ? 'Browser preview only. It cannot create a synchronized live lobby.'
-              : 'Content-addressed and replayable under the declared profile.'}
-          </p>
-        </article>
-        <article>
-          <span>AGENT CONTRACT</span>
-          <strong>{game.spec.policy.tiers.join(', ')}</strong>
-          <p>
-            {game.spec.policy.maxDecisionsPerSecond} decisions/s ·{' '}
-            {game.spec.policy.memoryKiB} KiB policy memory
-          </p>
-        </article>
-      </section>
-      {isBrowserGame(document) && document.capabilities ? (
-        <section className="capability-contract shell">
-          <div>
-            <span className="panel-label">WORLD</span>
-            <strong>{document.capabilities.world.persistence}</strong>
+      <details className="technical-details shell">
+        <summary>Game details & compatibility</summary>
+        <section className="contract-grid">
+          <article>
+            <span>MODE</span>
+            <strong>{game.spec.mode}</strong>
             <p>
-              {document.capabilities.world.cadence} ·{' '}
-              {document.capabilities.world.authority}
+              {game.spec.seats.min}–{game.spec.seats.max} seats · spectators{' '}
+              {game.spec.seats.spectators ? 'allowed' : 'disabled'}
             </p>
-          </div>
-          <div>
-            <span className="panel-label">PRESENTATION</span>
-            <strong>
-              {document.capabilities.presentation.dimension} ·{' '}
-              {document.capabilities.presentation.engine}
-            </strong>
+          </article>
+          <article>
+            <span>RUNTIME</span>
+            <strong>{game.spec.runtime.type}</strong>
             <p>
-              {document.capabilities.presentation.contentPipeline?.authoringTools.includes(
-                'blender',
-              )
-                ? 'Blender → web-optimized ' +
-                  document.capabilities.presentation.contentPipeline.runtimeFormats.join(
-                    ' / ',
-                  )
-                : 'Web-native presentation pipeline'}
+              {browserGame
+                ? 'Browser preview only. It cannot create a synchronized live lobby.'
+                : 'Content-addressed and replayable under the declared profile.'}
             </p>
-          </div>
-          <div>
-            <span className="panel-label">TEAMS</span>
-            <strong>
-              {document.capabilities.teams.enabled
-                ? `${document.capabilities.teams.maxTeams} teams · ${document.capabilities.teams.control}`
-                : 'Individual play'}
-            </strong>
+          </article>
+          <article>
+            <span>AGENT CONTRACT</span>
+            <strong>{game.spec.policy.tiers.join(', ')}</strong>
             <p>
-              {document.capabilities.teams.enabled
-                ? `${document.capabilities.teams.membersPerTeam} seats per team`
-                : 'No shared team controller'}
+              {game.spec.policy.maxDecisionsPerSecond} decisions/s ·{' '}
+              {game.spec.policy.memoryKiB} KiB policy memory
             </p>
-          </div>
-          <div>
-            <span className="panel-label">ECONOMY</span>
-            <strong>{document.capabilities.economy.payments}</strong>
-            <p>
-              {document.capabilities.economy.payments === 'integration-ready'
-                ? 'Hooks declared; payments are not active.'
-                : 'No payment capability requested.'}
-            </p>
-          </div>
+          </article>
         </section>
-      ) : null}
-      <section className="manifest-block shell">
-        <details>
-          <summary className="panel-label">View the agent contract</summary>
-          <pre>{JSON.stringify(game, null, 2)}</pre>
-        </details>
-      </section>
+        {isBrowserGame(document) && document.capabilities ? (
+          <section className="capability-contract shell">
+            <div>
+              <span className="panel-label">WORLD</span>
+              <strong>{document.capabilities.world.persistence}</strong>
+              <p>
+                {document.capabilities.world.cadence} ·{' '}
+                {document.capabilities.world.authority}
+              </p>
+            </div>
+            <div>
+              <span className="panel-label">PRESENTATION</span>
+              <strong>
+                {document.capabilities.presentation.dimension} ·{' '}
+                {document.capabilities.presentation.engine}
+              </strong>
+              <p>
+                {document.capabilities.presentation.contentPipeline?.authoringTools.includes(
+                  'blender',
+                )
+                  ? 'Blender → web-optimized ' +
+                    document.capabilities.presentation.contentPipeline.runtimeFormats.join(
+                      ' / ',
+                    )
+                  : 'Web-native presentation pipeline'}
+              </p>
+            </div>
+            <div>
+              <span className="panel-label">TEAMS</span>
+              <strong>
+                {document.capabilities.teams.enabled
+                  ? `${document.capabilities.teams.maxTeams} teams · ${document.capabilities.teams.control}`
+                  : 'Individual play'}
+              </strong>
+              <p>
+                {document.capabilities.teams.enabled
+                  ? `${document.capabilities.teams.membersPerTeam} seats per team`
+                  : 'No shared team controller'}
+              </p>
+            </div>
+            <div>
+              <span className="panel-label">ECONOMY</span>
+              <strong>{document.capabilities.economy.payments}</strong>
+              <p>
+                {document.capabilities.economy.payments === 'integration-ready'
+                  ? 'Hooks declared; payments are not active.'
+                  : 'No payment capability requested.'}
+              </p>
+            </div>
+          </section>
+        ) : null}
+        <section className="manifest-block">
+          <details>
+            <summary className="panel-label">View the agent contract</summary>
+            <pre>{JSON.stringify(game, null, 2)}</pre>
+          </details>
+        </section>
+      </details>
     </main>
   )
 }
