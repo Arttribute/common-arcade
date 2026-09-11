@@ -1264,3 +1264,19 @@ main:has(> .app-sidebar) {
   outline: 2px solid #6366f1;
   outline-offset: 3px;
 }
+
+.preview-game-actions {
+  flex-shrink: 0;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+.preview-info-link {
+  border: 0;
+  background: none;
+  font-size: 11px;
+  color: var(--arcade-muted);
+}
+#game-preview {
+  scroll-margin-top: 24px;
+}

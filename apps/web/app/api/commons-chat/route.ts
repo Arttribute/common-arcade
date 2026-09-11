@@ -2,6 +2,30 @@ import { NextRequest, NextResponse } from 'next/server'
 import { readSession } from '../../../lib/session'
 
 export const maxDuration = 120
+type ChatSession = {
+  sessionId: string
+  title?: string
+  createdAt?: string
+  updatedAt?: string
+  initiatorType?: string
+  history?: { role: string; content: unknown }[]
+}
+function publicSession(session: ChatSession, includeHistory = false) {
+  return {
+    sessionId: session.sessionId,
+    title: session.title,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    ...(includeHistory
+      ? {
+          history:
+            session.history
+              ?.filter((m) => m.role === 'user' || m.role === 'assistant')
+              .map((m) => ({ role: m.role, content: m.content })) ?? [],
+        }
+      : {}),
+  }
+}
 const idPattern = /^[A-Za-z0-9_-]{1,200}$/
 async function handle(request: NextRequest) {
   if (
@@ -53,27 +77,46 @@ async function handle(request: NextRequest) {
     )
     if (!Array.isArray(sessions))
       throw Error('Commons returned an invalid session list.')
-    const chatSessions = sessions.filter(
-      (s: { initiatorType?: string }) => s.initiatorType === 'arcade-chat',
-    )
     const requested =
       body?.sessionId ?? request.nextUrl.searchParams.get('sessionId')
     if (
       requested &&
-      !chatSessions.some(
-        (s: { sessionId: string }) => s.sessionId === requested,
-      )
+      !sessions.some((s: ChatSession) => s.sessionId === requested)
     )
       return NextResponse.json(
         { detail: 'Chat session not found.' },
         { status: 404 },
       )
+    // The scoped listing omits initiatorType; retrieve details only after membership validation.
+    const selected: ChatSession | undefined = requested
+      ? await commons(`sessions/${encodeURIComponent(requested)}`)
+      : undefined
+    if (selected && selected.initiatorType !== 'arcade-chat')
+      return NextResponse.json(
+        { detail: 'Chat session not found.' },
+        { status: 404 },
+      )
     if (request.method === 'GET') {
-      if (requested)
-        return NextResponse.json(
-          await commons(`sessions/${encodeURIComponent(requested)}`),
-          { headers: { 'Cache-Control': 'no-store' } },
+      if (selected)
+        return NextResponse.json(publicSession(selected, true), {
+          headers: { 'Cache-Control': 'no-store' },
+        })
+      const chatSessions: ReturnType<typeof publicSession>[] = []
+      // Bound concurrency while retaining the complete, user-scoped session history.
+      for (let offset = 0; offset < sessions.length; offset += 8) {
+        const details: ChatSession[] = await Promise.all(
+          sessions
+            .slice(offset, offset + 8)
+            .map((s: ChatSession) =>
+              commons(`sessions/${encodeURIComponent(s.sessionId)}`),
+            ),
         )
+        chatSessions.push(
+          ...details
+            .filter((s) => s.initiatorType === 'arcade-chat')
+            .map((s) => publicSession(s)),
+        )
+      }
       return NextResponse.json(
         { sessions: chatSessions },
         { headers: { 'Cache-Control': 'no-store' } },
@@ -101,7 +144,10 @@ async function handle(request: NextRequest) {
       messages: [{ role: 'user', content: body.message }],
     })
     return NextResponse.json(
-      await commons(`sessions/${encodeURIComponent(session.sessionId)}`),
+      publicSession(
+        await commons(`sessions/${encodeURIComponent(session.sessionId)}`),
+        true,
+      ),
       { headers: { 'Cache-Control': 'no-store' } },
     )
   } catch (error) {

@@ -113,6 +113,7 @@ export default async function GamePage({
         />
       </section>
       <section
+        id="game-preview"
         className="shell"
         style={{
           height: 540,

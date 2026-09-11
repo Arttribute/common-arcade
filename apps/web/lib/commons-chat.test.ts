@@ -44,14 +44,27 @@ describe('general Commons chat boundary', () => {
   })
   it('scopes history to the authenticated user and excludes build sessions', async () => {
     vi.mocked(readSession).mockResolvedValue(auth)
-    const fetch = vi.fn().mockResolvedValue(
-      Response.json({
-        data: [
-          { sessionId: 's1', initiatorType: 'arcade-chat' },
-          { sessionId: 'build', initiatorType: 'web' },
-        ],
-      }),
-    )
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          data: [{ sessionId: 's1', title: 'Hi' }, { sessionId: 'build' }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          data: {
+            sessionId: 's1',
+            title: 'Hi',
+            initiatorType: 'arcade-chat',
+            model: { secret: 'private' },
+            history: [],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({ data: { sessionId: 'build', initiatorType: 'web' } }),
+      )
     vi.stubGlobal('fetch', fetch)
     const response = await GET(
       new NextRequest(
@@ -59,7 +72,7 @@ describe('general Commons chat boundary', () => {
       ),
     )
     expect(await response.json()).toEqual({
-      sessions: [{ sessionId: 's1', initiatorType: 'arcade-chat' }],
+      sessions: [{ sessionId: 's1', title: 'Hi' }],
     })
     expect(fetch.mock.calls[0]?.[0]).toContain('/sessions/list/agent/creator/')
   })
@@ -72,6 +85,36 @@ describe('general Commons chat boundary', () => {
         .status,
     ).toBe(404)
     expect(fetch).toHaveBeenCalledTimes(1)
+  })
+  it('reopens chat using the actual metadata-only list contract and hides internal fields', async () => {
+    vi.mocked(readSession).mockResolvedValue(auth)
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ data: [{ sessionId: 's1' }] }))
+      .mockResolvedValueOnce(
+        Response.json({
+          data: {
+            sessionId: 's1',
+            initiatorType: 'arcade-chat',
+            model: { secret: 'hidden' },
+            history: [
+              { role: 'system', content: 'private' },
+              { role: 'assistant', content: 'Hello' },
+            ],
+          },
+        }),
+      )
+    vi.stubGlobal('fetch', fetch)
+    const response = await GET(
+      new NextRequest(
+        'https://arcade.example/api/commons-chat?agentId=a&sessionId=s1',
+      ),
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      sessionId: 's1',
+      history: [{ role: 'assistant', content: 'Hello' }],
+    })
   })
   it('creates a normal session and runs the agent without project or revision requests', async () => {
     vi.mocked(readSession).mockResolvedValue(auth)

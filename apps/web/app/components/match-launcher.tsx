@@ -135,56 +135,47 @@ export function MatchLauncher({
   const manifestUrl = `/api/arcade/v1/games/${gameId}`
   if (browserGame)
     return (
-      <div className="launch-card preview-hosting-card">
-        <div className="agent-launcher-title">
-          <AlertTriangle size={18} />
-          <div>
-            <span className="preview-hosting-status">Preview only</span>
-            <strong>This release cannot host a live session yet</strong>
-            <p>
-              Its rules, clock, state, validation, and result run independently
-              in each viewer&apos;s browser. A lobby would create diverging
-              copies, not one fair shared match.
-            </p>
-          </div>
-        </div>
-        <div className="preview-hosting-path">
-          <strong>
-            <Radio size={13} /> Legacy preview release
-          </strong>
-          <p>
-            New Studio builds are created and tested against the authoritative
-            live runtime as part of the normal Copilot build. This older release
-            remains playable locally, but cannot open a synchronized lobby.
-          </p>
-        </div>
-        {signedIn ? (
-          <button
-            className="primary"
-            disabled={busy}
-            onClick={() => void openStudio()}
-          >
-            {busy ? 'Opening Studio…' : 'Open project in Studio'}
-          </button>
-        ) : (
-          <a
-            className="primary"
-            href={`/api/auth/login?next=/games/${encodeURIComponent(gameId)}`}
-          >
-            Sign in to open Studio
-          </a>
-        )}
-        <a className="agent-doc-link" href="/docs/creator-quickstart">
-          About live-ready games <ExternalLink size={12} />
+      <div className="preview-game-actions">
+        <a className="primary game-play-button" href="#game-preview">
+          <Play size={17} /> Play preview
         </a>
-        <small>
-          You can still play and record this local preview below. Published
-          source is immutable; owners return to their workspace, while other
-          creators receive an attributed copy only when remixes are enabled.{' '}
-          {license ?? 'all-rights-reserved'} ·{' '}
-          {remixing === 'allowed' ? 'remixes enabled' : 'remixes restricted'}.
-        </small>
-        {error ? <p className="error-text">{error}</p> : null}
+        <Dialog
+          title="About this preview"
+          description="Play locally, or continue creating in Studio."
+          trigger={
+            <button className="preview-info-link">About this release</button>
+          }
+        >
+          <p>
+            This game is playable in your browser. A live-ready release is
+            needed to host a shared session.
+          </p>
+          {signedIn ? (
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => void openStudio()}
+            >
+              {busy ? 'Opening Studio…' : 'Open in Studio'}
+            </button>
+          ) : (
+            <a
+              className="primary"
+              href={`/api/auth/login?next=/games/${encodeURIComponent(gameId)}`}
+            >
+              Sign in to open Studio
+            </a>
+          )}
+          <p className="match-rule-note">
+            {license ?? 'all-rights-reserved'} ·{' '}
+            {remixing === 'allowed' ? 'Remixes enabled' : 'Remixes restricted'}
+          </p>
+          {error && (
+            <p className="error-text" role="alert">
+              {error}
+            </p>
+          )}
+        </Dialog>
       </div>
     )
   return (
