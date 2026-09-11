@@ -85,30 +85,30 @@ export default async function GamePage({
             ))}
           </div>
         </div>
+      </section>
+      <section className="game-play-layout shell">
+        <div
+          className="game-preview"
+          aria-label={
+            browserGame ? 'Local preview, not a live session' : 'Try this game'
+          }
+        >
+          <CompiledArtifactFrame
+            preview={{ type: 'html', html: compilePresentation(document) }}
+            title={`${game.metadata.title} — local practice`}
+          />
+        </div>
         <MatchLauncher
+          key={releaseId}
           releaseId={releaseId}
           gameId={gameId}
+          seats={game.spec.seats}
+          configurationSchema={
+            isBrowserGame(document) ? document.configurationSchema : undefined
+          }
           browserGame={browserGame}
           remixing={customRelease?.distribution?.remixing}
           license={customRelease?.distribution?.license}
-        />
-      </section>
-      <section
-        className="shell"
-        style={{
-          height: 540,
-          border: '1px solid #e7e5e4',
-          borderRadius: 12,
-          overflow: 'hidden',
-          marginBottom: 40,
-        }}
-        aria-label={
-          browserGame ? 'Local preview, not a live session' : 'Try this game'
-        }
-      >
-        <CompiledArtifactFrame
-          preview={{ type: 'html', html: compilePresentation(document) }}
-          title={`${game.metadata.title} — local practice`}
         />
       </section>
       <div className="shell">

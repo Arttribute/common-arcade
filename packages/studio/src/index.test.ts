@@ -318,12 +318,53 @@ describe('bounded game authoring', () => {
     expect(html).toContain("default-src 'none'")
     expect(html).not.toContain('__ARCADE_PLAY__')
   })
+  it('publishes a fallback player role across the supported seat range', async () => {
+    const manifest = await releaseManifest(
+      {
+        id: 'prj_fallback',
+        ownerId: 'creator',
+        revision: 1,
+        digest: 'sha256:' + '0'.repeat(64),
+        document: emptyBrowserDocument,
+        annotations: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      'rel_fallback',
+    )
+    expect(manifest.spec.seats.roles).toEqual([
+      {
+        id: 'player',
+        title: 'Player',
+        count: 2,
+        minCount: 1,
+        maxCount: 8,
+      },
+    ])
+  })
   it('publishes extensible world, team, 3D, and payment-ready declarations as metadata', async () => {
+    const roles = [
+      {
+        id: 'captain',
+        title: 'Captain',
+        count: 1,
+        minCount: 1,
+        maxCount: 2,
+      },
+      {
+        id: 'player',
+        title: 'Player',
+        count: 3,
+        minCount: 1,
+        maxCount: 14,
+      },
+    ]
     const document = gameDocumentSchema.parse({
       ...emptyBrowserDocument,
       play: {
         mode: 'hybrid',
         seats: { min: 2, max: 16, default: 4 },
+        roles,
         maxDecisionsPerSecond: 10,
       },
       capabilities: {
@@ -370,6 +411,7 @@ describe('bounded game authoring', () => {
       'rel_capabilities',
     )
     expect(manifest.spec.mode).toBe('hybrid')
+    expect(manifest.spec.seats.roles).toEqual(roles)
     expect(manifest.metadata.tags).toEqual(
       expect.arrayContaining(['strategy', '3d', 'teams', 'payments-ready']),
     )

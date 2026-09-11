@@ -3,6 +3,257 @@ import type { PublishedGameEconomy } from './economy.js'
 import { gameMonetizationSchema } from './economy.js'
 import type { GameManifest } from './index.js'
 
+const uniqueValues = <T>(values: T[]) => new Set(values).size === values.length
+const stringLength = (value: string) => Array.from(value).length
+export const MAX_GAME_CONFIGURATION_STRING_LENGTH = 500
+export const MAX_GAME_CONFIGURATION_ENUM_VALUES = 32
+export const MAX_GAME_CONFIGURATION_BYTES = 16 * 1024
+const boundedConfigurationString = z
+  .string()
+  .max(MAX_GAME_CONFIGURATION_STRING_LENGTH)
+const isMultipleOf = (value: number, multipleOf: number) => {
+  const quotient = value / multipleOf
+  return (
+    Number.isInteger(quotient) ||
+    Math.abs(quotient - Math.round(quotient)) <=
+      Number.EPSILON * Math.max(1, Math.abs(quotient)) * 4
+  )
+}
+
+export const gameConfigurationStringPropertySchema = z
+  .object({
+    type: z.literal('string'),
+    title: z.string().min(1).max(80).optional(),
+    description: z.string().max(300).optional(),
+    default: boundedConfigurationString,
+    enum: z
+      .array(boundedConfigurationString)
+      .min(1)
+      .max(MAX_GAME_CONFIGURATION_ENUM_VALUES)
+      .refine(uniqueValues)
+      .optional(),
+    minLength: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(MAX_GAME_CONFIGURATION_STRING_LENGTH)
+      .optional(),
+    maxLength: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(MAX_GAME_CONFIGURATION_STRING_LENGTH)
+      .optional(),
+  })
+  .strict()
+  .superRefine((property, context) => {
+    if (
+      property.minLength !== undefined &&
+      property.maxLength !== undefined &&
+      property.minLength > property.maxLength
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['maxLength'],
+        message: 'maxLength must be greater than or equal to minLength.',
+      })
+    const values = [property.default, ...(property.enum ?? [])]
+    for (const value of values) {
+      const length = stringLength(value)
+      if (property.minLength !== undefined && length < property.minLength)
+        context.addIssue({
+          code: 'custom',
+          message: 'String defaults and enum values must satisfy minLength.',
+        })
+      if (property.maxLength !== undefined && length > property.maxLength)
+        context.addIssue({
+          code: 'custom',
+          message: 'String defaults and enum values must satisfy maxLength.',
+        })
+    }
+    if (property.enum && !property.enum.includes(property.default))
+      context.addIssue({
+        code: 'custom',
+        path: ['default'],
+        message: 'default must be included in enum.',
+      })
+  })
+
+const numericConfigurationPropertyShape = {
+  title: z.string().min(1).max(80).optional(),
+  description: z.string().max(300).optional(),
+  minimum: z.number().finite().optional(),
+  maximum: z.number().finite().optional(),
+  multipleOf: z.number().finite().positive().optional(),
+}
+
+const validateNumericConfigurationProperty = (
+  property: {
+    default: number
+    enum?: number[]
+    minimum?: number
+    maximum?: number
+    multipleOf?: number
+  },
+  context: z.RefinementCtx,
+) => {
+  if (
+    property.minimum !== undefined &&
+    property.maximum !== undefined &&
+    property.minimum > property.maximum
+  )
+    context.addIssue({
+      code: 'custom',
+      path: ['maximum'],
+      message: 'maximum must be greater than or equal to minimum.',
+    })
+  const values = [property.default, ...(property.enum ?? [])]
+  for (const value of values) {
+    if (property.minimum !== undefined && value < property.minimum)
+      context.addIssue({
+        code: 'custom',
+        message: 'Numeric defaults and enum values must satisfy minimum.',
+      })
+    if (property.maximum !== undefined && value > property.maximum)
+      context.addIssue({
+        code: 'custom',
+        message: 'Numeric defaults and enum values must satisfy maximum.',
+      })
+    if (
+      property.multipleOf !== undefined &&
+      !isMultipleOf(value, property.multipleOf)
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'Numeric defaults and enum values must satisfy multipleOf.',
+      })
+  }
+  if (property.enum && !property.enum.includes(property.default))
+    context.addIssue({
+      code: 'custom',
+      path: ['default'],
+      message: 'default must be included in enum.',
+    })
+}
+
+export const gameConfigurationNumberPropertySchema = z
+  .object({
+    type: z.literal('number'),
+    ...numericConfigurationPropertyShape,
+    default: z.number().finite(),
+    enum: z
+      .array(z.number().finite())
+      .min(1)
+      .max(MAX_GAME_CONFIGURATION_ENUM_VALUES)
+      .refine(uniqueValues)
+      .optional(),
+  })
+  .strict()
+  .superRefine(validateNumericConfigurationProperty)
+
+export const gameConfigurationIntegerPropertySchema = z
+  .object({
+    type: z.literal('integer'),
+    ...numericConfigurationPropertyShape,
+    default: z.number().int().finite(),
+    enum: z
+      .array(z.number().int().finite())
+      .min(1)
+      .max(MAX_GAME_CONFIGURATION_ENUM_VALUES)
+      .refine(uniqueValues)
+      .optional(),
+  })
+  .strict()
+  .superRefine(validateNumericConfigurationProperty)
+
+export const gameConfigurationBooleanPropertySchema = z
+  .object({
+    type: z.literal('boolean'),
+    title: z.string().min(1).max(80).optional(),
+    description: z.string().max(300).optional(),
+    default: z.boolean(),
+  })
+  .strict()
+
+export const gameConfigurationPropertySchema = z.union([
+  gameConfigurationStringPropertySchema,
+  gameConfigurationNumberPropertySchema,
+  gameConfigurationIntegerPropertySchema,
+  gameConfigurationBooleanPropertySchema,
+])
+
+export const gameConfigurationSchema = z
+  .object({
+    title: z.string().min(1).max(80).optional(),
+    description: z.string().max(500).optional(),
+    type: z.literal('object'),
+    properties: z
+      .record(
+        z.string().regex(/^[a-z][a-zA-Z0-9_-]{0,62}$/),
+        gameConfigurationPropertySchema,
+      )
+      .refine((properties) => Object.keys(properties).length <= 24, {
+        message: 'Configuration schemas support at most 24 properties.',
+      }),
+    required: z.array(z.string().regex(/^[a-z][a-zA-Z0-9_-]{0,62}$/)).max(24),
+    additionalProperties: z.literal(false),
+  })
+  .strict()
+  .superRefine((schema, context) => {
+    if (!uniqueValues(schema.required))
+      context.addIssue({
+        code: 'custom',
+        path: ['required'],
+        message: 'Required property names must be unique.',
+      })
+    for (const name of schema.required)
+      if (!Object.hasOwn(schema.properties, name))
+        context.addIssue({
+          code: 'custom',
+          path: ['required'],
+          message: `Required property "${name}" must exist in properties.`,
+        })
+    for (const name of Object.keys(schema.properties))
+      if (!schema.required.includes(name))
+        context.addIssue({
+          code: 'custom',
+          path: ['required'],
+          message: `Configuration property "${name}" must be required.`,
+        })
+    const defaults = Object.fromEntries(
+      Object.entries(schema.properties).map(([name, property]) => [
+        name,
+        property.default,
+      ]),
+    )
+    if (
+      new TextEncoder().encode(JSON.stringify(defaults)).byteLength >
+      MAX_GAME_CONFIGURATION_BYTES
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['properties'],
+        message: `Configuration defaults must serialize to at most ${MAX_GAME_CONFIGURATION_BYTES} bytes.`,
+      })
+  })
+
+export type GameConfigurationStringProperty = z.infer<
+  typeof gameConfigurationStringPropertySchema
+>
+export type GameConfigurationNumberProperty = z.infer<
+  typeof gameConfigurationNumberPropertySchema
+>
+export type GameConfigurationIntegerProperty = z.infer<
+  typeof gameConfigurationIntegerPropertySchema
+>
+export type GameConfigurationBooleanProperty = z.infer<
+  typeof gameConfigurationBooleanPropertySchema
+>
+export type GameConfigurationProperty = z.infer<
+  typeof gameConfigurationPropertySchema
+>
+export type GameConfigurationSchema = z.infer<typeof gameConfigurationSchema>
+
 export const gameDistributionSchema = z
   .object({
     license: z.enum([
@@ -106,9 +357,25 @@ export const browserGameDocumentSchema = z
                 id: z.string().regex(/^[a-z][a-z0-9-]{0,62}$/),
                 title: z.string().min(1).max(80),
                 count: z.number().int().min(1).max(16),
+                minCount: z.number().int().min(0).max(16).optional(),
+                maxCount: z.number().int().min(1).max(16).optional(),
                 team: z.string().min(1).max(64).optional(),
               })
-              .strict(),
+              .strict()
+              .superRefine((role, context) => {
+                if ((role.minCount ?? role.count) > role.count)
+                  context.addIssue({
+                    code: 'custom',
+                    path: ['minCount'],
+                    message: 'minCount cannot exceed count.',
+                  })
+                if ((role.maxCount ?? role.count) < role.count)
+                  context.addIssue({
+                    code: 'custom',
+                    path: ['maxCount'],
+                    message: 'maxCount cannot be less than count.',
+                  })
+              }),
           )
           .min(1)
           .max(16)
@@ -234,6 +501,7 @@ export const browserGameDocumentSchema = z
       .optional(),
     distribution: gameDistributionSchema.optional(),
     monetization: gameMonetizationSchema.optional(),
+    configurationSchema: gameConfigurationSchema.optional(),
     files: z
       .array(
         z
@@ -283,6 +551,26 @@ export const browserGameDocumentSchema = z
           code: 'custom',
           path: ['play', 'roles'],
           message: 'Role counts must equal the default seat count.',
+        })
+      const roleMinimum = d.play.roles.reduce(
+        (sum, role) => sum + (role.minCount ?? role.count),
+        0,
+      )
+      const roleMaximum = d.play.roles.reduce(
+        (sum, role) => sum + (role.maxCount ?? role.count),
+        0,
+      )
+      if (roleMinimum > d.play.seats.min)
+        c.addIssue({
+          code: 'custom',
+          path: ['play', 'roles'],
+          message: 'Role minimums cannot satisfy the minimum seat count.',
+        })
+      if (roleMaximum < d.play.seats.max)
+        c.addIssue({
+          code: 'custom',
+          path: ['play', 'roles'],
+          message: 'Role maximums cannot satisfy the maximum seat count.',
         })
     }
     if (new Set(d.files.map((f) => f.path)).size !== d.files.length)

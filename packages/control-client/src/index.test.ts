@@ -13,6 +13,7 @@ const descriptor = {
   eventSequence: 0,
   createdAt: timestamp,
   updatedAt: timestamp,
+  configuration: {},
   seats: [
     { id: 'sea_clientseat01', role: 'player', status: 'open' },
     { id: 'sea_clientseat02', role: 'player', status: 'open' },
@@ -34,11 +35,75 @@ describe('ControlClient', () => {
     expect(
       await client.createMatch({
         releaseId: 'rel_tictactoe1',
+        configuration: {},
+        roleCounts: { player: 2 },
         idempotencyKey: 'client-test-key',
       }),
     ).toMatchObject({ id: descriptor.id, status: 'lobby' })
     expect(request?.headers.get('authorization')).toBe('Bearer local:agent_one')
     expect(request?.headers.get('idempotency-key')).toBe('client-test-key')
+    expect(await request?.json()).toEqual({
+      releaseId: 'rel_tictactoe1',
+      configuration: {},
+      roleCounts: { player: 2 },
+    })
+  })
+
+  it('fetches release configuration schemas and sends next-round overrides', async () => {
+    const requests: Request[] = []
+    const schema = {
+      type: 'object' as const,
+      properties: {
+        difficulty: { type: 'integer' as const, default: 2, minimum: 1 },
+      },
+      required: ['difficulty'],
+      additionalProperties: false as const,
+    }
+    const client = new ControlClient({
+      baseUrl: 'https://arcade.example',
+      fetch: async (input, init) => {
+        const request = new Request(input, init)
+        requests.push(request)
+        return request.url.endsWith('/schemas/config')
+          ? Response.json(schema)
+          : Response.json({
+              ...descriptor,
+              configuration: { difficulty: 3 },
+            })
+      },
+    })
+
+    await expect(
+      client.getReleaseConfigurationSchema('rel_tictactoe1'),
+    ).resolves.toEqual(schema)
+    await client.restartRound('mat_clientmatch1', {
+      configuration: { difficulty: 3 },
+      roleCounts: { player: 2 },
+    })
+    expect(requests[0]?.url).toBe(
+      'https://arcade.example/v1/releases/rel_tictactoe1/schemas/config',
+    )
+    expect(await requests[1]?.json()).toEqual({
+      configuration: { difficulty: 3 },
+      roleCounts: { player: 2 },
+    })
+  })
+
+  it('preserves the legacy restart signal argument', async () => {
+    let request: Request | undefined
+    let requestSignal: AbortSignal | null | undefined
+    const client = new ControlClient({
+      baseUrl: 'https://arcade.example',
+      fetch: async (input, init) => {
+        requestSignal = init?.signal
+        request = new Request(input, init)
+        return Response.json(descriptor)
+      },
+    })
+    const controller = new AbortController()
+    await client.restartRound('mat_clientmatch1', controller.signal)
+    expect(requestSignal).toBe(controller.signal)
+    expect(await request?.json()).toEqual({})
   })
 
   it('exposes structured problem details', async () => {

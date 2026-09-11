@@ -34,7 +34,276 @@ async function setup() {
   return { platform, match, first, second }
 }
 
+async function flexibleRelease() {
+  const document = gameDocumentSchema.parse({
+    kind: 'browser',
+    title: 'Flexible arena',
+    description: 'Configurable roles and round setup.',
+    entryFile: 'index.html',
+    configurationSchema: {
+      type: 'object',
+      properties: {
+        map: {
+          type: 'string',
+          default: 'forest',
+          enum: ['forest', 'volcano'],
+        },
+        rounds: { type: 'integer', default: 3, minimum: 1, maximum: 9 },
+      },
+      required: ['map', 'rounds'],
+      additionalProperties: false,
+    },
+    play: {
+      mode: 'turn-based',
+      seats: { min: 1, max: 4, default: 2 },
+      roles: [
+        { id: 'red', title: 'Red', count: 1, minCount: 0, maxCount: 2 },
+        { id: 'blue', title: 'Blue', count: 1, minCount: 0, maxCount: 2 },
+      ],
+      lateJoin: true,
+      maxDecisionsPerSecond: 2,
+    },
+    runtime: {
+      kind: 'sandboxed-script',
+      entryFile: 'server.js',
+      tickRate: 10,
+      memoryMiB: 8,
+      timeoutMs: 20,
+    },
+    files: [
+      { path: 'index.html', content: '<main>Flexible arena</main>' },
+      {
+        path: 'server.js',
+        content:
+          "globalThis.arcadeGame={initialize:c=>({done:false,configuration:c.configuration,roster:c.roster}),validateAction:()=>null,applyAction:s=>({state:{...s,done:true},events:[]}),observe:s=>({visibleState:s,legalActions:[{type:'finish'}]}),result:s=>s.done?{winnerSeatId:s.roster[0].seatId}:null};",
+      },
+    ],
+  })
+  const digest = await documentDigest(document)
+  const project = {
+    id: 'prj_flexible_arena',
+    ownerId: 'flexible_owner',
+    revision: 1,
+    digest,
+    document,
+    annotations: [],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  }
+  return {
+    id: 'rel_flexible_arena',
+    projectId: project.id,
+    revision: 1,
+    document,
+    digest,
+    manifest: await releaseManifest(project, 'rel_flexible_arena'),
+    ownerId: project.ownerId,
+    publishedAt: project.createdAt,
+  }
+}
+
 describe('local match worker boundary', () => {
+  it('resolves custom configuration defaults and flexible role selections', async () => {
+    const release = await flexibleRelease()
+    const platform = await LocalArcadePlatform.create({
+      loadRelease: async (id) => (id === release.id ? release : undefined),
+    })
+    try {
+      const match = await platform.createMatch({
+        releaseId: release.id,
+        roleCounts: { blue: 2, red: 1 },
+        ownerId: 'host_one',
+        visibility: 'public',
+        idempotencyKey: 'flexible-create-one',
+      })
+      expect(match).toMatchObject({
+        ownerId: 'host_one',
+        configuration: { map: 'forest', rounds: 3 },
+      })
+      expect(match.seats.map((seat) => seat.role)).toEqual([
+        'red',
+        'blue',
+        'blue',
+      ])
+      expect(platform.getReplay(match.id)).toMatchObject({
+        configuration: { map: 'forest', rounds: 3 },
+        roster: match.seats.map((seat) => ({
+          seatId: seat.id,
+          role: seat.role,
+        })),
+      })
+
+      const joined = await platform.findOrCreateMatch({
+        releaseId: release.id,
+        configuration: { rounds: 3, map: 'forest' },
+        roleCounts: { red: 1, blue: 2 },
+        idempotencyKey: 'flexible-queue-one',
+        actorId: 'queued_player',
+        controllerId: 'queued_human',
+        controllerKind: 'human',
+      })
+      expect(joined.match.id).toBe(match.id)
+
+      await expect(
+        platform.createMatch({
+          releaseId: release.id,
+          roleCounts: { unknown: 1 },
+          idempotencyKey: 'flexible-invalid-role',
+        }),
+      ).rejects.toMatchObject({ status: 422, code: 'INVALID_REQUEST' })
+      await expect(
+        platform.createMatch({
+          releaseId: release.id,
+          roleCounts: { red: 0, blue: 0 },
+          idempotencyKey: 'flexible-invalid-total',
+        }),
+      ).rejects.toMatchObject({ status: 422, code: 'INVALID_REQUEST' })
+      await expect(
+        platform.createMatch({
+          releaseId: release.id,
+          configuration: { map: 'desert' },
+          idempotencyKey: 'flexible-invalid-config',
+        }),
+      ).rejects.toMatchObject({ status: 422, code: 'INVALID_REQUEST' })
+    } finally {
+      platform.close()
+    }
+  })
+
+  it('applies safe owner setup overrides to only the next round', async () => {
+    const release = await flexibleRelease()
+    const platform = await LocalArcadePlatform.create({
+      loadRelease: async (id) => (id === release.id ? release : undefined),
+    })
+    try {
+      const match = await platform.createMatch({
+        releaseId: release.id,
+        roleCounts: { red: 1, blue: 2 },
+        ownerId: 'series_owner',
+        series: { maximumRounds: 2, restartPolicy: 'owner' },
+        idempotencyKey: 'flexible-series-one',
+      })
+      const occupied = match.seats.find((seat) => seat.role === 'red')!
+      await platform.claimSeat({
+        matchId: match.id,
+        seatId: occupied.id,
+        actorId: 'series_owner',
+        controllerId: 'owner_controller',
+      })
+      const ticket = await platform.createSession({
+        matchId: match.id,
+        mode: 'control',
+        seatId: occupied.id,
+        actorId: 'series_owner',
+        controllerId: 'owner_controller',
+      })
+      const session = await platform.connectWithTicket(ticket.ticket, match.id)
+      await platform.submitAction(session.sessionId, {
+        actionId: 'act_finish_round_one',
+        matchId: match.id,
+        seatId: occupied.id,
+        controlLease: session.controlLease!,
+        clientSequence: 1,
+        basedOnStateSequence: 0,
+        payload: { type: 'finish' },
+      })
+
+      await expect(
+        platform.restartRound(match.id, 'other_player', {
+          configuration: { map: 'volcano', rounds: 5 },
+        }),
+      ).rejects.toMatchObject({ status: 403 })
+      await expect(
+        platform.restartRound(match.id, 'series_owner', {
+          roleCounts: { red: 0, blue: 1 },
+        }),
+      ).rejects.toMatchObject({ status: 422 })
+
+      const restarted = await platform.restartRound(match.id, 'series_owner', {
+        configuration: { map: 'volcano', rounds: 5 },
+        roleCounts: { red: 2, blue: 0 },
+      })
+      expect(restarted).toMatchObject({
+        status: 'running',
+        configuration: { map: 'volcano', rounds: 5 },
+        series: { currentRound: 2, status: 'active' },
+      })
+      expect(restarted.seats.map((seat) => seat.role)).toEqual(['red', 'red'])
+      expect(restarted.seats[0]).toMatchObject({
+        id: occupied.id,
+        actorId: 'series_owner',
+      })
+      expect(restarted.seats[1]!.id).not.toBe(occupied.id)
+      expect(platform.getRoundReplay(match.id, 1)).toMatchObject({
+        configuration: { map: 'forest', rounds: 3 },
+        roster: expect.arrayContaining([
+          expect.objectContaining({ role: 'blue' }),
+        ]),
+      })
+      expect(platform.getReplay(match.id)).toMatchObject({
+        configuration: { map: 'volcano', rounds: 5 },
+        roster: [
+          { seatId: occupied.id, role: 'red' },
+          { seatId: restarted.seats[1]!.id, role: 'red' },
+        ],
+      })
+    } finally {
+      platform.close()
+    }
+  })
+
+  it('does not remove a scored seat from an active series', async () => {
+    const release = await flexibleRelease()
+    const platform = await LocalArcadePlatform.create({
+      loadRelease: async (id) => (id === release.id ? release : undefined),
+    })
+    try {
+      const match = await platform.createMatch({
+        releaseId: release.id,
+        ownerId: 'series_owner',
+        series: { maximumRounds: 2, restartPolicy: 'owner' },
+        idempotencyKey: 'scored-seat-series',
+      })
+      const seat = match.seats.find((candidate) => candidate.role === 'red')!
+      await platform.claimSeat({
+        matchId: match.id,
+        seatId: seat.id,
+        actorId: 'series_owner',
+        controllerId: 'owner_controller',
+      })
+      const ticket = await platform.createSession({
+        matchId: match.id,
+        mode: 'control',
+        seatId: seat.id,
+        actorId: 'series_owner',
+        controllerId: 'owner_controller',
+      })
+      const session = await platform.connectWithTicket(ticket.ticket, match.id)
+      await platform.submitAction(session.sessionId, {
+        actionId: 'act_score_before_release',
+        matchId: match.id,
+        seatId: seat.id,
+        controlLease: session.controlLease!,
+        clientSequence: 1,
+        basedOnStateSequence: 0,
+        payload: { type: 'finish' },
+      })
+      await platform.releaseSeat({
+        matchId: match.id,
+        seatId: seat.id,
+        actorId: 'series_owner',
+        expectedControllerId: 'owner_controller',
+      })
+      await expect(
+        platform.restartRound(match.id, 'series_owner', {
+          roleCounts: { red: 0, blue: 1 },
+        }),
+      ).rejects.toThrow(/scored seats/)
+    } finally {
+      platform.close()
+    }
+  })
+
   it('hosts many independent sessions for one release and atomically fills an open lobby', async () => {
     const platform = await LocalArcadePlatform.create({
       ticketSecret: new Uint8Array(32).fill(3),

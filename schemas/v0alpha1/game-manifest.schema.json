@@ -419,12 +419,12 @@
             },
             "max": {
               "exclusiveMinimum": 0,
-              "maximum": 9007199254740991,
+              "maximum": 16,
               "type": "integer"
             },
             "min": {
               "exclusiveMinimum": 0,
-              "maximum": 9007199254740991,
+              "maximum": 16,
               "type": "integer"
             },
             "roles": {
@@ -433,12 +433,22 @@
                 "properties": {
                   "count": {
                     "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991,
+                    "maximum": 16,
                     "type": "integer"
                   },
                   "id": {
                     "pattern": "^[a-z][a-z0-9-]{0,62}$",
                     "type": "string"
+                  },
+                  "maxCount": {
+                    "maximum": 16,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "minCount": {
+                    "maximum": 16,
+                    "minimum": 0,
+                    "type": "integer"
                   },
                   "team": {
                     "maxLength": 64,
@@ -454,6 +464,7 @@
                 "required": ["id", "title", "count"],
                 "type": "object"
               },
+              "maxItems": 16,
               "minItems": 1,
               "type": "array"
             },

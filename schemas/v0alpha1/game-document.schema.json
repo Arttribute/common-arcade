@@ -137,6 +137,10 @@
                       "pattern": "^0x[0-9a-fA-F]{40}$",
                       "type": "string"
                     },
+                    "celo-sepolia": {
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "type": "string"
+                    },
                     "hedera-testnet": {
                       "pattern": "^0x[0-9a-fA-F]{40}$",
                       "type": "string"
@@ -354,6 +358,206 @@
           "required": ["genres", "world", "presentation", "teams", "economy"],
           "type": "object"
         },
+        "configurationSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "additionalProperties": {
+              "const": false,
+              "type": "boolean"
+            },
+            "description": {
+              "maxLength": 500,
+              "type": "string"
+            },
+            "properties": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "default": {
+                        "maxLength": 500,
+                        "type": "string"
+                      },
+                      "description": {
+                        "maxLength": 300,
+                        "type": "string"
+                      },
+                      "enum": {
+                        "items": {
+                          "maxLength": 500,
+                          "type": "string"
+                        },
+                        "maxItems": 32,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "maxLength": {
+                        "maximum": 500,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "minLength": {
+                        "maximum": 500,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "title": {
+                        "maxLength": 80,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": {
+                        "const": "string",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "default"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "default": {
+                        "type": "number"
+                      },
+                      "description": {
+                        "maxLength": 300,
+                        "type": "string"
+                      },
+                      "enum": {
+                        "items": {
+                          "type": "number"
+                        },
+                        "maxItems": 32,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "maximum": {
+                        "type": "number"
+                      },
+                      "minimum": {
+                        "type": "number"
+                      },
+                      "multipleOf": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      },
+                      "title": {
+                        "maxLength": 80,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": {
+                        "const": "number",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "default"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "default": {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer"
+                      },
+                      "description": {
+                        "maxLength": 300,
+                        "type": "string"
+                      },
+                      "enum": {
+                        "items": {
+                          "maximum": 9007199254740991,
+                          "minimum": -9007199254740991,
+                          "type": "integer"
+                        },
+                        "maxItems": 32,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "maximum": {
+                        "type": "number"
+                      },
+                      "minimum": {
+                        "type": "number"
+                      },
+                      "multipleOf": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      },
+                      "title": {
+                        "maxLength": 80,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": {
+                        "const": "integer",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "default"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "default": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "maxLength": 300,
+                        "type": "string"
+                      },
+                      "title": {
+                        "maxLength": 80,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": {
+                        "const": "boolean",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "default"],
+                    "type": "object"
+                  }
+                ]
+              },
+              "propertyNames": {
+                "pattern": "^[a-z][a-zA-Z0-9_-]{0,62}$",
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "required": {
+              "items": {
+                "pattern": "^[a-z][a-zA-Z0-9_-]{0,62}$",
+                "type": "string"
+              },
+              "maxItems": 24,
+              "type": "array"
+            },
+            "title": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "const": "object",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "properties",
+            "required",
+            "additionalProperties"
+          ],
+          "type": "object"
+        },
         "dependencies": {
           "additionalProperties": {
             "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[a-zA-Z0-9.-]+)?$",
@@ -492,6 +696,10 @@
                       "pattern": "^0x[0-9a-fA-F]{40}$",
                       "type": "string"
                     },
+                    "celo-sepolia": {
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "type": "string"
+                    },
                     "hedera-testnet": {
                       "pattern": "^0x[0-9a-fA-F]{40}$",
                       "type": "string"
@@ -550,6 +758,16 @@
                   "id": {
                     "pattern": "^[a-z][a-z0-9-]{0,62}$",
                     "type": "string"
+                  },
+                  "maxCount": {
+                    "maximum": 16,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "minCount": {
+                    "maximum": 16,
+                    "minimum": 0,
+                    "type": "integer"
                   },
                   "team": {
                     "maxLength": 64,

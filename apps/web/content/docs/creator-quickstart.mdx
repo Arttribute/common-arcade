@@ -228,10 +228,24 @@ A live browser document includes these fields alongside `title`, `description`,
   "kind": "browser",
   "play": {
     "mode": "realtime",
-    "seats": { "min": 4, "max": 4, "default": 4 },
+    "seats": { "min": 2, "max": 8, "default": 4 },
     "roles": [
-      { "id": "leader", "title": "Leader", "count": 1, "team": "group" },
-      { "id": "member", "title": "Member", "count": 3, "team": "group" }
+      {
+        "id": "leader",
+        "title": "Leader",
+        "count": 1,
+        "minCount": 1,
+        "maxCount": 1,
+        "team": "group"
+      },
+      {
+        "id": "member",
+        "title": "Member",
+        "count": 3,
+        "minCount": 1,
+        "maxCount": 7,
+        "team": "group"
+      }
     ],
     "spectators": true,
     "lateJoin": true,
@@ -244,6 +258,27 @@ A live browser document includes these fields alongside `title`, `description`,
     "tickRate": 30,
     "memoryMiB": 16,
     "timeoutMs": 20
+  },
+  "configurationSchema": {
+    "type": "object",
+    "properties": {
+      "roundTime": {
+        "type": "integer",
+        "title": "Round time",
+        "description": "Seconds available to complete the round.",
+        "default": 90,
+        "minimum": 30,
+        "maximum": 300
+      },
+      "arena": {
+        "type": "string",
+        "title": "Arena",
+        "default": "classic",
+        "enum": ["classic", "compact"]
+      }
+    },
+    "required": ["roundTime", "arena"],
+    "additionalProperties": false
   }
 }
 ```
@@ -253,9 +288,25 @@ engine; `capabilities.world.authority` describes intent and does not replace
 rules. Omitted runtime limits receive schema defaults before manifest generation.
 Publication validates the complete manifest and executes a runtime smoke test.
 A compilation error is reported against `document.runtime` before a release is
-stored. Role counts must equal the default seat count. Keep seat IDs opaque;
-map by roster order or explicit role/team. Preview seat metadata includes
-`sourceId` and zero-based `index` alongside the host's ID.
+stored. Role counts must equal the default seat count. Optional `minCount` and
+`maxCount` values define what the host may choose for each role, while the total
+must remain within `play.seats.min` and `play.seats.max`. Without those bounds a
+role is fixed at `count`.
+
+`configurationSchema` is a bounded JSON Schema subset for generated match
+controls. It supports string, number, integer, and boolean properties, including
+enums and bounded numeric or text values. Every property declares a typed default.
+Strings contain at most 500 characters, enums contain at most 32 choices, and a
+resolved configuration serializes to at most 16 KiB. Arcade validates host values
+before initialization and records the resolved configuration in the replay. Read
+it from `context.configuration`; do not trust browser-only values. Studio preview,
+headless tests, publication checks, and live matches all apply the same defaults.
+Publication exercises roster limits, each role limit, enum choices, booleans, and
+declared value boundaries; every advertised setup must initialize and expose a
+playable action contract.
+
+Keep seat IDs opaque; map by roster order or explicit role/team. Preview seat
+metadata includes `sourceId` and zero-based `index` alongside the host's ID.
 
 The server module assigns `globalThis.arcadeGame`. It implements synchronous
 `initialize(context)`, `validateAction(state, action, context)`,
@@ -349,6 +400,11 @@ SDK's control and realtime clients.
    a new observation does not require a new decision or a repeated held action.
 6. Stop on completed, canceled, expired or failed match transitions. Reconnect
    through the resume protocol or mint a fresh ticket if it expired.
+
+Hosts may include `configuration` and `roleCounts` when creating a match. During
+an owner-controlled series, the host may provide new values to `restartRound`
+after a round completes. Arcade never mutates configuration or roster topology
+during an active round, and it will not remove an occupied seat.
 
 Owners can end abandoned tests with `DELETE /v1/matches/{id}`,
 `client.abandonMatch(id)`, or `arcade matches abandon ID`. Open lobbies expire

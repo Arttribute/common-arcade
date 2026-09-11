@@ -340,11 +340,21 @@ h3 {
   border-radius: 10px;
 }
 .game-detail {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 50px;
-  align-items: center;
   padding: 65px 0 45px;
+}
+.game-play-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  align-items: start;
+  gap: 24px;
+  margin-bottom: 40px;
+}
+.game-preview {
+  height: 540px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
 }
 .launch-card {
   display: grid;
@@ -415,6 +425,120 @@ h3 {
 }
 .controller-options input {
   width: auto;
+}
+.dynamic-match-setup {
+  display: grid;
+  gap: 12px;
+}
+.match-config-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fafaf9;
+}
+.match-config-fieldset:disabled {
+  opacity: 0.65;
+}
+.match-config-fieldset legend {
+  padding: 0 5px;
+  color: #57534e;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.match-config-intro {
+  margin: 0 0 10px;
+}
+.match-config-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.match-config-field {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-width: 0;
+}
+.match-config-field > label {
+  color: #78716c;
+  font-size: 10px;
+}
+.match-config-field input,
+.match-config-field select {
+  width: 100%;
+}
+.match-config-field.is-checkbox > label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  color: #57534e;
+}
+.match-config-field.is-checkbox input {
+  width: auto;
+  margin: 0;
+}
+.match-config-field small,
+.role-count-field small {
+  color: #a8a29e;
+  font-size: 9px;
+  line-height: 1.45;
+}
+.role-count-fields {
+  display: grid;
+  gap: 7px;
+}
+.role-count-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px 10px;
+}
+.role-count-field > span:first-child {
+  display: grid;
+  min-width: 0;
+}
+.role-count-field strong {
+  font-size: 11px;
+  font-weight: 550;
+}
+.role-count-field input {
+  width: 68px;
+  padding-block: 6px;
+}
+.fixed-role-count {
+  color: #78716c;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.role-count-field .field-error {
+  grid-column: 1 / -1;
+}
+.role-count-total {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  color: #78716c;
+  font-size: 9px;
+}
+.role-count-total strong {
+  color: #57534e;
+}
+.field-error,
+.match-config-field .field-error,
+.role-count-field .field-error,
+.role-count-total.field-error,
+.setup-error {
+  color: #b91c1c;
+}
+.setup-error {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.5;
 }
 .match-launch-actions {
   display: grid;
@@ -808,6 +932,27 @@ h3 {
 }
 .round-restart {
   margin-top: 12px;
+}
+.round-setup {
+  display: grid;
+  gap: 12px;
+  width: min(560px, 100%);
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #d6d3d1;
+  border-radius: 12px;
+  background: #fff;
+}
+.round-setup-heading p {
+  margin: 4px 0 0;
+  color: #78716c;
+  font-size: 11px;
+}
+.round-setup .round-restart {
+  justify-self: start;
+  margin-top: 0;
+  background: #292524;
+  color: #fff;
 }
 .series-complete {
   margin: 12px 0 0;
@@ -1596,6 +1741,9 @@ h3 {
   .live-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+  .game-play-layout {
+    grid-template-columns: 1fr;
+  }
 }
 @media (max-width: 800px) {
   .shell {
@@ -1618,15 +1766,14 @@ h3 {
   }
   .capabilities,
   .game-grid,
-  .game-detail,
   .contract-grid,
   .capability-contract,
   .live-grid,
   .match-shell {
     grid-template-columns: 1fr;
   }
-  .game-detail {
-    gap: 25px;
+  .game-preview {
+    height: clamp(300px, 70vw, 540px);
   }
   .studio-project-title {
     max-width: 120px;

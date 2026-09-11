@@ -5,6 +5,7 @@ import type {
   StudioAnnotation,
 } from '@common-arcade/protocol'
 export type {
+  GameConfigurationSchema,
   GameDocument,
   StudioProject,
   StudioRelease,
@@ -12,12 +13,14 @@ export type {
 } from '@common-arcade/protocol'
 import {
   gameManifestSchema,
+  gameConfigurationSchema,
   gameReleaseDescriptorSchema,
   matchDescriptorSchema,
   problemDetailsSchema,
   replaySchema,
   seatIdSchema,
   type GameManifest,
+  type GameConfigurationSchema,
   type GameReleaseDescriptor,
   type JsonValue,
   type MatchDescriptor,
@@ -54,6 +57,7 @@ export interface ReleaseList {
 export interface CreateMatchInput {
   readonly releaseId: string
   readonly configuration?: JsonValue
+  readonly roleCounts?: Readonly<Record<string, number>>
   readonly seed?: string
   readonly visibility?: 'public' | 'unlisted' | 'private'
   readonly lobby?: {
@@ -67,6 +71,11 @@ export interface CreateMatchInput {
     readonly restartPolicy?: 'automatic' | 'owner' | 'unanimous'
   }
   readonly idempotencyKey?: string
+}
+
+export interface RestartRoundInput {
+  readonly configuration?: JsonValue
+  readonly roleCounts?: Readonly<Record<string, number>>
 }
 
 export interface FindMatchInput extends Omit<CreateMatchInput, 'visibility'> {
@@ -223,6 +232,30 @@ export class ControlClient {
       await this.request(`/v1/releases/${encodeURIComponent(releaseId)}`, {
         signal,
       }),
+    )
+  }
+
+  async getReleaseConfigurationSchema(
+    releaseId: string,
+    signal?: AbortSignal,
+  ): Promise<GameConfigurationSchema> {
+    return gameConfigurationSchema.parse(
+      await this.request(
+        `/v1/releases/${encodeURIComponent(releaseId)}/schemas/config`,
+        { signal },
+      ),
+    )
+  }
+
+  async getReleaseManifest(
+    releaseId: string,
+    signal?: AbortSignal,
+  ): Promise<GameManifest> {
+    return gameManifestSchema.parse(
+      await this.request(
+        `/v1/releases/${encodeURIComponent(releaseId)}/manifest`,
+        { signal },
+      ),
     )
   }
 
@@ -398,13 +431,19 @@ export class ControlClient {
 
   async restartRound(
     matchId: string,
+    inputOrSignal: RestartRoundInput | AbortSignal = {},
     signal?: AbortSignal,
   ): Promise<MatchDescriptor> {
+    const legacySignal =
+      typeof AbortSignal !== 'undefined' && inputOrSignal instanceof AbortSignal
+        ? inputOrSignal
+        : undefined
+    const input = legacySignal ? {} : (inputOrSignal as RestartRoundInput)
     return matchDescriptorSchema.parse(
       await this.request(`/v1/matches/${encodeURIComponent(matchId)}/restart`, {
         method: 'POST',
-        body: {},
-        signal,
+        body: input,
+        signal: legacySignal ?? signal,
       }),
     )
   }

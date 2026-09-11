@@ -3,17 +3,33 @@
 import { arcade, browserControlClient } from '../../lib/api'
 import { RealtimeClient } from '@common-arcade/realtime-client'
 import type {
+  GameConfigurationSchema,
+  GameManifest,
   JsonValue,
   MatchDescriptor,
   Observation,
   RealtimeEnvelope,
 } from '@common-arcade/protocol'
-import { useEffect, useRef, useState } from 'react'
+import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { Check, RotateCcw, Share2, User, Bot, Circle } from 'lucide-react'
 
 import { LiveControls, actionLabel } from './live-controls'
 import { ExternalSeatAgent } from './external-seat-agent'
 import { LivePaymentPanel } from './live-payment-panel'
+import {
+  GameConfigurationControls,
+  RoleCountControls,
+} from './match-configuration-controls'
+import {
+  configurationPayload,
+  initializeConfiguration,
+  initializeRoleCounts,
+  roleCountsPayload,
+  type ConfigurationFormValues,
+  type RoleCounts,
+  validateConfiguration,
+  validateRoleCounts,
+} from '../lib/match-configuration'
 
 function resultLabel(
   result: JsonValue,
@@ -78,6 +94,15 @@ export function PlayMatch({
     {},
   )
   const [coachingBusy, setCoachingBusy] = useState<Record<string, boolean>>({})
+  const [releaseConfigurationSchema, setReleaseConfigurationSchema] =
+    useState<GameConfigurationSchema>()
+  const [releaseSeats, setReleaseSeats] =
+    useState<GameManifest['spec']['seats']>()
+  const [roundSetupError, setRoundSetupError] = useState<string>()
+  const [nextConfiguration, setNextConfiguration] =
+    useState<ConfigurationFormValues>({})
+  const [nextRoleCounts, setNextRoleCounts] = useState<RoleCounts>({})
+  const [restartBusy, setRestartBusy] = useState(false)
   async function coach(seatId: string, controllerId: string) {
     setCoachingBusy((v) => ({ ...v, [seatId]: true }))
     setCoachingStatus((v) => ({
@@ -123,6 +148,30 @@ export function PlayMatch({
   )
   const ended = terminal && match?.series?.status !== 'awaiting-restart'
   const localControllerKind = activeAgent ? 'agent' : 'human'
+  const currentConfigurationKey = match
+    ? JSON.stringify(match.configuration)
+    : ''
+  const currentRoleKey =
+    match?.seats
+      .map((seat) => seat.role)
+      .sort()
+      .join('|') ?? ''
+  const nextConfigurationErrors = validateConfiguration(
+    releaseConfigurationSchema,
+    nextConfiguration,
+  )
+  const nextRoleValidation = releaseSeats
+    ? validateRoleCounts(releaseSeats, nextRoleCounts)
+    : undefined
+  const restartSetupError = roundSetupError
+    ? roundSetupError
+    : !releaseConfigurationSchema || !releaseSeats
+      ? 'Loading current game settings…'
+      : !nextRoleValidation?.valid
+        ? (nextRoleValidation?.totalError ?? 'Check each role count.')
+        : Object.keys(nextConfigurationErrors).length > 0
+          ? 'Check the highlighted game settings.'
+          : ''
 
   useEffect(() => {
     let alive = true
@@ -178,6 +227,49 @@ export function PlayMatch({
       clientRef.current?.close()
     }
   }, [matchId])
+
+  useEffect(() => {
+    if (!match?.releaseId) return
+    let alive = true
+    const abort = new AbortController()
+    const control = browserControlClient()
+    setReleaseConfigurationSchema(undefined)
+    setReleaseSeats(undefined)
+    setRoundSetupError(undefined)
+    void Promise.all([
+      control.getReleaseConfigurationSchema(match.releaseId, abort.signal),
+      control.getReleaseManifest(match.releaseId, abort.signal),
+    ])
+      .then(([schema, manifest]) => {
+        if (!alive) return
+        setReleaseConfigurationSchema(schema)
+        setReleaseSeats(manifest.spec.seats)
+      })
+      .catch((cause) => {
+        if (alive && !abort.signal.aborted)
+          setRoundSetupError(
+            `Next-round settings could not be loaded: ${cause instanceof Error ? cause.message : String(cause)}`,
+          )
+      })
+    return () => {
+      alive = false
+      abort.abort()
+    }
+  }, [match?.releaseId])
+
+  useEffect(() => {
+    if (!match || !releaseConfigurationSchema || !releaseSeats) return
+    setNextConfiguration(
+      initializeConfiguration(releaseConfigurationSchema, match.configuration),
+    )
+    setNextRoleCounts(initializeRoleCounts(releaseSeats, match.seats))
+  }, [
+    releaseConfigurationSchema,
+    releaseSeats,
+    match?.series?.currentRound,
+    currentConfigurationKey,
+    currentRoleKey,
+  ])
 
   function receive(message: RealtimeEnvelope) {
     if (message.type === 'control.granted') {
@@ -657,14 +749,33 @@ export function PlayMatch({
     }
   }
 
-  async function restart() {
+  async function restart(input?: {
+    configuration?: JsonValue
+    roleCounts?: Readonly<Record<string, number>>
+  }) {
     setError(undefined)
+    setRestartBusy(true)
     try {
-      const next = await browserControlClient().restartRound(matchId)
+      const next = await browserControlClient().restartRound(matchId, input)
       setMatch(next)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setRestartBusy(false)
     }
+  }
+
+  function restartWithOverrides(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (restartSetupError || !releaseConfigurationSchema || !releaseSeats)
+      return
+    void restart({
+      configuration: configurationPayload(
+        releaseConfigurationSchema,
+        nextConfiguration,
+      ),
+      roleCounts: roleCountsPayload(releaseSeats, nextRoleCounts),
+    })
   }
 
   async function share() {
@@ -999,7 +1110,7 @@ export function PlayMatch({
             onClose={() => setExternalSetup(undefined)}
           />
         ) : null}
-        {!terminal ? (
+        {!terminal && viewer?.id === match?.ownerId ? (
           <button className="secondary compact" onClick={() => void abandon()}>
             End session
           </button>
@@ -1099,12 +1210,81 @@ export function PlayMatch({
           </strong>
         ) : null}
         {match?.series?.status === 'awaiting-restart' ? (
-          <button className="round-restart" onClick={() => void restart()}>
-            <RotateCcw size={13} />
-            {match.series.restartPolicy === 'unanimous'
-              ? 'Vote for next round'
-              : 'Start next round'}
-          </button>
+          viewer?.id === match.ownerId &&
+          match.series.restartPolicy === 'owner' ? (
+            roundSetupError ? (
+              <div className="round-setup">
+                <div className="round-setup-heading">
+                  <span className="panel-label">NEXT ROUND</span>
+                  <p>{roundSetupError}</p>
+                </div>
+                <button
+                  className="round-restart"
+                  type="button"
+                  disabled={restartBusy}
+                  onClick={() => void restart()}
+                >
+                  <RotateCcw size={13} />
+                  {restartBusy ? 'Starting next round…' : 'Start unchanged'}
+                </button>
+              </div>
+            ) : (
+              <form className="round-setup" onSubmit={restartWithOverrides}>
+                <div className="round-setup-heading">
+                  <span className="panel-label">NEXT ROUND</span>
+                  <p>Adjust the host-selected setup before play resumes.</p>
+                </div>
+                {releaseSeats ? (
+                  <RoleCountControls
+                    seats={releaseSeats}
+                    values={nextRoleCounts}
+                    onChange={(roleId, count) =>
+                      setNextRoleCounts((current) => ({
+                        ...current,
+                        [roleId]: count,
+                      }))
+                    }
+                    disabled={restartBusy}
+                  />
+                ) : null}
+                <GameConfigurationControls
+                  schema={releaseConfigurationSchema}
+                  values={nextConfiguration}
+                  onChange={(name, value) =>
+                    setNextConfiguration((current) => ({
+                      ...current,
+                      [name]: value,
+                    }))
+                  }
+                  disabled={restartBusy}
+                />
+                {restartSetupError ? (
+                  <p className="setup-error" role="alert">
+                    {restartSetupError}
+                  </p>
+                ) : null}
+                <button
+                  className="round-restart"
+                  type="submit"
+                  disabled={restartBusy || Boolean(restartSetupError)}
+                >
+                  <RotateCcw size={13} />
+                  {restartBusy ? 'Starting next round…' : 'Start next round'}
+                </button>
+              </form>
+            )
+          ) : (
+            <button
+              className="round-restart"
+              disabled={restartBusy}
+              onClick={() => void restart()}
+            >
+              <RotateCcw size={13} />
+              {match.series.restartPolicy === 'unanimous'
+                ? 'Vote for next round'
+                : 'Start next round'}
+            </button>
+          )
         ) : null}
         {match?.series?.status === 'complete' ? (
           <p className="series-complete">Series complete</p>

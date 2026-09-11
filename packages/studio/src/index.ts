@@ -12,6 +12,11 @@ export {
 } from './economy.js'
 import { compileBrowserPresentation } from './browser.js'
 export { createBrowserPolicy } from './browser-policy.js'
+export {
+  EMPTY_GAME_CONFIGURATION_SCHEMA,
+  configurationDefaults,
+  resolveGameConfiguration,
+} from './configuration.js'
 import type { GridPlacementRuleSet } from '@common-arcade/match-runtime'
 import { computeManifestDigest } from '@common-arcade/manifest'
 import {
@@ -37,6 +42,12 @@ export type {
   StudioProject,
   StudioRelease,
   StudioAnnotation,
+  GameConfigurationSchema,
+  GameConfigurationProperty,
+  GameConfigurationStringProperty,
+  GameConfigurationNumberProperty,
+  GameConfigurationIntegerProperty,
+  GameConfigurationBooleanProperty,
 } from '@common-arcade/protocol'
 import {
   gameDocumentSchema,
@@ -332,6 +343,12 @@ export async function releaseManifest(
             title: 'Player',
             count: isBrowserGame(project.document)
               ? (project.document.play?.seats.default ?? 2)
+              : 2,
+            minCount: isBrowserGame(project.document)
+              ? (project.document.play?.seats.min ?? 1)
+              : 2,
+            maxCount: isBrowserGame(project.document)
+              ? (project.document.play?.seats.max ?? 2)
               : 2,
           },
         ],

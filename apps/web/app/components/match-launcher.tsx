@@ -10,18 +10,38 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import type {
+  GameConfigurationSchema,
+  GameManifest,
+} from '@common-arcade/protocol'
 import { arcade, browserControlClient } from '../../lib/api'
+import {
+  configurationPayload,
+  initializeConfiguration,
+  initializeRoleCounts,
+  roleCountsPayload,
+  validateConfiguration,
+  validateRoleCounts,
+} from '../lib/match-configuration'
+import {
+  GameConfigurationControls,
+  RoleCountControls,
+} from './match-configuration-controls'
 import { LivePaymentPanel } from './live-payment-panel'
 
 export function MatchLauncher({
   releaseId,
   gameId,
+  seats,
+  configurationSchema,
   browserGame = false,
   remixing,
   license,
 }: {
   releaseId: string
   gameId: string
+  seats: GameManifest['spec']['seats']
+  configurationSchema?: GameConfigurationSchema
   browserGame?: boolean
   remixing?: 'disabled' | 'allowed'
   license?: string
@@ -46,6 +66,24 @@ export function MatchLauncher({
     'automatic' | 'owner' | 'unanimous'
   >('owner')
   const [copied, setCopied] = useState(false)
+  const [configuration, setConfiguration] = useState(() =>
+    initializeConfiguration(configurationSchema),
+  )
+  const [roleCounts, setRoleCounts] = useState(() =>
+    initializeRoleCounts(seats),
+  )
+  const configurationErrors = validateConfiguration(
+    configurationSchema,
+    configuration,
+  )
+  const roleCountValidation = validateRoleCounts(seats, roleCounts)
+  const setupError = !roleCountValidation.valid
+    ? (roleCountValidation.totalError ?? 'Check each role count.')
+    : Object.keys(configurationErrors).length > 0
+      ? 'Check the highlighted game settings.'
+      : !allowHumans && !allowAgents
+        ? 'Allow at least one kind of player.'
+        : ''
   useEffect(() => {
     void fetch('/api/auth/session')
       .then((response) => response.json())
@@ -71,6 +109,8 @@ export function MatchLauncher({
     try {
       const match = await browserControlClient().createMatch({
         releaseId,
+        configuration: configurationPayload(configurationSchema, configuration),
+        roleCounts: roleCountsPayload(seats, roleCounts),
         visibility,
         lobby: {
           joinPolicy,
@@ -98,6 +138,8 @@ export function MatchLauncher({
     try {
       const joined = await browserControlClient().findMatch({
         releaseId,
+        configuration: configurationPayload(configurationSchema, configuration),
+        roleCounts: roleCountsPayload(seats, roleCounts),
         controllerId: 'browser-human_player',
         controllerKind: 'human',
         lobby: {
@@ -214,110 +256,141 @@ export function MatchLauncher({
             </li>
           </ol>
           {!browserGame ? (
-            <div className="match-setup-grid">
-              <label>
-                Discoverability
-                <select
-                  value={visibility}
-                  onChange={(event) =>
-                    setVisibility(
-                      event.target.value as 'public' | 'unlisted' | 'private',
-                    )
-                  }
-                >
-                  <option value="public">Public · listed in Live</option>
-                  <option value="unlisted">Unlisted · link only</option>
-                  <option value="private">Private · owner only</option>
-                </select>
-              </label>
-              <p className="match-setup-wide match-rule-note">
-                {visibility === 'public'
-                  ? 'This session will appear on the Live page.'
-                  : visibility === 'unlisted'
-                    ? 'Link only. Find it in Your sessions; it will not appear in the public feed.'
-                    : 'Only you can access this session. Find it in Your sessions.'}
-              </p>
-              <label>
-                Joining
-                <select
-                  value={joinPolicy}
-                  onChange={(event) =>
-                    setJoinPolicy(event.target.value as typeof joinPolicy)
-                  }
-                >
-                  <option value="open">Open lobby</option>
-                  <option value="invite-only">Invite only</option>
-                </select>
-              </label>
-              {joinPolicy === 'invite-only' ? (
-                <label className="match-setup-wide">
-                  Invited Commons IDs
-                  <input
-                    value={invites}
-                    onChange={(event) => setInvites(event.target.value)}
-                    placeholder="user_one, agent_owner_two"
-                  />
+            <div className="dynamic-match-setup">
+              <RoleCountControls
+                seats={seats}
+                values={roleCounts}
+                onChange={(roleId, count) =>
+                  setRoleCounts((current) => ({
+                    ...current,
+                    [roleId]: count,
+                  }))
+                }
+                disabled={busy}
+              />
+              <GameConfigurationControls
+                schema={configurationSchema}
+                values={configuration}
+                onChange={(name, value) =>
+                  setConfiguration((current) => ({
+                    ...current,
+                    [name]: value,
+                  }))
+                }
+                disabled={busy}
+              />
+              <div className="match-setup-grid">
+                <label>
+                  Discoverability
+                  <select
+                    value={visibility}
+                    onChange={(event) =>
+                      setVisibility(
+                        event.target.value as 'public' | 'unlisted' | 'private',
+                      )
+                    }
+                  >
+                    <option value="public">Public · listed in Live</option>
+                    <option value="unlisted">Unlisted · link only</option>
+                    <option value="private">Private · owner only</option>
+                  </select>
                 </label>
+                <p className="match-setup-wide match-rule-note">
+                  {visibility === 'public'
+                    ? 'This session will appear on the Live page.'
+                    : visibility === 'unlisted'
+                      ? 'Link only. Find it in Your sessions; it will not appear in the public feed.'
+                      : 'Only you can access this session. Find it in Your sessions.'}
+                </p>
+                <label>
+                  Joining
+                  <select
+                    value={joinPolicy}
+                    onChange={(event) =>
+                      setJoinPolicy(event.target.value as typeof joinPolicy)
+                    }
+                  >
+                    <option value="open">Open lobby</option>
+                    <option value="invite-only">Invite only</option>
+                  </select>
+                </label>
+                {joinPolicy === 'invite-only' ? (
+                  <label className="match-setup-wide">
+                    Invited Commons IDs
+                    <input
+                      value={invites}
+                      onChange={(event) => setInvites(event.target.value)}
+                      placeholder="user_one, agent_owner_two"
+                    />
+                  </label>
+                ) : null}
+                <label>
+                  Rounds
+                  <select
+                    value={maximumRounds}
+                    onChange={(event) =>
+                      setMaximumRounds(Number(event.target.value))
+                    }
+                  >
+                    {[1, 3, 5, 7, 9].map((rounds) => (
+                      <option key={rounds} value={rounds}>
+                        {rounds}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Between rounds
+                  <select
+                    value={restartPolicy}
+                    onChange={(event) =>
+                      setRestartPolicy(
+                        event.target.value as typeof restartPolicy,
+                      )
+                    }
+                  >
+                    <option value="owner">Host starts next round</option>
+                    <option value="unanimous">Every player agrees</option>
+                    <option value="automatic">Automatic</option>
+                  </select>
+                </label>
+                <label>
+                  Watching
+                  <select
+                    value={spectating}
+                    onChange={(event) =>
+                      setSpectating(event.target.value as typeof spectating)
+                    }
+                  >
+                    <option value="enabled">Live spectators</option>
+                    <option value="disabled">Players only</option>
+                  </select>
+                </label>
+                <fieldset className="controller-options">
+                  <legend>Who can play?</legend>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={allowHumans}
+                      onChange={(event) => setAllowHumans(event.target.checked)}
+                    />
+                    Humans
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={allowAgents}
+                      onChange={(event) => setAllowAgents(event.target.checked)}
+                    />
+                    Agents
+                  </label>
+                </fieldset>
+              </div>
+              {setupError ? (
+                <p className="setup-error" role="alert">
+                  {setupError}
+                </p>
               ) : null}
-              <label>
-                Rounds
-                <select
-                  value={maximumRounds}
-                  onChange={(event) =>
-                    setMaximumRounds(Number(event.target.value))
-                  }
-                >
-                  {[1, 3, 5, 7, 9].map((rounds) => (
-                    <option key={rounds} value={rounds}>
-                      {rounds}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Between rounds
-                <select
-                  value={restartPolicy}
-                  onChange={(event) =>
-                    setRestartPolicy(event.target.value as typeof restartPolicy)
-                  }
-                >
-                  <option value="owner">Host starts next round</option>
-                  <option value="unanimous">Every player agrees</option>
-                  <option value="automatic">Automatic</option>
-                </select>
-              </label>
-              <label>
-                Watching
-                <select
-                  value={spectating}
-                  onChange={(event) =>
-                    setSpectating(event.target.value as typeof spectating)
-                  }
-                >
-                  <option value="enabled">Live spectators</option>
-                  <option value="disabled">Players only</option>
-                </select>
-              </label>
-              <fieldset className="controller-options">
-                <legend>Who can play?</legend>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={allowHumans}
-                    onChange={(event) => setAllowHumans(event.target.checked)}
-                  />
-                  Humans
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={allowAgents}
-                    onChange={(event) => setAllowAgents(event.target.checked)}
-                  />
-                  Agents
-                </label>
-              </fieldset>
             </div>
           ) : null}
           {signedIn ? (
@@ -325,7 +398,9 @@ export function MatchLauncher({
               <button
                 className="primary"
                 disabled={
-                  busy || (!browserGame && !allowHumans && !allowAgents)
+                  busy ||
+                  Boolean(setupError) ||
+                  (!browserGame && !allowHumans && !allowAgents)
                 }
                 onClick={create}
               >
@@ -338,7 +413,7 @@ export function MatchLauncher({
               {!browserGame ? (
                 <button
                   className="secondary"
-                  disabled={busy}
+                  disabled={busy || Boolean(setupError)}
                   onClick={() => void findOpenGame()}
                 >
                   Find an open game

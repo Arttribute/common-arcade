@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { LocalArcadePlatform } from '@common-arcade/match-worker-service'
-import { discoveryDocumentSchema } from '@common-arcade/protocol'
+import {
+  discoveryDocumentSchema,
+  emptyBrowserDocument,
+  type StudioRelease,
+} from '@common-arcade/protocol'
 import { createApp } from './app.js'
+import { MemoryDocumentStore } from './store.js'
 
 async function localApp() {
   const platform = await LocalArcadePlatform.create({
@@ -73,6 +78,8 @@ describe('control API foundation', () => {
       },
       body: JSON.stringify({
         releaseId: 'rel_tictactoe1',
+        configuration: {},
+        roleCounts: { player: 2 },
         seed: 'seed-one',
         visibility: 'public',
       }),
@@ -84,6 +91,10 @@ describe('control API foundation', () => {
       seats: { id: string }[]
     }
     expect(match.status).toBe('lobby')
+    expect(match).toMatchObject({
+      ownerId: 'actor_one',
+      configuration: {},
+    })
     const live = (await (await app.request('/v1/matches')).json()) as {
       matches: Array<{ id: string; visibility: string }>
     }
@@ -135,6 +146,76 @@ describe('control API foundation', () => {
     expect(
       await (await app.request(`/v1/matches/${match.id}`)).json(),
     ).toMatchObject({ status: 'running' })
+
+    const restart = await app.request(`/v1/matches/${match.id}/restart`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer local:actor_one',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        configuration: {},
+        roleCounts: { player: 2 },
+      }),
+    })
+    expect(restart.status).toBe(409)
+    const bodylessRestart = await app.request(
+      `/v1/matches/${match.id}/restart`,
+      {
+        method: 'POST',
+        headers: { Authorization: 'Bearer local:actor_one' },
+      },
+    )
+    expect(bodylessRestart.status).toBe(409)
+  })
+
+  it('serves validated release configuration schemas', async () => {
+    const store = new MemoryDocumentStore()
+    const configurationSchema = {
+      type: 'object' as const,
+      properties: {
+        pace: { type: 'integer' as const, default: 2, minimum: 1, maximum: 4 },
+      },
+      required: ['pace'],
+      additionalProperties: false as const,
+    }
+    const release = {
+      id: 'rel_schema_test',
+      projectId: 'prj_schema_test',
+      revision: 1,
+      document: { ...emptyBrowserDocument, configurationSchema },
+      digest: `sha256:${'a'.repeat(64)}`,
+      manifest: {} as StudioRelease['manifest'],
+      publishedAt: '2026-01-01T00:00:00.000Z',
+    } satisfies StudioRelease
+    await store.put('releases', release.id, { version: 1, release })
+    const app = createApp({ store, allowLocalAuth: true, logRequests: false })
+
+    const custom = await app.request(
+      `/v1/releases/${release.id}/schemas/config`,
+    )
+    expect(custom.status).toBe(200)
+    expect(custom.headers.get('content-type')).toContain('application/json')
+    expect(await custom.json()).toEqual(configurationSchema)
+    expect(
+      await (
+        await app.request('/v1/releases/rel_tictactoe1/schemas/config')
+      ).json(),
+    ).toEqual({
+      type: 'object',
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    })
+    expect(
+      (await app.request('/v1/releases/rel_missing/schemas/config')).status,
+    ).toBe(404)
+    expect(
+      await (await app.request('/v1/releases/rel_tictactoe1/manifest')).json(),
+    ).toMatchObject({ metadata: { id: 'gam_tictactoe1' } })
+    expect(
+      (await app.request('/v1/releases/rel_missing/manifest')).status,
+    ).toBe(404)
   })
 
   it('matches humans and agents into one compatible public lobby', async () => {

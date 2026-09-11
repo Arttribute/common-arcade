@@ -1,4 +1,5 @@
 import type { BrowserGameDocument } from '@common-arcade/protocol'
+import { configurationDefaults } from './configuration.js'
 
 /** Local Studio simulation only. Hosted presentations never include this runner.
  * The saved rules execute inside the same opaque-origin iframe as creator UI,
@@ -21,6 +22,7 @@ export function managedPreviewRuntime(document: BrowserGameDocument): string {
       })),
     )
     .map((seat, i) => ({ ...seat, seatId: `seat-${i + 1}` }))
+  const configuration = configurationDefaults(document.configurationSchema)
   return `
 function installManagedPreview(){
   const rules=(()=>{const globalThis={arcadePrepared:null};${source}\n;return {game:globalThis.arcadeGame,scope:globalThis}})();
@@ -30,7 +32,7 @@ function installManagedPreview(){
   const render=api.render.bind(api);
   const roster=${JSON.stringify(roster).replace(/</g, '\\u003c')};
   const clone=value=>JSON.parse(JSON.stringify(value));
-  const initialization={matchId:'mat_studio_preview',seed:'arcade-preview-seed',configuration:{},roster};
+  const initialization={matchId:'mat_studio_preview',seed:'arcade-preview-seed',configuration:${JSON.stringify(configuration).replace(/</g, '\\u003c')},roster};
   const freeze=value=>{if(value&&typeof value==='object'){Object.values(value).forEach(freeze);Object.freeze(value)}return value};
   rules.scope.arcadePrepared=freeze(clone(game.prepare?game.prepare(clone(initialization)):null));
   let state=clone(game.initialize(clone(initialization)));

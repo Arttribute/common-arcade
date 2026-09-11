@@ -2,6 +2,8 @@ import {
   createBrowserPolicy,
   livePolicyObservation,
   coachedStrategySchema,
+  isBrowserGame,
+  resolveGameConfiguration,
   type ExecutableStrategy,
 } from '@common-arcade/studio'
 import { assessLiveReadiness, type StudioRelease } from '@common-arcade/studio'
@@ -109,12 +111,18 @@ interface SessionRecord {
 export interface CreateMatchRequest {
   readonly releaseId: string
   readonly configuration?: JsonValue
+  readonly roleCounts?: Readonly<Record<string, number>>
   readonly seed?: string
   readonly idempotencyKey: string
   readonly ownerId?: string
   readonly visibility?: 'public' | 'unlisted' | 'private'
   readonly lobby?: Partial<MatchLobbyRules>
   readonly series?: Partial<MatchSeriesRules>
+}
+
+export interface RestartRoundInput {
+  readonly configuration?: JsonValue
+  readonly roleCounts?: Readonly<Record<string, number>>
 }
 
 export interface ClaimSeatRequest {
@@ -207,6 +215,190 @@ export class LocalPlatformError extends Error {
     super(message)
     this.name = 'LocalPlatformError'
   }
+}
+
+type ResolvedRole = GameManifest['spec']['seats']['roles'][number] & {
+  readonly resolvedCount: number
+}
+
+function resolveRoleAllocation(
+  manifest: GameManifest,
+  roleCounts?: Readonly<Record<string, number>>,
+): ResolvedRole[] {
+  if (roleCounts !== undefined) {
+    if (
+      roleCounts === null ||
+      typeof roleCounts !== 'object' ||
+      Array.isArray(roleCounts) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(roleCounts))
+    )
+      throw new LocalPlatformError(
+        'INVALID_REQUEST',
+        422,
+        'Role counts must be an object keyed by role id.',
+      )
+    const names = Object.keys(roleCounts)
+    if (names.length > 16)
+      throw new LocalPlatformError(
+        'INVALID_REQUEST',
+        422,
+        'Role counts support at most 16 roles.',
+      )
+    const malformed = names
+      .sort()
+      .find((name) => !/^[a-z][a-z0-9-]{0,62}$/.test(name))
+    if (malformed !== undefined)
+      throw new LocalPlatformError(
+        'INVALID_REQUEST',
+        422,
+        `Invalid role id "${malformed}".`,
+      )
+    const known = new Set(manifest.spec.seats.roles.map((role) => role.id))
+    const unknown = names.find((name) => !known.has(name))
+    if (unknown !== undefined)
+      throw new LocalPlatformError(
+        'INVALID_REQUEST',
+        422,
+        `Unknown role "${unknown}".`,
+      )
+  }
+
+  const resolved = manifest.spec.seats.roles.map((role) => {
+    const count =
+      roleCounts !== undefined && Object.hasOwn(roleCounts, role.id)
+        ? roleCounts[role.id]
+        : role.count
+    if (
+      !Number.isInteger(count) ||
+      count === undefined ||
+      count < 0 ||
+      count > 16
+    )
+      throw new LocalPlatformError(
+        'INVALID_REQUEST',
+        422,
+        `Role "${role.id}" must have an integer count between 0 and 16.`,
+      )
+    const minimum = role.minCount ?? role.count
+    const maximum = role.maxCount ?? role.count
+    if (count < minimum || count > maximum)
+      throw new LocalPlatformError(
+        'INVALID_REQUEST',
+        422,
+        `Role "${role.id}" must have between ${minimum} and ${maximum} seats.`,
+      )
+    return { ...role, resolvedCount: count }
+  })
+  const total = resolved.reduce((sum, role) => sum + role.resolvedCount, 0)
+  if (total < manifest.spec.seats.min || total > manifest.spec.seats.max)
+    throw new LocalPlatformError(
+      'INVALID_REQUEST',
+      422,
+      `Resolved role counts must total between ${manifest.spec.seats.min} and ${manifest.spec.seats.max} seats.`,
+    )
+  return resolved
+}
+
+function resolveConfiguration(
+  release: StudioRelease | undefined,
+  configuration: JsonValue | undefined,
+): Record<string, JsonValue> {
+  try {
+    return resolveGameConfiguration(
+      release && isBrowserGame(release.document)
+        ? release.document.configurationSchema
+        : undefined,
+      configuration === undefined ? {} : configuration,
+    )
+  } catch (error) {
+    throw new LocalPlatformError(
+      'INVALID_REQUEST',
+      422,
+      `Invalid match configuration: ${error instanceof Error ? error.message : 'validation failed.'}`,
+    )
+  }
+}
+
+function canonicalJson(value: JsonValue): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  if (value !== null && typeof value === 'object')
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+      .join(',')}}`
+  return JSON.stringify(value)
+}
+
+function roleAllocation(record: MatchRecord): string {
+  const counts = new Map<string, number>()
+  for (const seat of record.runtime.roster)
+    counts.set(seat.role, (counts.get(seat.role) ?? 0) + 1)
+  return JSON.stringify(
+    record.manifest.spec.seats.roles.map((role) => [
+      role.id,
+      counts.get(role.id) ?? 0,
+    ]),
+  )
+}
+
+function resolvedRoleAllocation(roles: readonly ResolvedRole[]): string {
+  return JSON.stringify(roles.map((role) => [role.id, role.resolvedCount]))
+}
+
+function reconciledSeats(
+  record: MatchRecord,
+  roles: readonly ResolvedRole[],
+): MutableSeat[] {
+  for (const role of roles) {
+    const occupied = record.seats.filter(
+      (seat) => seat.role === role.id && seat.actorId !== undefined,
+    ).length
+    if (role.resolvedCount < occupied)
+      throw new LocalPlatformError(
+        'INVALID_REQUEST',
+        422,
+        `Role "${role.id}" cannot be reduced below its ${occupied} occupied seats.`,
+      )
+  }
+
+  return roles.flatMap((role) => {
+    const existing = record.seats.filter((seat) => seat.role === role.id)
+    const remove = Math.max(0, existing.length - role.resolvedCount)
+    const removable = existing
+      .filter(
+        (seat) =>
+          seat.actorId === undefined &&
+          (record.series.scores[seat.id] ?? 0) === 0,
+      )
+      .reverse()
+    if (removable.length < remove)
+      throw new LocalPlatformError(
+        'INVALID_REQUEST',
+        422,
+        `Role "${role.id}" cannot remove occupied or scored seats during a series.`,
+      )
+    const removed = new Set(removable.slice(0, remove))
+    const kept = existing.filter((seat) => !removed.has(seat))
+    return [
+      ...kept,
+      ...Array.from(
+        { length: Math.max(0, role.resolvedCount - kept.length) },
+        (): MutableSeat => ({
+          id: opaqueId('sea'),
+          role: role.id,
+          ...(role.team === undefined ? {} : { team: role.team }),
+          status: 'open',
+        }),
+      ),
+    ]
+  })
+}
+
+function startThresholdReached(record: MatchRecord): boolean {
+  return record.manifest.spec.seats.lateJoin
+    ? record.seats.filter((seat) => seat.status !== 'open').length >=
+        record.manifest.spec.seats.min
+    : record.seats.every((seat) => seat.status !== 'open')
 }
 
 function opaqueId(prefix: string): string {
@@ -437,6 +629,27 @@ export class LocalArcadePlatform {
     }
   }
 
+  private async resolveRelease(releaseId: string): Promise<{
+    readonly custom?: StudioRelease
+    readonly manifest: GameManifest
+  }> {
+    const custom = await this.loadRelease?.(releaseId)
+    if (custom && !assessLiveReadiness(custom.document).liveReady)
+      throw new LocalPlatformError(
+        'INVALID_REQUEST',
+        422,
+        'This release has no authoritative runtime. Open it in Studio and publish a live-ready release.',
+      )
+    if (custom) return { custom, manifest: custom.manifest }
+    if (releaseId !== ticTacToeGame.releaseId)
+      throw new LocalPlatformError(
+        'NOT_FOUND',
+        404,
+        `Unknown release ${releaseId}`,
+      )
+    return { manifest: await getTicTacToeManifest() }
+  }
+
   async createMatch(request: CreateMatchRequest): Promise<MatchDescriptor> {
     return this.exclusive('create-match', () =>
       this.createMatchInternal(request),
@@ -480,21 +693,9 @@ export class LocalArcadePlatform {
         429,
         'Active match capacity reached. End an existing match before creating another.',
       )
-    const custom = await this.loadRelease?.(request.releaseId)
-    if (custom && !assessLiveReadiness(custom.document).liveReady)
-      throw new LocalPlatformError(
-        'INVALID_REQUEST',
-        422,
-        'This release has no authoritative runtime. Open it in Studio and publish a live-ready release.',
-      )
-    const manifest = custom?.manifest ?? (await getTicTacToeManifest())
-    if (!custom && request.releaseId !== ticTacToeGame.releaseId) {
-      throw new LocalPlatformError(
-        'NOT_FOUND',
-        404,
-        `Unknown release ${request.releaseId}`,
-      )
-    }
+    const { custom, manifest } = await this.resolveRelease(request.releaseId)
+    const roles = resolveRoleAllocation(manifest, request.roleCounts)
+    const configuration = resolveConfiguration(custom, request.configuration)
     const matchId = `mat_${Buffer.from(
       await crypto.subtle.digest(
         'SHA-256',
@@ -504,8 +705,8 @@ export class LocalArcadePlatform {
       .toString('hex')
       .slice(0, 32)}`
     const suffix = matchId.slice(4)
-    const declaredRoles = manifest.spec.seats.roles.flatMap((role) =>
-      Array.from({ length: role.count }, () => ({
+    const declaredRoles = roles.flatMap((role) =>
+      Array.from({ length: role.resolvedCount }, () => ({
         role: role.id,
         ...(role.team === undefined ? {} : { team: role.team }),
       })),
@@ -519,18 +720,27 @@ export class LocalArcadePlatform {
     const game = custom
       ? await compileGame(custom.document, custom.id, custom.digest)
       : ticTacToeGame
-    const runtime = await AuthoritativeMatch.create({
-      matchId,
-      game,
-      seed: request.seed ?? opaqueId('seed'),
-      configuration: request.configuration ?? {},
-      roster: seats.map((seat) => ({
-        seatId: seat.id,
-        role: seat.role,
-        ...(seat.team === undefined ? {} : { team: seat.team }),
-      })),
-      now: this.now,
-    })
+    let runtime: LocalMatchRuntime
+    try {
+      runtime = await AuthoritativeMatch.create({
+        matchId,
+        game,
+        seed: request.seed ?? opaqueId('seed'),
+        configuration,
+        roster: seats.map((seat) => ({
+          seatId: seat.id,
+          role: seat.role,
+          ...(seat.team === undefined ? {} : { team: seat.team }),
+        })),
+        now: this.now,
+      })
+    } catch (error) {
+      throw new LocalPlatformError(
+        'INVALID_REQUEST',
+        422,
+        `The release could not initialize this match setup: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
     const timestamp = this.now().toISOString()
     const record: MatchRecord = {
       version: 0,
@@ -601,6 +811,9 @@ export class LocalArcadePlatform {
 
   async findOrCreateMatch(request: FindMatchRequest): Promise<JoinedMatch> {
     return this.exclusive(`queue:${request.releaseId}`, async () => {
+      const { custom, manifest } = await this.resolveRelease(request.releaseId)
+      const roles = resolveRoleAllocation(manifest, request.roleCounts)
+      const configuration = resolveConfiguration(custom, request.configuration)
       const candidate = [...this.matches.values()]
         .filter(
           (record) =>
@@ -613,8 +826,9 @@ export class LocalArcadePlatform {
               (request.series?.maximumRounds ?? 1) &&
             record.series.restartPolicy ===
               (request.series?.restartPolicy ?? 'owner') &&
-            JSON.stringify(record.runtime.configuration) ===
-              JSON.stringify(request.configuration ?? {}) &&
+            canonicalJson(record.runtime.configuration) ===
+              canonicalJson(configuration) &&
+            roleAllocation(record) === resolvedRoleAllocation(roles) &&
             record.seats.some((seat) => seat.status === 'open'),
         )
         .sort((left, right) => left.createdAt.localeCompare(right.createdAt))[0]
@@ -622,7 +836,10 @@ export class LocalArcadePlatform {
         candidate === undefined
           ? await this.createMatch({
               releaseId: request.releaseId,
-              configuration: request.configuration,
+              configuration,
+              roleCounts: Object.fromEntries(
+                roles.map((role) => [role.id, role.resolvedCount]),
+              ),
               seed: request.seed,
               idempotencyKey: request.idempotencyKey,
               ownerId: request.actorId,
@@ -721,10 +938,7 @@ export class LocalArcadePlatform {
     seat.status = 'claimed'
     seat.released = false
     if (
-      (record.manifest.spec.seats.lateJoin
-        ? record.seats.filter((candidate) => candidate.status !== 'open')
-            .length >= record.manifest.spec.seats.min
-        : record.seats.every((candidate) => candidate.status !== 'open')) &&
+      startThresholdReached(record) &&
       record.runtime.getStatus() === 'lobby'
     ) {
       record.runtime.start()
@@ -1514,6 +1728,7 @@ export class LocalArcadePlatform {
   async restartRound(
     matchId: string,
     actorId: string,
+    input: RestartRoundInput = {},
   ): Promise<MatchDescriptor> {
     return this.exclusive(matchId, async () => {
       const record = this.record(matchId)
@@ -1530,6 +1745,14 @@ export class LocalArcadePlatform {
           'CONFLICT',
           409,
           'This series restarts automatically.',
+        )
+      const hasOverrides =
+        input.configuration !== undefined || input.roleCounts !== undefined
+      if (hasOverrides && record.series.restartPolicy !== 'owner')
+        throw new LocalPlatformError(
+          'INVALID_REQUEST',
+          422,
+          'Only owner-controlled restarts may override match setup.',
         )
       if (record.series.restartPolicy === 'owner') {
         if (record.ownerId !== actorId)
@@ -1562,7 +1785,22 @@ export class LocalArcadePlatform {
           return this.describe(record)
         }
       }
-      await this.advanceRound(record)
+      let configuration = record.runtime.configuration
+      let seats: MutableSeat[] | undefined
+      if (hasOverrides) {
+        if (input.configuration !== undefined) {
+          const { custom } = await this.resolveRelease(
+            record.runtime.game.releaseId,
+          )
+          configuration = resolveConfiguration(custom, input.configuration)
+        }
+        if (input.roleCounts !== undefined)
+          seats = reconciledSeats(
+            record,
+            resolveRoleAllocation(record.manifest, input.roleCounts),
+          )
+      }
+      await this.advanceRound(record, configuration, seats)
       record.updatedAt = this.now().toISOString()
       await this.persist(record)
       await this.notify(matchId)
@@ -1910,10 +2148,39 @@ export class LocalArcadePlatform {
     record.series.restartVotes = []
   }
 
-  private async advanceRound(record: MatchRecord): Promise<void> {
+  private async advanceRound(
+    record: MatchRecord,
+    configuration: JsonValue = record.runtime.configuration,
+    seats: MutableSeat[] = record.seats,
+  ): Promise<void> {
     this.stopClock(record.runtime.matchId)
-    record.completedRounds.push(record.runtime.exportReplay())
-    record.series.currentRound += 1
+    const prior = record.runtime
+    const completed = prior.exportReplay()
+    const nextRound = record.series.currentRound + 1
+    let runtime: LocalMatchRuntime
+    try {
+      runtime = await AuthoritativeMatch.create({
+        matchId: prior.matchId,
+        game: prior.game,
+        seed: `${prior.matchId}:round:${nextRound}`,
+        configuration,
+        roster: seats.map((seat) => ({
+          seatId: seat.id,
+          role: seat.role,
+          ...(seat.team === undefined ? {} : { team: seat.team }),
+        })),
+        ownershipEpoch: prior.getOwnershipEpoch() + 1,
+        now: this.now,
+      })
+    } catch (error) {
+      throw new LocalPlatformError(
+        'INVALID_REQUEST',
+        422,
+        `The release could not initialize the next-round setup: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+    record.completedRounds.push(completed)
+    record.series.currentRound = nextRound
     record.series.status = 'active'
     record.series.restartVotes = []
     for (const seat of record.seats) {
@@ -1927,16 +2194,8 @@ export class LocalArcadePlatform {
         agent.lastStateSequence = undefined
       }
     }
-    const prior = record.runtime
-    record.runtime = await AuthoritativeMatch.create({
-      matchId: prior.matchId,
-      game: prior.game,
-      seed: `${prior.matchId}:round:${record.series.currentRound}`,
-      configuration: prior.configuration,
-      roster: prior.roster,
-      ownershipEpoch: prior.getOwnershipEpoch() + 1,
-      now: this.now,
-    })
+    record.seats.splice(0, record.seats.length, ...seats)
+    record.runtime = runtime
     for (const session of this.sessions.values())
       if (session.matchId === record.runtime.matchId)
         session.ownershipEpoch = record.runtime.getOwnershipEpoch()
@@ -1954,8 +2213,7 @@ export class LocalArcadePlatform {
             ? 'connected'
             : 'claimed'
     }
-    if (record.seats.every((seat) => seat.status !== 'open'))
-      record.runtime.start()
+    if (startThresholdReached(record)) record.runtime.start()
     this.startClock(record)
   }
 
@@ -1980,6 +2238,8 @@ export class LocalArcadePlatform {
       eventSequence: snapshot.eventSequence,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
+      ...(record.ownerId === undefined ? {} : { ownerId: record.ownerId }),
+      configuration: record.runtime.configuration,
       visibility: record.visibility,
       lobby: record.lobby,
       series: record.series,

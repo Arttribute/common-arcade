@@ -46,6 +46,36 @@ describe('genre-independent managed runtime harness', () => {
     expect(result.result).toMatchObject({ outcome: 'complete' })
     expect(result.warnings.join(' ')).not.toContain('observation.feedback')
   })
+  it('resolves declared configuration defaults for headless tests', async () => {
+    const configured = gameDocumentSchema.parse({
+      ...exampleDocument,
+      configurationSchema: {
+        type: 'object',
+        properties: {
+          signalTarget: { type: 'integer', default: 5, minimum: 1 },
+        },
+        required: ['signalTarget'],
+        additionalProperties: false,
+      },
+      files: exampleDocument.files.map((file) =>
+        file.path === 'rules.js'
+          ? {
+              ...file,
+              content: file.content.replace(
+                'initialize:context=>({signals:0,seats:context.roster.map(seat=>seat.seatId)})',
+                'initialize:context=>({signals:0,target:context.configuration.signalTarget,seats:context.roster.map(seat=>seat.seatId)})',
+              ),
+            }
+          : file,
+      ),
+    })
+    const result = await testGameRuntime(
+      configured,
+      await documentDigest(configured),
+    )
+    expect(result.replay.configuration).toEqual({ signalTarget: 5 })
+    expect(result.replay.checkpoints[0]?.state).toMatchObject({ target: 5 })
+  })
   it('tests four-seat realtime games and reports observation and execution costs', async () => {
     const result = await testGameRuntime(
       realtime,

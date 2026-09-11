@@ -5,6 +5,7 @@ import {
   type GameDocument,
   type JsonValue,
 } from '@common-arcade/protocol'
+import { resolveGameConfiguration } from './configuration.js'
 import { compileGame } from './runtime.js'
 
 export interface RuntimeTestInput {
@@ -55,13 +56,17 @@ export async function testGameRuntime(
   const warnings = new Set<string>()
   const observationHashes: string[][] = []
   const runs = []
+  const configuration = resolveGameConfiguration(
+    document.configurationSchema,
+    input.configuration ?? {},
+  )
   for (let attempt = 0; attempt < 2; attempt++) {
     const game = await compileGame(document, 'rel_runtime_test', digest)
     const match = await AuthoritativeMatch.create({
       game,
       matchId: 'mat_runtime_test',
       seed: input.seed ?? 'arcade-test',
-      configuration: input.configuration ?? {},
+      configuration,
       roster,
       now: () => new Date(0),
     })

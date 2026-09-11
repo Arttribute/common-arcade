@@ -91,12 +91,29 @@ const schemaReference = z.object({
   digest: digestSchema.optional(),
 })
 
-const seatRoleSchema = z.object({
-  id: z.string().regex(/^[a-z][a-z0-9-]{0,62}$/),
-  title: z.string().min(1).max(80),
-  count: z.number().int().positive(),
-  team: z.string().min(1).max(64).optional(),
-})
+const seatRoleSchema = z
+  .object({
+    id: z.string().regex(/^[a-z][a-z0-9-]{0,62}$/),
+    title: z.string().min(1).max(80),
+    count: z.number().int().positive().max(16),
+    minCount: z.number().int().min(0).max(16).optional(),
+    maxCount: z.number().int().min(1).max(16).optional(),
+    team: z.string().min(1).max(64).optional(),
+  })
+  .superRefine((role, context) => {
+    if ((role.minCount ?? role.count) > role.count)
+      context.addIssue({
+        code: 'custom',
+        message: 'minCount cannot exceed count',
+        path: ['minCount'],
+      })
+    if ((role.maxCount ?? role.count) < role.count)
+      context.addIssue({
+        code: 'custom',
+        message: 'maxCount cannot be less than count',
+        path: ['maxCount'],
+      })
+  })
 
 const extensionSchema = z.object({
   id: z.string().url(),
@@ -129,9 +146,9 @@ export const gameManifestSchema = z
         extensions: z.array(extensionSchema).default([]),
         seats: z
           .object({
-            min: z.number().int().positive(),
-            max: z.number().int().positive(),
-            roles: z.array(seatRoleSchema).min(1),
+            min: z.number().int().positive().max(16),
+            max: z.number().int().positive().max(16),
+            roles: z.array(seatRoleSchema).min(1).max(16),
             spectators: z.boolean().default(true),
             lateJoin: z.boolean().default(false),
           })
@@ -195,6 +212,44 @@ export const gameManifestSchema = z
             path: ['seats', 'roles'],
           })
         }
+        if (
+          new Set(spec.seats.roles.map((role) => role.id)).size !==
+          spec.seats.roles.length
+        )
+          context.addIssue({
+            code: 'custom',
+            message: 'role ids must be unique',
+            path: ['seats', 'roles'],
+          })
+        if (
+          spec.seats.roles.some(
+            (role) =>
+              role.minCount !== undefined || role.maxCount !== undefined,
+          )
+        ) {
+          const roleMinimum = spec.seats.roles.reduce(
+            (total, role) => total + (role.minCount ?? role.count),
+            0,
+          )
+          const roleMaximum = spec.seats.roles.reduce(
+            (total, role) => total + (role.maxCount ?? role.count),
+            0,
+          )
+          if (roleMinimum > spec.seats.min) {
+            context.addIssue({
+              code: 'custom',
+              message: 'role minimums cannot satisfy the minimum seat count',
+              path: ['seats', 'roles'],
+            })
+          }
+          if (roleMaximum < spec.seats.max) {
+            context.addIssue({
+              code: 'custom',
+              message: 'role maximums cannot satisfy the maximum seat count',
+              path: ['seats', 'roles'],
+            })
+          }
+        }
         if (spec.mode === 'realtime' && spec.clock.simulationHz === undefined) {
           context.addIssue({
             code: 'custom',
@@ -246,6 +301,8 @@ export const matchDescriptorSchema = z
     eventSequence: z.number().int().nonnegative(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
+    ownerId: z.string().min(1).max(200).optional(),
+    configuration: jsonValueSchema.default({}),
     visibility: z.enum(['public', 'unlisted', 'private']).optional(),
     viewerCount: z.number().int().nonnegative().optional(),
     lobby: z

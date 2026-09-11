@@ -16,7 +16,12 @@ import {
   type DocumentStore,
 } from './store.js'
 import { getTicTacToeManifest } from '@common-arcade/example-tic-tac-toe'
-import { gameDocumentSchema, type StudioRelease } from '@common-arcade/studio'
+import {
+  EMPTY_GAME_CONFIGURATION_SCHEMA,
+  gameDocumentSchema,
+  isBrowserGame,
+  type StudioRelease,
+} from '@common-arcade/studio'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
@@ -29,6 +34,8 @@ import {
 } from '@common-arcade/match-worker-service'
 import {
   ARCADE_API_VERSION,
+  gameConfigurationSchema,
+  gameManifestSchema,
   realtimeEnvelopeSchema,
   type ProblemDetails,
 } from '@common-arcade/protocol'
@@ -65,10 +72,20 @@ class ApiError extends Error {
   }
 }
 
+const roleCountsSchema = z
+  .record(
+    z.string().regex(/^[a-z][a-z0-9-]{0,62}$/),
+    z.number().int().min(0).max(16),
+  )
+  .refine((counts) => Object.keys(counts).length <= 16, {
+    message: 'roleCounts supports at most 16 roles.',
+  })
+
 const createMatchBody = z
   .object({
     releaseId: z.string().min(1),
     configuration: z.json().optional(),
+    roleCounts: roleCountsSchema.optional(),
     seed: z.string().min(1).max(200).optional(),
     visibility: z.enum(['public', 'unlisted', 'private']).default('unlisted'),
     lobby: z
@@ -112,6 +129,13 @@ const findMatchBody = createMatchBody.omit({ visibility: true }).extend({
   controllerId: z.string().min(1).max(200),
   controllerKind: z.enum(['human', 'agent']).default('human'),
 })
+
+const restartRoundBody = z
+  .object({
+    configuration: z.json().optional(),
+    roleCounts: roleCountsSchema.optional(),
+  })
+  .strict()
 
 const createSessionBody = z
   .object({
@@ -594,6 +618,38 @@ export function createApp(options: ControlApiOptions = {}) {
       throw new ApiError('NOT_FOUND', 404, false, 'Release not found.')
     return c.json(release)
   })
+  app.get('/v1/releases/:releaseId/schemas/config', async (c) => {
+    const releaseId = c.req.param('releaseId')
+    if (releaseId === 'rel_tictactoe1')
+      return c.json(
+        gameConfigurationSchema.parse(EMPTY_GAME_CONFIGURATION_SCHEMA),
+      )
+    const record = await store.get<{ version: number; release: StudioRelease }>(
+      'releases',
+      releaseId,
+    )
+    if (!record)
+      throw new ApiError('NOT_FOUND', 404, false, 'Release not found.')
+    const document = gameDocumentSchema.parse(record.release.document)
+    return c.json(
+      gameConfigurationSchema.parse(
+        (isBrowserGame(document) ? document.configurationSchema : undefined) ??
+          EMPTY_GAME_CONFIGURATION_SCHEMA,
+      ),
+    )
+  })
+  app.get('/v1/releases/:releaseId/manifest', async (c) => {
+    const releaseId = c.req.param('releaseId')
+    if (releaseId === 'rel_tictactoe1')
+      return c.json(await getTicTacToeManifest())
+    const record = await store.get<{ version: number; release: StudioRelease }>(
+      'releases',
+      releaseId,
+    )
+    if (!record)
+      throw new ApiError('NOT_FOUND', 404, false, 'Release not found.')
+    return c.json(gameManifestSchema.parse(record.release.manifest))
+  })
 
   app.post('/v1/matches', async (context) => {
     const rawIdempotencyKey = context.req.header('Idempotency-Key')
@@ -855,10 +911,13 @@ export function createApp(options: ControlApiOptions = {}) {
     const actorId = (
       await authenticate(context.req.header('Authorization'), 'matches:play')
     ).id
+    const text = await context.req.text()
+    const body = restartRoundBody.parse(text.trim() ? JSON.parse(text) : {})
     return context.json(
       await requirePlatform().restartRound(
         context.req.param('matchId'),
         actorId,
+        body,
       ),
     )
   })
@@ -1167,6 +1226,12 @@ function openApiDocument(serverUrl: string) {
       },
       '/v1/releases/{releaseId}': {
         get: { summary: 'Inspect an immutable game release' },
+      },
+      '/v1/releases/{releaseId}/manifest': {
+        get: { summary: 'Inspect the exact immutable release manifest' },
+      },
+      '/v1/releases/{releaseId}/schemas/config': {
+        get: { summary: 'Inspect the release match configuration schema' },
       },
       '/v1/matches': {
         get: { summary: 'List public live and lobby matches' },

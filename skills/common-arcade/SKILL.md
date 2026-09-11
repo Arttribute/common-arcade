@@ -132,6 +132,15 @@ serialized state for deterministic randomness, and `context.elapsedMs` /
 realtime observations so agents act on authoritative facts rather than visual
 guesswork.
 
+Use `context.configuration` for host-selected game settings. Declare those
+settings in the browser document's `configurationSchema` as a strict root object
+with string, number, integer, or boolean properties and a typed default for every
+property. Keep strings within 500 characters, enums within 32 choices, and the
+resolved object within 16 KiB. Arcade validates and resolves the values before
+initialization, and publication exercises advertised role and configuration
+boundaries; never read authoritative settings from browser controls or ambient
+globals.
+
 Build the mechanics the creator asked for. Never replace a shooting, racing,
 sports, strategy, card, simulation, 2D, or 3D request with a grid or
 tic-tac-toe game unless the creator explicitly requested that mechanic. The
@@ -175,8 +184,11 @@ at 192 KiB. Use an optional `prepare(context)` to compute immutable JSON level
 resources once; methods read the frozen value from `globalThis.arcadePrepared`.
 Mutable match data belongs in serialized state.
 
-Declare role counts and optional teams in `play.roles`, spectator policy in
-`play.spectators`, and late-join policy in `play.lateJoin`. Emit per-seat
+Declare role counts and optional teams in `play.roles`. Add `minCount` and
+`maxCount` to a role only when hosts may vary that role; otherwise its `count` is
+fixed. The resolved total must stay within `play.seats.min` and
+`play.seats.max`. Declare spectator policy in `play.spectators` and late-join
+policy in `play.lateJoin`. Emit per-seat
 `feedback` with measurable reward, outcome, summary, and metrics. For realtime
 agents, expose enough future context for the declared decision cadence.
 
@@ -185,3 +197,6 @@ For live control, acquire a seat and create a session, then wait for
 Respect decision timing and action acknowledgements; do not flood ticks with
 model requests. Owners can end abandoned matches with `DELETE /v1/matches/{id}`.
 Inactive lobbies and disconnected running games expire automatically.
+Configuration and role allocation are immutable during a round. Owner-controlled
+series may submit validated replacements when starting the next round; occupied
+seats cannot be removed.

@@ -123,6 +123,33 @@ describe('managed Studio preview', () => {
     ])
     expect(window.inputEnabled).toBe(true)
   })
+  it('initializes managed previews with declared configuration defaults', async () => {
+    if (document.kind !== 'browser') throw new Error('Expected browser fixture')
+    const project = gameDocumentSchema.parse({
+      ...document,
+      configurationSchema: {
+        type: 'object',
+        properties: {
+          startingBall: { type: 'integer', default: 9, minimum: 0 },
+        },
+        required: ['startingBall'],
+        additionalProperties: false,
+      },
+      files: document.files.map((file) =>
+        file.path === 'server.js'
+          ? {
+              ...file,
+              content: source.replace(
+                'initialize:c=>({roster:c.roster,ball:0,ticks:0})',
+                'initialize:c=>({roster:c.roster,ball:c.configuration.startingBall,ticks:0})',
+              ),
+            }
+          : file,
+      ),
+    })
+    const { window } = await start(true, project)
+    expect(window.lastRender.ball).toBe(9)
+  })
   it('maps hold-release controls to the same stable actions used by the frame policy', async () => {
     if (document.kind !== 'browser') throw new Error('Expected browser fixture')
     const project = gameDocumentSchema.parse({
