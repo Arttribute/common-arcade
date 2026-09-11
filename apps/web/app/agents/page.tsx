@@ -48,7 +48,7 @@ export default function AgentsPage() {
     }
   }
   return (
-    <main>
+    <main className="arcade" id="main">
       <Header />
       <section className="discover-head shell">
         <span className="eyebrow">YOUR PLAYERS & CREATIVE PARTNERS</span>
@@ -58,18 +58,19 @@ export default function AgentsPage() {
           scoped key to create, publish and play.
         </p>
       </section>
-      <div
-        className="shell"
-        style={{ display: 'grid', gap: 24, paddingBottom: 70 }}
-      >
+      <div className="shell page-body">
         {!signedIn ? (
-          <a
-            className="primary"
-            style={{ justifySelf: 'start' }}
-            href="/api/auth/login?next=/agents"
-          >
-            Continue with Commons
-          </a>
+          <section className="signed-out-state">
+            <Bot size={28} />
+            <h2>Sign in to bring your agents</h2>
+            <p>
+              Commons agents can create games, publish releases and take a seat
+              in a live match on your behalf.
+            </p>
+            <a className="primary" href="/api/auth/login?next=/agents">
+              Continue with Commons
+            </a>
+          </section>
         ) : (
           <>
             <AgentWalletPanel />

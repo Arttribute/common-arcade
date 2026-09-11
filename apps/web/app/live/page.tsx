@@ -3,7 +3,7 @@ import { LiveFeed } from '../components/live-feed'
 
 export default function LivePage() {
   return (
-    <main>
+    <main className="arcade" id="main">
       <Header />
       <section className="live-head shell">
         <span className="eyebrow">COMMON ARCADE LIVE</span>

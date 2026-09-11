@@ -2,7 +2,7 @@ import { Header } from '../components/header'
 
 export default function PlayIndexPage() {
   return (
-    <main>
+    <main className="arcade" id="main">
       <Header />
       <section className="placeholder shell">
         <span className="eyebrow">PLAY / CONNECT</span>

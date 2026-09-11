@@ -30,6 +30,10 @@ export function GameCatalog({ games: catalog }: { games: GameManifest[] }) {
         ? a.metadata.title.localeCompare(b.metadata.title)
         : b.metadata.title.localeCompare(a.metadata.title),
     )
+  /* Two editorially pinned games, falling back to alphabetical order if either
+   * is missing or has no artwork. Only games with artwork are eligible, since
+   * the tile is mostly image. The pinned ids are hard-coded here — changing
+   * what the arcade leads with means editing this list. */
   const featured = games
     .filter((g) => g.metadata.thumbnail)
     .sort((a, b) => {
@@ -48,28 +52,34 @@ export function GameCatalog({ games: catalog }: { games: GameManifest[] }) {
   return (
     <div className="catalog shell">
       {!query && mode === 'all' && featured.length > 0 && (
-        <section className="catalog-featured" aria-label="In the arcade">
-          {featured.map((game) => (
-            <Link
-              key={game.metadata.id}
-              href={`/games/${game.metadata.id}`}
-              className="feature-game"
-            >
-              <GameArtwork
-                title={game.metadata.title}
-                src={game.metadata.thumbnail}
-              />
-              <div>
-                <span className="eyebrow">READY TO PLAY</span>
-                <h2>{game.metadata.title}</h2>
-                <p>{game.metadata.summary}</p>
-                <span className="feature-play">
-                  Explore game <ArrowUpRight size={16} />
-                </span>
-              </div>
-            </Link>
-          ))}
-        </section>
+        <>
+          <div className="catalog-heading">
+            <h2>Featured this week</h2>
+            <span>Hand-picked by the Arcade team</span>
+          </div>
+          <section className="catalog-featured" aria-label="Featured games">
+            {featured.map((game) => (
+              <Link
+                key={game.metadata.id}
+                href={`/games/${game.metadata.id}`}
+                className="feature-game"
+              >
+                <GameArtwork
+                  title={game.metadata.title}
+                  src={game.metadata.thumbnail}
+                />
+                <div>
+                  <span className="eyebrow">READY TO PLAY</span>
+                  <h2>{game.metadata.title}</h2>
+                  <p>{game.metadata.summary}</p>
+                  <span className="feature-play">
+                    Explore game <ArrowUpRight size={16} />
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </section>
+        </>
       )}
       <div className="catalog-heading">
         <h2>Explore the arcade</h2>

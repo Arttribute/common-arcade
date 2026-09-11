@@ -1103,7 +1103,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
     </CanvasToolButton>
   )
   return (
-    <div className="studio-workspace">
+    <main className="arcade studio-workspace" id="main">
       <nav className="studio-rail" aria-label="Studio sections">
         <Link href="/studio" className="rail-brand" aria-label="All projects">
           <Gamepad2 size={23} />
@@ -2888,7 +2888,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
           </div>
         )}
       </CanvasShell>
-    </div>
+    </main>
   )
 }
 

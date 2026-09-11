@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Select, SelectOption } from './ui/select'
 import { arcade, browserControlClient } from '../../lib/api'
 import { Dialog } from './ui/dialog'
 import { Play } from 'lucide-react'
@@ -215,21 +216,32 @@ export function MatchLauncher({
             />
             {!browserGame && economy.mode === 'free' ? (
               <div className="match-setup-grid">
-                <label>
-                  Discoverability
-                  <select
+                <div className="field">
+                  <span className="field-label">Discoverability</span>
+                  <Select
                     value={visibility}
-                    onChange={(event) =>
-                      setVisibility(
-                        event.target.value as 'public' | 'unlisted' | 'private',
-                      )
+                    onValueChange={(next) =>
+                      setVisibility(next as 'public' | 'unlisted' | 'private')
                     }
+                    ariaLabel="Discoverability"
                   >
-                    <option value="public">Public · listed in Live</option>
-                    <option value="unlisted">Unlisted · link only</option>
-                    <option value="private">Private · owner only</option>
-                  </select>
-                </label>
+                    <SelectOption
+                      value="public"
+                      title="Public"
+                      hint="Listed on the Live page"
+                    />
+                    <SelectOption
+                      value="unlisted"
+                      title="Unlisted"
+                      hint="Anyone with the link can join"
+                    />
+                    <SelectOption
+                      value="private"
+                      title="Private"
+                      hint="Only you can open it"
+                    />
+                  </Select>
+                </div>
                 <p className="match-setup-wide match-rule-note">
                   {visibility === 'public'
                     ? 'This session will appear on the Live page.'
@@ -237,18 +249,19 @@ export function MatchLauncher({
                       ? 'Link only. Find it in Your sessions; it will not appear in the public feed.'
                       : 'Only you can access this session. Find it in Your sessions.'}
                 </p>
-                <label>
-                  Joining
-                  <select
+                <div className="field">
+                  <span className="field-label">Joining</span>
+                  <Select
                     value={joinPolicy}
-                    onChange={(event) =>
-                      setJoinPolicy(event.target.value as typeof joinPolicy)
+                    onValueChange={(next) =>
+                      setJoinPolicy(next as typeof joinPolicy)
                     }
+                    ariaLabel="Joining"
                   >
-                    <option value="open">Open lobby</option>
-                    <option value="invite-only">Invite only</option>
-                  </select>
-                </label>
+                    <SelectOption value="open" title="Open lobby" />
+                    <SelectOption value="invite-only" title="Invite only" />
+                  </Select>
+                </div>
                 {joinPolicy === 'invite-only' ? (
                   <label className="match-setup-wide">
                     Invited Commons IDs
@@ -259,48 +272,65 @@ export function MatchLauncher({
                     />
                   </label>
                 ) : null}
-                <label>
-                  Rounds
-                  <select
-                    value={maximumRounds}
-                    onChange={(event) =>
-                      setMaximumRounds(Number(event.target.value))
-                    }
+                <div className="field">
+                  <span className="field-label">Rounds</span>
+                  <Select
+                    value={String(maximumRounds)}
+                    onValueChange={(next) => setMaximumRounds(Number(next))}
+                    ariaLabel="Rounds"
                   >
                     {[1, 3, 5, 7, 9].map((rounds) => (
-                      <option key={rounds} value={rounds}>
-                        {rounds}
-                      </option>
+                      <SelectOption
+                        key={rounds}
+                        value={String(rounds)}
+                        title={
+                          rounds === 1 ? 'Single round' : `${rounds} rounds`
+                        }
+                      />
                     ))}
-                  </select>
-                </label>
-                <label>
-                  Between rounds
-                  <select
+                  </Select>
+                </div>
+                <div className="field">
+                  <span className="field-label">Between rounds</span>
+                  <Select
                     value={restartPolicy}
-                    onChange={(event) =>
-                      setRestartPolicy(
-                        event.target.value as typeof restartPolicy,
-                      )
+                    onValueChange={(next) =>
+                      setRestartPolicy(next as typeof restartPolicy)
                     }
+                    ariaLabel="Between rounds"
                   >
-                    <option value="owner">Host starts next round</option>
-                    <option value="unanimous">Every player agrees</option>
-                    <option value="automatic">Automatic</option>
-                  </select>
-                </label>
-                <label>
-                  Watching
-                  <select
+                    <SelectOption
+                      value="owner"
+                      title="Host starts next round"
+                    />
+                    <SelectOption
+                      value="unanimous"
+                      title="Every player agrees"
+                    />
+                    <SelectOption value="automatic" title="Automatic" />
+                  </Select>
+                </div>
+                <div className="field">
+                  <span className="field-label">Watching</span>
+                  <Select
                     value={spectating}
-                    onChange={(event) =>
-                      setSpectating(event.target.value as typeof spectating)
+                    onValueChange={(next) =>
+                      setSpectating(next as typeof spectating)
                     }
+                    ariaLabel="Watching"
                   >
-                    <option value="enabled">Live spectators</option>
-                    <option value="disabled">Players only</option>
-                  </select>
-                </label>
+                    <SelectOption
+                      value="enabled"
+                      title="Live spectators"
+                      hint="Anyone can watch"
+                    />
+                    <SelectOption
+                      value="disabled"
+                      title="Players only"
+                      hint="No spectators"
+                    />
+                  </Select>
+                </div>
                 <fieldset className="controller-options">
                   <legend>Who can play?</legend>
                   <label>

@@ -22,7 +22,7 @@ export default async function Page({
     }
   }
   return (
-    <main>
+    <main className="arcade" id="main">
       <Header />
       <section className="shell" style={{ paddingTop: 40, paddingBottom: 80 }}>
         <div className="eyebrow">OPTIONAL TESTNET ECONOMY</div>

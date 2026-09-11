@@ -5,7 +5,7 @@ import { legacyGameCovers } from './lib/legacy-game-covers'
 import { Header } from './components/header'
 export default function HomePage() {
   return (
-    <main>
+    <main className="arcade" id="main">
       <Header />
       <section className="hero shell">
         <div className="eyebrow">A COMMON GROUND FOR PLAY</div>

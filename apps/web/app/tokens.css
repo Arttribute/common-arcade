@@ -1,0 +1,248 @@
+/* Common Arcade design tokens — the single source of truth.
+ *
+ * Values mirror Agent Commons (apps/commons-app) so the two products read as
+ * one family: the same warm stone neutrals, the same 10px radius scale, the
+ * same elevation ramp, the same Space Grotesk / Geist Mono pairing.
+ *
+ * Rules of the system:
+ *   - Grayscale and negative space outweigh the accent. Colour belongs to game
+ *     artwork, not to chrome.
+ *   - `--accent` (teal) is the brand signature. It marks identity and active
+ *     state. It is not the default button fill — `--primary` is.
+ *   - Three radii, three shadows, three durations. Nothing else.
+ *
+ * The `.dark` block is scaffolded but inert: nothing sets `class="dark"` on the
+ * Arcade shell today. It exists so dark mode is a palette swap later rather
+ * than a refactor. Fumadocs' RootProvider already ships next-themes, so /docs
+ * can toggle it; keep these two palettes in step when that is turned on.
+ */
+
+:root {
+  /* ---- Neutrals (Tailwind `stone`, matching Commons' shadcn base) -------- */
+  --paper: #ffffff; /* raised surfaces: cards, dialogs, popovers */
+  --canvas: #fcfcfb; /* page ground */
+  --sunken: #f5f5f4; /* muted wells, hover fills, segmented tracks */
+  --line: #e7e5e4; /* all borders and dividers */
+  --line-strong: #d6d3d1; /* emphasised dividers, input borders on focus */
+
+  /* Contrast ratios are against --paper. Everything here clears WCAG AA for
+   * body text, which the previous stone-500/400 pair did not. */
+  --ink: #0c0a09; /* primary text — 19.6:1 */
+  --ink-muted: #57534e; /* secondary text, metadata — 8.3:1 */
+  --ink-subtle: #78716c; /* placeholders, disabled text — 4.8:1 */
+
+  /* ---- Primary action (Commons' Button default = stone-900) ------------- */
+  --primary: #1c1917;
+  --primary-hover: #292524;
+  --primary-ink: #fafaf9;
+
+  /* ---- Accent (the Commons teal) ---------------------------------------- */
+  --accent: #0f766e; /* accent text and icons; 5.5:1 on paper */
+  --accent-hover: #0d9488;
+  --accent-wash: #f0fdfa; /* tinted fills: play pills, selected filters */
+  --accent-wash-strong: #ccfbf1;
+  --accent-line: #5eead4; /* accent borders */
+  --accent-marker: #99f6e4; /* the highlight behind a word, one per page */
+
+  /* ---- Status ------------------------------------------------------------ */
+  --live: #dc304c; /* reserved exclusively for in-play state */
+  --live-wash: #fef2f3;
+  --danger: #dc2626;
+  --danger-wash: #fef2f2;
+  --danger-line: #fecaca;
+  --warning: #b45309;
+  --warning-wash: #fffbeb;
+  --warning-line: #fde68a;
+  --success: #15803d;
+  --success-wash: #f0fdf4;
+  --success-line: #bbf7d0;
+  --info: #1d4ed8;
+  --info-wash: #eff6ff;
+  --info-line: #bfdbfe;
+
+  /* ---- Stage (dark surfaces: fullscreen play, featured art scrims) -------
+   * Secondary text on a dark surface needs its own token: the light-mode
+   * muted grey only reaches 2.4:1 on near-black and is effectively unreadable.
+   * --stage-ink-muted is 7.4:1 on --stage. */
+  --stage: #1c1917;
+  --stage-ink: #fafaf9;
+  --stage-ink-muted: #d6d3d1;
+  /* A stage is dark in BOTH themes, so its accent must not flip with the
+   * palette the way --accent-line does — inverted to the dark teal it all but
+   * vanished on the tile it sits on. Deliberately the same value in :root and
+   * .dark. 12:1 on --stage. */
+  --stage-accent: #5eead4;
+  /* Weighted to the bottom, where the copy sits, so the top of a featured tile
+   * still shows its artwork. Featured art is also blurred and dimmed; the
+   * three together are what make overlaid text legible. */
+  --stage-scrim: linear-gradient(
+    transparent 25%,
+    rgba(12, 10, 9, 0.55) 60%,
+    rgba(12, 10, 9, 0.82)
+  );
+
+  /* ---- Radius — three steps, matching Commons' --radius: 0.625rem -------- */
+  --radius-sm: 6px; /* chips, badges, small controls */
+  --radius-md: 8px; /* buttons, inputs, nav rows */
+  --radius-lg: 10px; /* cards, artwork, panels */
+  --radius-full: 9999px; /* avatars and dots only — never buttons */
+
+  /* ---- Elevation (Commons' shadow scale, stone-tinted) ------------------- */
+  --shadow-card:
+    0 2px 8px -2px rgba(28, 25, 23, 0.06), 0 1px 2px rgba(28, 25, 23, 0.04);
+  --shadow-floating:
+    0 8px 24px -8px rgba(28, 25, 23, 0.12),
+    0 2px 6px -2px rgba(28, 25, 23, 0.05);
+  --shadow-overlay:
+    0 12px 32px -12px rgba(28, 25, 23, 0.14),
+    0 4px 12px -4px rgba(28, 25, 23, 0.08), 0 1px 3px rgba(28, 25, 23, 0.05);
+
+  /* ---- Type -------------------------------------------------------------- */
+  /* --font-space / --font-mono are injected by next/font in app/layout.tsx. */
+  --font-sans:
+    var(--font-space), 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --text-xs: 0.75rem; /* 12px — metadata, badges */
+  --text-sm: 0.8125rem; /* 13px — secondary copy, table cells */
+  --text-base: 0.875rem; /* 14px — body and controls */
+  --text-lg: 1rem; /* 16px — card titles */
+  --text-xl: 1.25rem; /* 20px — section headings */
+  --text-2xl: 1.75rem; /* 28px — page titles */
+  --text-3xl: 2.5rem; /* 40px — hero */
+
+  --leading-tight: 1.1; /* headings */
+  --leading-snug: 1.35; /* card titles */
+  --leading-normal: 1.55; /* body */
+
+  --tracking-tight: -0.04em; /* headings, matching Commons */
+  --tracking-normal: 0;
+  --tracking-wide: 0.08em; /* eyebrows and all-caps labels */
+
+  /* ---- Spacing — 4px scale ----------------------------------------------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---- Control sizing (Commons' Button/Input heights) -------------------- */
+  --control-h: 40px; /* default button and input: h-10 */
+  --control-h-sm: 36px; /* compact: h-9 */
+  --control-h-lg: 44px; /* prominent: h-11 */
+  --control-px: var(--space-4); /* px-4 */
+  --control-px-sm: var(--space-3); /* px-3 */
+  --control-gap: var(--space-2); /* gap-2 between icon and label */
+
+  /* ---- Layout ------------------------------------------------------------ */
+  --shell-max: 1240px;
+  --shell-gutter: var(--space-8);
+  --sidebar-w: 232px;
+  --sidebar-w-md: 196px;
+  --sidebar-w-sm: 68px;
+  --rail-w: 64px;
+
+  /* ---- Motion — one curve, three durations ------------------------------- */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --duration-fast: 120ms; /* hover and press feedback */
+  --duration-base: 200ms; /* most state changes */
+  --duration-slow: 320ms; /* entrances, panel reveals */
+
+  /* ---- Vendored @agent-commons/ui ---------------------------------------
+   * That package ships its own `.ac-*` design system with a separate token
+   * namespace and a hard-coded light palette. It styles the Studio composer
+   * and the whole canvas shell, so left alone those surfaces stay light while
+   * the rest of the app switches theme.
+   *
+   * Its stylesheet is imported before this one, so re-declaring its variables
+   * here re-points the entire vendored system at our tokens — one alias block
+   * instead of an override chain per component. */
+  --ac-surface: var(--paper);
+  --ac-canvas: var(--canvas);
+  --ac-text: var(--ink);
+  --ac-muted: var(--ink-muted);
+  --ac-line: var(--line);
+  --ac-accent: var(--accent);
+  --ac-radius: var(--radius-lg);
+
+  /* ---- Fumadocs (/docs) --------------------------------------------------
+   * The docs site ships its own Tailwind build on a `--color-fd-*` namespace,
+   * which is why /docs looked like a different product. Its stylesheet is
+   * imported before this one, so re-pointing the tokens here themes the whole
+   * docs surface — including its own dark mode, which follows the same
+   * next-themes instance as the app's toggle. */
+  --color-fd-background: var(--canvas);
+  --color-fd-foreground: var(--ink);
+  --color-fd-muted: var(--sunken);
+  --color-fd-muted-foreground: var(--ink-muted);
+  --color-fd-border: var(--line);
+  --color-fd-card: var(--paper);
+  --color-fd-card-foreground: var(--ink);
+  --color-fd-popover: var(--paper);
+  --color-fd-popover-foreground: var(--ink);
+  --color-fd-primary: var(--accent);
+  --color-fd-primary-foreground: var(--primary-ink);
+  --color-fd-secondary: var(--sunken);
+  --color-fd-secondary-foreground: var(--ink);
+  --color-fd-accent: var(--sunken);
+  --color-fd-accent-foreground: var(--ink);
+  --color-fd-ring: var(--accent);
+
+  /* ---- Stacking — named, so additions stay ordered ----------------------- */
+  --z-raised: 2; /* sticky headings inside panels */
+  --z-shield: 10; /* input shields over live previews */
+  --z-panel: 20; /* resize handles, annotation layers, drawers */
+  --z-rail: 35; /* studio icon rail */
+  --z-sidebar: 40; /* app sidebar */
+  --z-popover: 80; /* account menu */
+  --z-overlay: 100; /* dialog scrim */
+  --z-dialog: 101; /* dialog surface */
+  --z-modal: 1000; /* recording modal, above dialogs by design */
+}
+
+.dark {
+  --paper: #1c1917;
+  --canvas: #0c0a09;
+  --sunken: #292524;
+  --line: #292524;
+  --line-strong: #44403c;
+
+  --ink: #fafaf9;
+  --ink-muted: #a8a29e;
+  --ink-subtle: #78716c;
+
+  --primary: #fafaf9;
+  --primary-hover: #e7e5e4;
+  --primary-ink: #1c1917;
+
+  --accent: #5eead4;
+  --accent-hover: #99f6e4;
+  --accent-wash: #134e4a;
+  --accent-wash-strong: #115e59;
+  --accent-line: #0f766e;
+  --accent-marker: #0f766e;
+
+  --live: #f87171;
+  --live-wash: #450a0a;
+  --danger: #f87171;
+  --danger-wash: #450a0a;
+  --warning: #fbbf24;
+  --success: #4ade80;
+
+  --stage: #0c0a09;
+  --stage-ink: #fafaf9;
+  --stage-ink-muted: #d6d3d1;
+  --stage-accent: #5eead4;
+
+  --shadow-card:
+    0 2px 8px -2px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-floating:
+    0 8px 24px -8px rgba(0, 0, 0, 0.6), 0 2px 6px -2px rgba(0, 0, 0, 0.4);
+  --shadow-overlay:
+    0 12px 32px -12px rgba(0, 0, 0, 0.7), 0 4px 12px -4px rgba(0, 0, 0, 0.5);
+}
