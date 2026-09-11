@@ -23,6 +23,7 @@ import {
 import { LiveControls, actionLabel } from './live-controls'
 import { ExternalSeatAgent } from './external-seat-agent'
 import { LivePaymentPanel } from './live-payment-panel'
+import { AgentSelect } from './agent-select'
 
 function resultLabel(
   result: JsonValue,
@@ -70,6 +71,11 @@ export function PlayMatch({
   const [connecting, setConnecting] = useState(false)
   const [rosterOnline, setRosterOnline] = useState(true)
   const [match, setMatch] = useState<MatchDescriptor>()
+  // Signed in and holding a seat in this match — gates the destructive session
+  // controls away from spectators.
+  const seatedHere = Boolean(
+    viewer && match?.seats.some((seat) => seat.actorId === viewer.id),
+  )
   const [observation, setObservation] = useState<Observation>()
   const [publicState, setPublicState] = useState<JsonValue>()
   const [lease, setLease] = useState<string>()
@@ -759,20 +765,15 @@ export function PlayMatch({
           </a>
         ) : null}
         {agents.length > 0 ? (
-          <label>
-            Commons agent
-            <select
+          <div className="field">
+            <span className="field-label">Commons agent</span>
+            <AgentSelect
+              agents={agents}
               value={selectedAgent}
-              onChange={(event) => setSelectedAgent(event.target.value)}
-            >
-              <option value="">Choose an agent</option>
-              {agents.map((agent) => (
-                <option key={agent.agentId} value={agent.agentId}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              onChange={setSelectedAgent}
+              allowNone
+            />
+          </div>
         ) : null}
         {activeAgent ? (
           <div className="agent-live-status" role="status">
@@ -989,30 +990,44 @@ export function PlayMatch({
             )
           })}
         </div>
-        <button
-          className="secondary compact"
-          disabled={
-            terminal ||
-            connecting ||
-            (connection === 'connected' && !controlledSeat) ||
-            match?.lobby?.spectating === 'disabled'
-          }
-          onClick={() =>
-            controlledSeat
-              ? void leaveSeat(controlledSeat)
-              : void connect('spectate')
-          }
-        >
-          {terminal
-            ? 'Session ended'
-            : match?.lobby?.spectating === 'disabled'
-              ? 'Spectating disabled'
-              : connection === 'connected' && !controlledSeat
-                ? 'Watching live'
-                : controlledSeat
-                  ? 'Leave seat and watch'
-                  : 'Watch live'}
-        </button>
+        {/* The two session controls share a row with one gap, and the
+            destructive one is separated and tinted rather than sitting flush
+            against Watch live. Ending a session ends it for everyone, so it is
+            not offered to spectators or signed-out visitors — the descriptor
+            carries no owner identity, so holding a seat here is the closest
+            signal the client has. Narrowing it to the host proper would need an
+            owner field on the match descriptor. */}
+        <div className="match-panel-actions">
+          <button
+            className="secondary compact"
+            disabled={
+              terminal ||
+              connecting ||
+              (connection === 'connected' && !controlledSeat) ||
+              match?.lobby?.spectating === 'disabled'
+            }
+            onClick={() =>
+              controlledSeat
+                ? void leaveSeat(controlledSeat)
+                : void connect('spectate')
+            }
+          >
+            {terminal
+              ? 'Session ended'
+              : match?.lobby?.spectating === 'disabled'
+                ? 'Spectating disabled'
+                : connection === 'connected' && !controlledSeat
+                  ? 'Watching live'
+                  : controlledSeat
+                    ? 'Leave seat and watch'
+                    : 'Watch live'}
+          </button>
+          {!terminal && seatedHere ? (
+            <button className="danger compact" onClick={() => void abandon()}>
+              End session
+            </button>
+          ) : null}
+        </div>
         {externalSetup && !terminal ? (
           <ExternalSeatAgent
             matchId={matchId}
@@ -1023,11 +1038,6 @@ export function PlayMatch({
             }
             onClose={() => setExternalSetup(undefined)}
           />
-        ) : null}
-        {!terminal ? (
-          <button className="secondary compact" onClick={() => void abandon()}>
-            End session
-          </button>
         ) : null}
         <p className="match-rule-note">
           {match?.lobby?.joinPolicy === 'invite-only'

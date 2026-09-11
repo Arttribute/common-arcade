@@ -18,3 +18,7 @@ cdk.context.json
 tmp/
 .payment-data/
 .vercel
+
+# Local-only developer scratch: fixture servers, seed data, throwaway scripts.
+# Nothing in here is ever committed.
+/local/

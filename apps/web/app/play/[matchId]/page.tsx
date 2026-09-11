@@ -10,7 +10,7 @@ export default async function MatchPage({
 }) {
   const [{ matchId }, query] = await Promise.all([params, searchParams])
   return (
-    <main>
+    <main className="arcade" id="main">
       <Header />
       <section className="match-head shell">
         <span className="eyebrow">LIVE MATCH / {matchId}</span>

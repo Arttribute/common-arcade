@@ -1,7 +1,14 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { ChevronDown, LogIn, LogOut, UserRound } from 'lucide-react'
+import {
+  Bot,
+  ChevronsUpDown,
+  ExternalLink,
+  LogIn,
+  LogOut,
+  UserRound,
+} from 'lucide-react'
 
 type Account = { id: string; name: string }
 export function AccountMenu({
@@ -74,8 +81,10 @@ export function AccountMenu({
         className="arcade-sign-in"
         href={`/api/auth/login?next=${encodeURIComponent(pathname || '/studio')}`}
       >
-        <LogIn size={14} />
-        Sign in
+        <LogIn size={16} />
+        {/* Wrapped so the collapsed rail can clip the label without taking the
+            link's accessible name away with it. */}
+        <span>Sign in</span>
       </a>
     )
   return (
@@ -90,16 +99,22 @@ export function AccountMenu({
           )}
         </span>
         <span className="arcade-account-name">{user.name}</span>
-        <ChevronDown size={12} />
+        <ChevronsUpDown size={14} />
       </summary>
       <div className="arcade-account-popover">
-        <small>Commons account</small>
         <strong>{user.name}</strong>
-        <a href="/agents">My agents</a>
-        <a href="https://www.agentcommons.io">Open Commons</a>
+        <small>Signed in</small>
+        <a href="/agents">
+          <Bot size={16} />
+          My agents
+        </a>
+        <a href="https://www.agentcommons.io">
+          <ExternalLink size={16} />
+          Open Commons
+        </a>
         <button type="button" disabled={busy} onClick={() => void signOut()}>
-          <LogOut size={14} />
-          {busy ? 'Signing out…' : 'Sign out of Arcade'}
+          <LogOut size={16} />
+          {busy ? 'Signing out…' : 'Log out'}
         </button>
         {error && <p role="alert">{error}</p>}
       </div>

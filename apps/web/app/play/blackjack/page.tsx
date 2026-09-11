@@ -2,7 +2,7 @@ import { Header } from '../../components/header'
 import { GameEconomyTable } from '../../components/game-economy-table'
 export default function Page() {
   return (
-    <main>
+    <main className="arcade" id="main">
       <Header />
       <section className="shell" style={{ paddingTop: 40, paddingBottom: 80 }}>
         <div className="eyebrow">TESTNET PLAYGROUND</div>

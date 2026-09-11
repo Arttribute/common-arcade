@@ -61,7 +61,7 @@ export function StudioHome() {
     }
   }
   return (
-    <main className="studio-home">
+    <main className="arcade studio-home" id="main">
       <Header />
       <section className="studio-home-create">
         <span className="studio-home-eyebrow">

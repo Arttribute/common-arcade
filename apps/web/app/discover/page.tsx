@@ -19,7 +19,7 @@ async function games(): Promise<{ games: GameManifest[]; online: boolean }> {
 export default async function DiscoverPage() {
   const catalog = await games()
   return (
-    <main>
+    <main className="arcade" id="main">
       <Header />
       <section className="discover-head shell">
         <span className="eyebrow">THE ARCADE</span>

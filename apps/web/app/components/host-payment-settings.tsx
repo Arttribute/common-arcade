@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import type { GameMonetization } from '@common-arcade/protocol'
 import { NETWORKS, usdcUnits, type EconomyConfig } from '@common-arcade/economy'
 import { formatUnits } from 'viem'
+import { Select, SelectOption } from './ui/select'
 
 export function HostPaymentSettings({
   value,
@@ -61,12 +62,12 @@ export function HostPaymentSettings({
         Set entry requirements and rewards for the match. Players connect their
         wallets and agents when they join.
       </p>
-      <label>
-        Payment format{' '}
-        <select
+      <div className="field">
+        <span className="field-label">Payment format</span>
+        <Select
           value={mode}
-          onChange={(event) => {
-            const selected = event.target.value
+          ariaLabel="Payment format"
+          onValueChange={(selected) => {
             if (selected === 'free') {
               onChange({ mode: 'free' })
               return
@@ -86,29 +87,29 @@ export function HostPaymentSettings({
             })
           }}
         >
-          <option value="free">Free entry · no prize pool</option>
-          <option
+          <SelectOption value="free" title="Free entry" hint="No prize pool" />
+          <SelectOption
             value="staked"
             disabled={
               !enabled ||
               terms?.mode !== 'revenue-share' ||
               !terms.allowedModes.includes('staked')
             }
-          >
-            Player stakes
-          </option>
-          <option
+            title="Player stakes"
+            hint="Everyone pays in; the winner takes the pool"
+          />
+          <SelectOption
             value="sponsored"
             disabled={
               !enabled ||
               terms?.mode !== 'revenue-share' ||
               !terms.allowedModes.includes('sponsored')
             }
-          >
-            Sponsored prize pool · free entry
-          </option>
-        </select>
-      </label>
+            title="Sponsored prize pool"
+            hint="You fund the pool; entry stays free"
+          />
+        </Select>
+      </div>
       {!enabled && (
         <p className="studio-help">
           {!supported
@@ -122,24 +123,28 @@ export function HostPaymentSettings({
       )}
       {value.mode === 'escrow' && (
         <div className="match-setup-grid">
-          <label>
-            Payment network{' '}
-            <select
+          <div className="field">
+            <span className="field-label">Payment network</span>
+            <Select
               value={value.network}
-              onChange={(event) =>
+              ariaLabel="Payment network"
+              onValueChange={(next) =>
                 onChange({
                   ...value,
-                  network: event.target.value as typeof value.network,
+                  network: next as typeof value.network,
                 })
               }
             >
               {available.map((network) => (
-                <option key={network} value={network}>
-                  {NETWORKS[network].chain.name} · test USDC
-                </option>
+                <SelectOption
+                  key={network}
+                  value={network}
+                  title={NETWORKS[network].chain.name}
+                  hint="Test USDC"
+                />
               ))}
-            </select>
-          </label>
+            </Select>
+          </div>
           {mode === 'staked' && (
             <label>
               Entry stake per player (USDC){' '}

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Compass, Radio, Hammer, Bot, BookOpen, Gamepad2 } from 'lucide-react'
 import { AccountMenu } from './account-menu'
+import { ThemeToggle } from './theme-toggle'
 
 export function Header() {
   const path = usePathname()
@@ -39,6 +40,7 @@ export function Header() {
         ))}
       </div>
       <div className="sidebar-footer">
+        <ThemeToggle />
         <AccountMenu />
       </div>
     </nav>
