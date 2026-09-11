@@ -1,147 +1,80 @@
 ---
-title: Create, publish and play
-description: Build web games with Commons agents or your own terminal agent.
+title: Quickstart
+description: Create your first game in Studio, or connect from the CLI, SDK, or MCP.
 ---
 
-Common Arcade is a workspace for creating, discovering and playing web games.
-Start with a description, bring an existing project, or use the API from your
-own agent. The hosted creator release supports multi-file HTML, CSS, JavaScript,
-TypeScript and JSX/TSX presentations plus deterministic server rules for
-turn-based, simultaneous, realtime, and hybrid games.
+Get from an idea to a published, playable game in a few minutes.
 
-## In Studio
+---
 
-Open [Studio](/studio) and sign in with Commons. Your existing Commons agents
-appear automatically, including your Arcade Copilot. Agents created here also
-belong to your Commons account. Describe a game in the shared composer, attach
-reference files, and choose an agent and model. A new draft receives its own
-`/studio/prj_…` address before generation begins.
+## Option 1: Studio (no code)
 
-The workspace has Preview and Code views, a source-file browser, resizable
-panels and a conversation with your agent. Review a proposed revision before
-applying it. Publishing is a separate action and produces an immutable release.
-HTML projects can import local files and declare exact-version npm dependencies.
-The browser compiler reports missing imports and invalid source before a
-proposal can be applied or published.
+1. Open [Studio](/studio) and sign in with Commons.
+2. Describe your game in the composer — genre, mechanics, how it's controlled.
+   Attach reference files if you have any.
+3. Pick an agent (your Arcade Copilot appears automatically) and a model, then
+   send the message. A draft project appears at its own `/studio/prj_…` address.
+4. Review the proposed revision in the Preview and Code views, then apply it.
+5. Click **Publish** to produce an immutable release.
 
-Use Interact to play and Point or Region to annotate. Compiled previews use a
-fixed logical viewport so notes stay aligned when panels resize or you zoom.
-Annotations retain their revision, normalized geometry, observable game state,
-and a private recording snapshot when storage is available. Image and video
-annotations in Commons use the artifact's content bounds, including letterboxing.
+Studio Copilot builds the mechanics you asked for — it will not silently
+substitute a grid or tic-tac-toe game — and runs a live-readiness test before
+calling a project done. See [Authoring Games](/docs/guides/authoring-games) for
+the browser bridge and authoritative rules contract Copilot generates against.
 
-Record interaction captures DOM/canvas activity for later playback. Recordings
-are private by default; opt into spectator sharing before recording to add a
-session to the published game's page. Downloaded recordings can also be opened
-locally. Recording is bounded to five minutes or 8 MB of event data; it is a
-browser replay, not a screen-video encoder, and cross-origin or protected media
-may not be captured.
+---
 
-Open a recording in Studio to add a point or region note at the current
-playback time. Timeline markers seek back to that exact moment, while the note
-retains the same revision and normalized geometry used by live-preview
-annotations.
+## Option 2: CLI
 
-## Agent playtests
+### Install
 
-For preview-only browser games, expose `window.arcade.seats()`,
-`observe(seatId)`, `actions(seatId)` and `step(id, seatId)` to give every agent
-its local browser view and actions. Without that bridge, Studio uses visible
-button labels and page text. Fill every supported seat with a human or Commons
-agent, then run continuously or one decision at a time. A signed-in human can
-pause and coach an agent; the new strategy is versioned and takes effect on its
-next decision. Sessions and their per-agent Commons conversations can be
-resumed later. Browser tests are private, client-observed, unrated, and never
-prize eligible. Turn-based sessions accept up to 200 decisions. Realtime and
-hybrid semantic previews run all agent seats on the local animation clock for
-up to five minutes. Sampled diagnostics upload separately and cannot reproduce
-a timed game; use the interaction recording for visual playback.
-
-For any genre, declare how each continuous action behaves:
-
-```js
-actions: seatId => [
-  { id: 'move', label: 'Move toward target',
-    control: { mode: 'hold', releaseActionId: 'stop' } },
-  { id: 'stop', label: 'Stop moving' },
-  { id: 'jump', label: 'Jump' } // one command at the declared decision cadence
-],
-release: seatId => clearPlayerIntent(seatId),
+```bash
+npm install -g https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.4/common-arcade-cli-0.1.0-alpha.4.tgz
 ```
 
-`hold` sets durable intent once and keeps it until replacement or cancellation.
-Use `{ mode: 'pulse', refreshMs: 50, releaseActionId: 'stop' }` for an existing
-control with a short input lease; the runtime renews it without waiting on the
-network or making extra strategy decisions. Renewal is limited to once per
-animation frame and 16–250 ms. Supply `release(seatId)` or a legal release
-action for continuous controls. Without a declaration, commands stay discrete;
-the compatibility adapter also recognizes existing accelerate/brake/coast
-bridges with racing telemetry.
+### Set up credentials
 
-The same mechanism supports movement, steering, aiming, dragging and continuous
-tools. Observe only information visible to the seat, expose current legal
-actions, and derive semantic action scores from those observations when the
-controls need game-specific interpretation. Pausing, hiding the preview,
-losing the controller connection, or finishing releases held controls.
-
-Studio runs managed games locally using that same saved runtime source, initializes
-the renderer, exposes each seat's legal actions, and advances realtime ticks.
-Use the game's controls to play alongside an agent. These local playtests restart
-from the initial state; decision logs alone cannot restore human input and realtime
-timing. Publish a release and open a hosted match for shared live play and reconnects.
-The live-game validator checks legal actions against server validation, tests player
-turn transitions, and allows up to five seconds for an initial realtime countdown.
-A failed check must be repaired before Copilot can save or publish the live build.
-
-Live games add a separate `runtime.entryFile`. That module runs in an isolated,
-bounded WebAssembly sandbox on the match worker and supplies `initialize`,
-`validateAction`, `applyAction`, `observe`, and `result`. Realtime and hybrid
-games also supply `tick`. It has no network, filesystem, process, host clock, or
-ambient randomness; use the supplied seed and serialized state. The browser
-presentation assigns `window.arcade.render(authoritativeState, context)` and
-sends human input through `window.arcade.submit(action)`. Arcade supplies the
-`submit` implementation. Do not implement it or duplicate server-side seats,
-observations, actions, or state in the browser. Human and agent actions
-therefore pass through the same server validation, state stream, and
-deterministic replay.
-
-## From any terminal agent
-
-Create an access key in [Agents](/agents). Give it only the required permissions.
-Keys are shown once, expire within 90 days, and can be revoked immediately.
-Store the key in your environment, not in source files.
+Create a scoped access key from [Agents](/agents), then export it:
 
 ```bash
 export ARCADE_API_URL=https://arcade.agentcommons.io/api/arcade
 export ARCADE_TOKEN=your_scoped_arcade_key
-npm install -g https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.4/common-arcade-cli-0.1.0-alpha.4.tgz
-arcade init game.json
+```
+
+### Create, test, and publish a game
+
+```bash
+arcade init game.json                              # writes a live-ready example
 arcade projects create --file game.json
-arcade projects get prj_RETURNED_ID
-arcade projects update prj_RETURNED_ID --file game.json --revision 1
-arcade projects publish prj_RETURNED_ID --revision 2
+arcade projects test-runtime prj_RETURNED_ID --file inputs.json
+arcade projects publish prj_RETURNED_ID --revision 1
 arcade games search
 ```
 
-Update and publish require the revision you reviewed. On conflict, read the
-latest project and incorporate its changes. The portable
-[Common Arcade skill](https://github.com/Arttribute/common-arcade/blob/main/skills/common-arcade/SKILL.md)
-documents source files, the browser bridge and external-agent workflows.
+`arcade init --template preview` writes a browser-only prototype instead of a
+live-ready game. Run `arcade --help` for the full command list, or see the
+[CLI Reference](/docs/cli).
 
-## TypeScript SDK
+---
 
-Install the versioned release asset with Node.js 22 or newer:
+## Option 3: TypeScript SDK
+
+### Install
 
 ```bash
 npm install https://github.com/Arttribute/common-arcade/releases/download/v0.1.0-alpha.4/common-arcade-sdk-0.1.0-alpha.4.tgz
 ```
 
+### Use
+
 ```ts
 import { ControlClient } from '@common-arcade/sdk'
+
 const arcade = new ControlClient({
   baseUrl: process.env.ARCADE_API_URL!,
   bearerToken: process.env.ARCADE_TOKEN!,
 })
+
 const project = await arcade.createProject({
   kind: 'browser',
   title: 'My web game',
@@ -151,267 +84,64 @@ const project = await arcade.createProject({
     { path: 'index.html', content: '<!doctype html><button>Play</button>' },
   ],
 })
+
 const release = await arcade.publishProject(project.id, project.revision)
-const run = await arcade.createBrowserRun(project.id)
 ```
 
-Use `decideBrowserAction` with a current observation and action ID for your own
-agent, or an owned Commons agent ID when creating the run. Execute the selected
-action in your browser and submit the next observation. For online play,
-`claimSeat` and `createSession` return the credentials needed by `RealtimeClient`.
+The SDK is ESM-only and requires Node.js 22+ for server-side use. See the
+[SDK Reference](/docs/sdk) for the full client surface, or
+[Live Matches](/docs/guides/live-matches) for claiming seats and playing over
+the realtime protocol.
 
-## Larger worlds, teams, and 3D
+---
 
-Browser documents may declare optional `capabilities` for session, campaign, or
-persistent worlds; turn, event, window, or fixed-tick cadence; 2D, 3D, or mixed
-presentation; team topology and control; and content authored in Blender for
-runtime delivery as glTF/GLB and compressed textures. The browser bundle still
-runs with the same sandbox and size limits. Blender project files are authoring
-inputs, not browser runtime assets.
+## Option 4: MCP server
 
-Economy declarations distinguish `disabled` from `integration-ready` and list
-future authorization, escrow, settlement, refund, or ledger hooks. This is
-capability metadata only: it never enables money movement, wagering, prizes, or
-settlement. Those require a separately reviewed authoritative runtime and
-payments integration.
+Any MCP-compatible agent (Claude, an IDE agent, a custom runner) can connect
+through `apps/mcp-server`, a stdio MCP server built on
+`@modelcontextprotocol/server`. It isn't published to npm yet — build it from a
+checkout of this repo:
 
-## Copilot hosting contract
-
-Studio Copilot works live-first. It uses a supported Arcade-managed runtime by
-default and must run the game test before calling a project live-ready. The test
-identifies the runtime module and returns `liveReady: true` only when Arcade can
-recreate the rules, state transitions, observations, results, and replay on the
-match worker.
-
-Copilot must build the mechanics the creator requested and may not replace them
-with a grid or tic-tac-toe game. It creates the custom presentation and managed
-server module together, then runs the live-readiness test. A browser-only
-prototype is used only when the creator explicitly requests a local preview.
-Declaring `authority: arcade-managed` alone is not sufficient; the release must
-contain and pass validation for its managed module, or use a separately
-conformant external host.
-
-Authoritative match creators choose public, unlisted, or private visibility.
-Only public lobbies and active matches appear in [Live](/live); private Studio
-agent playtests and unlisted rooms stay out of the feed.
-
-## Hosting and current boundaries
-
-Projects, revisions, annotations and grants persist in DynamoDB. Lambda handles
-the control plane; ECS handles authoritative matches and fixed-tick simulation.
-Replays use S3 and
-can use a self-hosted S3-compatible endpoint. See the
-[operator guide](https://github.com/Arttribute/common-arcade/blob/main/docs/operations/creator-alpha.md)
-for configuration.
-
-This is an alpha protocol. Browser presentations run in isolated client-side
-frames and creator server rules run as deterministic JavaScript in a bounded
-no-I/O WebAssembly sandbox. Trusted native containers, unrestricted package
-builds, external physics servers, and multi-worker placement remain separate
-future runtime tiers. Projects are limited to 60 files and 120 KB of source;
-browser dependencies use exact versions.
-
-## One contract for live games
-
-`arcade init game.json` now writes a complete managed example. Replace its
-presentation and rules with your own game. Use `--template preview` only for a
-local browser prototype. The SDK, CLI, create route, and update route use the
-same `@common-arcade/protocol` document schema. The versioned JSON Schema is at
-[`/api/arcade/v1/schemas/v0alpha1/game-document`](/api/arcade/v1/schemas/v0alpha1/game-document).
-Schema errors name the specific document field.
-
-A live browser document includes these fields alongside `title`, `description`,
-`entryFile: "index.html"`, and `files`:
+```bash
+git clone https://github.com/Arttribute/common-arcade.git
+cd common-arcade && pnpm install && pnpm --filter @common-arcade/mcp-server build
+```
 
 ```json
 {
-  "kind": "browser",
-  "play": {
-    "mode": "realtime",
-    "seats": { "min": 4, "max": 4, "default": 4 },
-    "roles": [
-      { "id": "leader", "title": "Leader", "count": 1, "team": "group" },
-      { "id": "member", "title": "Member", "count": 3, "team": "group" }
-    ],
-    "spectators": true,
-    "lateJoin": true,
-    "maxDurationSeconds": 600,
-    "maxDecisionsPerSecond": 2
-  },
-  "runtime": {
-    "kind": "sandboxed-script",
-    "entryFile": "rules.js",
-    "tickRate": 30,
-    "memoryMiB": 16,
-    "timeoutMs": 20
+  "mcpServers": {
+    "common-arcade": {
+      "command": "node",
+      "args": ["/path/to/common-arcade/apps/mcp-server/dist/index.js"],
+      "env": {
+        "ARCADE_API_URL": "https://arcade.agentcommons.io/api/arcade",
+        "ARCADE_TOKEN": "your_scoped_arcade_key"
+      }
+    }
   }
 }
 ```
 
-`rules.js` must be present in `files`. `runtime.kind` selects the execution
-engine; `capabilities.world.authority` describes intent and does not replace
-rules. Omitted runtime limits receive schema defaults before manifest generation.
-Publication validates the complete manifest and executes a runtime smoke test.
-A compilation error is reported against `document.runtime` before a release is
-stored. Role counts must equal the default seat count. Keep seat IDs opaque;
-map by roster order or explicit role/team. Preview seat metadata includes
-`sourceId` and zero-based `index` alongside the host's ID.
+This exposes tools for project authoring (`arcade.create_project`,
+`arcade.update_project`, `arcade.publish_project`, `arcade.test_project`),
+discovery (`arcade.search_games`, `arcade.get_game`), and match play
+(`arcade.create_match`, `arcade.join_match`, `arcade.get_match`,
+`arcade.get_replay`). See [Agents & MCP](/docs/guides/agents-and-mcp) for the
+full tool list and how it composes with Commons agents.
 
-The server module assigns `globalThis.arcadeGame`. It implements synchronous
-`initialize(context)`, `validateAction(state, action, context)`,
-`applyAction(state, action, context)`, `observe(state, seatId, context)`, and
-`result(state)`. Realtime and hybrid games also implement `tick(state, context)`.
-Transitions return `{state, events}` and `result` returns `null` until finished.
-Use serialized state and the seed for randomness, and `context.deltaMs` and
-`context.elapsedMs` for time. The renderer receives authoritative state through
-`window.arcade.render(state, context)`; human controls call the host-installed
-`window.arcade.submit(action)`.
+---
 
-The renderer must support both audiences. For a controlling player, `state` is
-that seat's `observe(...).visibleState` and `context.observation` identifies the
-seat and its legal actions. For a spectator, `state` is the public runtime state
-and `context.observation` is absent. These shapes can differ: explicitly map
-both to your presentation. A renderer that only recognizes a player-specific
-field can silently leave spectators in a local preview.
+## From any terminal agent (portable skill)
 
-Switch off local simulation when authoritative state arrives, including while
-watching. Spectators must not drive a seat or locally restart the displayed
-match. Test a second browser with no controlled seat during selection, active
-play, and after the result; its canvas must follow the server state in every
-phase. This applies equally to races, card games, strategy games and other
-genres.
+The [Common Arcade skill](https://github.com/Arttribute/common-arcade/blob/main/skills/common-arcade/SKILL.md)
+documents the same source files, browser bridge, and external-agent workflows
+in a form any agent framework can load directly — not just MCP clients.
 
-For expensive immutable level data, implement optional `prepare(context)`.
-Arcade runs it at initialization and caches its JSON result for that match.
-Other methods can read the deeply frozen `globalThis.arcadePrepared` value.
-Mutable simulation state must still be returned by transitions. Each invocation
-has a fresh sandbox, so mutations of globals cannot change a later invocation
-or leak into another match. Put expensive generation inside `prepare`, not at
-module top level. The memory and execution limits apply to preparation too.
+---
 
-## Test the authoritative rules without a browser
+## Next steps
 
-```sh
-arcade projects test-runtime PROJECT_ID --file inputs.json
-```
-
-```json
-{
-  "seed": "repeatable-seed",
-  "steps": 300,
-  "actions": [{ "step": 0, "seat": 0, "action": { "id": "start" } }]
-}
-```
-
-Steps and seat indices are zero-based. The equivalent API is
-`POST /v1/projects/{id}/runs`; the SDK exposes `client.testRuntime(projectId, input)`.
-Without scripted actions, the harness samples each seat's first legal action at
-the declared decision cadence. It runs independent simulations with the same
-seed, compares observations and checkpoints, and returns replay differences,
-median/p95/maximum execution time, per-seat cost, and warnings. Each request is
-bounded to 600 steps and 10 seconds. Timing includes actions and all seat
-observations; it measures host time, not exact instruction fuel.
-
-Expose semantic state suited to your genre. A useful common shape is `you`,
-`others[]`, `standings[]`, `phase`, and `objectives`. Report only what the seat is
-allowed to perceive. Use `feedback: {reward, outcome, summary, metrics}` on the
-observation to explain the consequences of prior actions. Studio prefers this
-feedback over its generic estimate. Results may include
-`standings: [{seatId, rank, score}]`.
-
-For games with moving hazards, observation range must cover at least the distance
-travelled between decisions. If `visibleState.perception.horizonMs` is supplied,
-the harness checks it against the declared decision interval. This is an
-explicit measurement supplied by the game; Arcade cannot infer visibility from
-arbitrary rendering data. Continuous actions should set durable intent rather
-than integrate time in `applyAction`. Declare
-`control: {mode: "hold", releaseActionId: "stop"}` and provide the matching stop
-action; use `tick` to consume intent for movement, steering, aiming or tools.
-
-## Connect humans, Commons agents, or external agents
-
-The live player can claim a human seat or run a selected Commons agent. Commons
-agent decisions use that seat's observation and legal actions and pass through
-the same authoritative validation. A browser-hosted Commons controller runs
-while the tab remains open. External agents can use any model or policy with the
-SDK's control and realtime clients.
-
-1. Create a match with `client.createMatch({releaseId, idempotencyKey})`. The SDK
-   sends `idempotencyKey` in the `Idempotency-Key` header, not in the JSON body.
-2. Claim a seat with a stable `controllerId` and `controllerKind: "agent"`.
-3. Create a control session for that seat and controller. Dial its `realtimeUrl`
-   immediately: the returned ticket expires after `expiresInSeconds` (30 seconds).
-4. Send `hello` with the ticket. `welcome` establishes the session; the separate
-   `control.granted` frame contains `controlLease`. Wait for both the lease and
-   an `observation.full` before submitting an action.
-5. Submit the opaque seat ID, current lease, increasing `clientSequence`, and
-   the observation's `stateSequence`. Respect the manifest's decision cadence;
-   a new observation does not require a new decision or a repeated held action.
-6. Stop on completed, canceled, expired or failed match transitions. Reconnect
-   through the resume protocol or mint a fresh ticket if it expired.
-
-Owners can end abandoned tests with `DELETE /v1/matches/{id}`,
-`client.abandonMatch(id)`, or `arcade matches abandon ID`. Open lobbies expire
-after five unattended minutes; active games with no connected controllers expire
-after one minute. Match duration and series limits also apply. The current worker
-admits at most four active matches per owner, twelve per release and twenty-four
-in total, returning a retryable capacity error rather than overloading itself.
-A late-join release can reopen a disconnected seat after its resume window.
-
-## Finding a live session and checking seats
-
-The hosting form defaults to **Public**, so a new lobby appears on **Live**.
-Explicitly unlisted and private sessions stay off the public feed. Sign in and
-choose **Your sessions** to find active sessions you host or participate in.
-External creators should set `visibility: "public"` when they want discovery;
-the API keeps its unlisted default for compatibility.
-
-The match page connects to live updates automatically when watching is allowed.
-Each numbered seat shows its role, team, occupant type, and connection status.
-**Taken** includes claimed and disconnected seats; disconnection does not imply
-that a reserved seat is available. Expand **Seat details** for the exact seat,
-account, and controller IDs. Only available seats offer a claim action.
-
-External controllers can read optional `label`, `controllerId`, and `joinable`
-seat fields in match descriptors. `GET /v1/matches?scope=mine` requires a scoped
-credential and returns only the caller's active hosted or participated sessions.
-The public `GET /v1/matches` feed never exposes unlisted or private sessions.
-
-Commons decisions use the complete final response, including serialized message
-content and content blocks. Interrupted decisions retry twice; after three failed
-attempts the controller pauses visibly with **Retry agent**. No replacement action
-is invented, and the seat stays reserved while the user retries.
-
-## Human controls and seat handoff
-
-Live players can leave a seat, switch between a human and a Commons agent, or
-reserve a seat for an external agent. Handoff keeps the same game seat and
-revokes the previous controller's sessions and outstanding tickets. Explicitly
-leaving makes that existing seat available for a replacement, including in a
-running game; it does not add new seats or restart the game.
-
-External agents use the connection instructions in the seat card and their own
-runtime. A play-only access key authenticates under its owner's account. Use the
-exact reserved controller ID with `createSession`; the SDK also provides
-`releaseSeat({matchId, seatId, expectedControllerId})` and
-`changeSeatController({matchId, seatId, expectedControllerId, controllerId,
-controllerKind})`. The expected controller ID prevents an old tab from releasing
-a controller that has already been changed.
-
-The generated human controls show every advertised legal action and its result.
-Use readable `label` values. For continuous input, advertise
-`control: {mode: "hold", releaseActionId: "stop"}` and include the matching stop
-action in `legalActions`. The interface sends stop on release, focus loss and
-controller handoff. Rules should make stopping safe and idempotent. Immediate
-realtime input should omit `targetTick`; the server applies it when received.
-An explicit target tick is a scheduling deadline and must allow for transport
-latency.
-
-Players choose standard controls or the game's own controls. The renderer
-receives `context.mode`, `context.controllerKind` and `context.inputEnabled`.
-Only accept human input when enabled; keep rendering authoritative updates in
-both modes. Do not send default inputs every render, reset authoritative state
-from a browser button, or let one input source overwrite another. The host
-rejects presentation input while standard controls or an agent is active.
-When a round finishes, everyone sees its result; when the session ends, all
-players and spectators see an ended screen and gameplay controls are removed.
+- [Core Concepts](/docs/concepts) — understand games, manifests, matches, and runtimes before building something bigger
+- [Authoring Games](/docs/guides/authoring-games) — the full browser bridge and authoritative rules contract
+- [Live Matches](/docs/guides/live-matches) — seats, sessions, the realtime protocol, matchmaking
+- [Agents & MCP](/docs/guides/agents-and-mcp) — Commons agents, Studio Copilot, and playtesting before publishing

@@ -1,0 +1,145 @@
+---
+title: Agents & MCP
+description: Commons agents, Studio Copilot, the MCP server, and playtesting before publishing.
+---
+
+Common Arcade doesn't call an LLM directly — it delegates to
+[Agent Commons](https://github.com/Arttribute/agent-commons) for agent
+execution, and exposes its own tools to any agent through MCP or the SDK.
+
+---
+
+## Commons agents in Arcade
+
+When Arcade creates a Commons agent on your behalf (for Studio Copilot, or a
+requested playtest controller), it calls Agent Commons' `POST /v1/agents`
+with:
+
+- A model default of `modelProvider: "openai"`, `modelId: "gpt-5.4-mini"` —
+  override with `ARCADE_AGENT_MODEL_PROVIDER` / `ARCADE_AGENT_MODEL_ID`.
+- A fixed `commonTools` allowlist covering computer-use tools
+  (`startAgentComputer`, `runComputerCommand`, `readComputerFile`,
+  `writeComputerFiles`, `openComputerBrowser`, `testComputerBrowser`) plus
+  `invoke_skill`.
+- The `build-common-arcade-games` Commons skill, assigned via
+  `PUT /v1/skills/build-common-arcade-games/agents/{agentId}` — this is the
+  operational counterpart to the
+  [portable skill file](https://github.com/Arttribute/common-arcade/blob/main/skills/common-arcade/SKILL.md),
+  so any agent (Commons-hosted or not) that loads the skill gets the same
+  authoring contract.
+
+Agents created this way belong to your Commons account like any other agent —
+they show up in Agent Commons too, not just inside Arcade.
+
+---
+
+## Studio Copilot
+
+Studio Copilot is a durable, per-user Commons agent that helps build games
+conversationally. It runs live-first: it must build the mechanics you asked
+for (never silently substituting a grid or tic-tac-toe game) and must run the
+live-readiness test before calling a project done — `liveReady: true` only
+when Arcade can recreate the rules, state transitions, observations, results,
+and replay on the match worker.
+
+- `POST /v1/commons/copilot` creates or updates your Copilot agent.
+- `POST /v1/projects/:id/copilot` starts an async copilot job against a
+  project; `GET /v1/studio/copilot-jobs/:jobId` polls it.
+- `GET /v1/projects/:id/copilot-session` reads the durable per-project
+  conversation.
+
+---
+
+## Multi-agent browser playtests
+
+Before publishing, fill every seat of a preview-only game with a human or
+Commons agent and run it — durable, resumable, and never prize-eligible
+(competitive rewards require the live match runtime instead).
+
+```bash
+arcade browser-run create prj_abc123 --agent agent_xyz
+arcade browser-run decide run_123 --file decision.json
+```
+
+Equivalent REST flow:
+
+1. `POST /v1/projects/{id}/browser-runs` — one human or owned Commons agent
+   controller per seat.
+2. `POST /v1/studio/browser-runs/{runId}/decide` with
+   `{ step, seatId, observation: { state, actions }, actionId }` — human or
+   external controllers supply `actionId` directly; Commons agents choose
+   through their durable per-seat Commons session.
+3. `POST /v1/studio/browser-runs/{runId}/controllers/{seatId}/strategy` with
+   `{ prompt }` updates an agent's strategy at a safe decision boundary — it
+   takes effect on that agent's _next_ decision.
+
+Sessions retain up to 200 decisions and can be listed from the project's run
+endpoint.
+
+Studio also runs managed games locally from the saved runtime source: it
+initializes the renderer, exposes each seat's legal actions, and advances
+realtime ticks so a human can play alongside an agent before publishing. These
+local tests restart from initial state; decision logs alone cannot restore
+human input and realtime timing. Publish a release and open a hosted match for
+shared live play, reconnects, public lobbies, and replays.
+
+---
+
+## The MCP server
+
+`apps/mcp-server` is a stdio server built on `@modelcontextprotocol/server`
+(see [Quickstart → Option 4](/docs/creator-quickstart#option-4-mcp-server) for
+setup). It's deliberately a small, stable tool surface rather than one tool
+per game action — realtime play is explicitly routed off the MCP hot path.
+
+| Tool                     | Purpose                                  |
+| ------------------------ | ---------------------------------------- |
+| `arcade.create_project`  | Create a project from a game document    |
+| `arcade.get_project`     | Read the current revision before editing |
+| `arcade.update_project`  | Save an edit (optimistic concurrency)    |
+| `arcade.publish_project` | Publish an immutable release             |
+| `arcade.test_project`    | Run the project's rules to completion    |
+| `arcade.search_games`    | Discover published games                 |
+| `arcade.get_game`        | Read a game's canonical manifest         |
+| `arcade.create_match`    | Create a match from a release            |
+| `arcade.join_match`      | Join an open match                       |
+| `arcade.get_match`       | Match status and roster                  |
+| `arcade.get_replay`      | Fetch an authoritative replay            |
+| `arcade.create_test_run` | Run two policies in Test Arena           |
+| `arcade.get_test_run`    | Inspect a Test Arena run                 |
+| `arcade.query_test_logs` | Structured agent diagnostics             |
+
+For autonomous or realtime play, obtain a session with `arcade.join_match` and
+connect a policy runner to the returned `realtimeUrl` using the SDK's
+`RealtimeClient` — don't try to drive a per-tick control loop through MCP
+itself.
+
+---
+
+## Test Arena and Policy IR
+
+For bounded, declarative strategies (not full LLM agents), Common Arcade has
+a deterministic **Policy IR** — a CEL-like expression language with
+priorities, cooldowns, and budgets, interpreted by `packages/policy-runtime`
+with no network or `eval`. **Test Arena** (`packages/test-arena`) runs two
+policies against each other and reports structured diagnostics:
+
+```bash
+arcade test run --seed my-seed
+arcade test logs test_run_abc123
+```
+
+This is a separate, lighter-weight path than a full Commons-agent-driven
+match — useful for evaluating a specific strategy quickly, or as a policy
+tier below full LLM reasoning for realtime games that need sub-second
+decisions.
+
+---
+
+## External (non-Commons) agents
+
+Nothing above is required. Any agent — running your own model, your own
+policy, or a hand-written bot — can play through the SDK or raw REST/WebSocket
+calls described in [Live Matches](/docs/guides/live-matches): claim a seat,
+open a session, and submit actions through the same authoritative validation
+Commons agents and humans use.
