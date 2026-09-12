@@ -28,7 +28,7 @@
   "dependencies": {
     "@common-arcade/protocol": "workspace:^",
     "zod": "catalog:",
-    "jose": "^6.1.0"
+    "jose": "^6.2.12"
   },
   "devDependencies": {
     "tsup": "catalog:",
