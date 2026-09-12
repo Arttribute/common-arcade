@@ -1,8 +1,12 @@
 'use client'
+import { PaymentSummary } from './payment-disclosure'
+import './payments.css'
+import { ExternalLink } from 'lucide-react'
 import type { Observation, JsonValue } from '@common-arcade/protocol'
 import { useEffect, useRef, useState } from 'react'
 import {
   createPublicClient,
+  formatUnits,
   createWalletClient,
   custom,
   http,
@@ -18,10 +22,14 @@ import {
   createViemAdapter,
   hashArcadeId,
   usdcUnits,
+  transactionExplorerUrl,
+  type SettlementAccounting,
   type EconomyConfig,
   type EscrowDeployment,
 } from '@common-arcade/economy'
 import { AgentWalletPanel } from './agent-wallet-panel'
+import { PaidSessionResult } from './paid-session-result'
+import { Select, SelectOption } from './ui/select'
 import { EconomySettings } from './economy-settings'
 const service =
   process.env.NEXT_PUBLIC_ARCADE_PAYMENTS_URL ??
@@ -50,6 +58,10 @@ interface Table {
   commitment: Hex
   transactions: Hex[]
   trust: string
+  result?: JsonValue
+  accounting?: SettlementAccounting
+  fundingDeadline?: number
+  settlementDeadline?: number
   replay?: unknown
 }
 function provider() {
@@ -64,6 +76,9 @@ export function GameEconomyTable({
   releaseId,
   initialEconomy,
 }: { releaseId?: string; initialEconomy?: EconomyConfig } = {}) {
+  const [localReceipts, setLocalReceipts] = useState<
+    { operation: string; hash: Hex }[]
+  >([])
   const [observation, setObservation] = useState<Observation>()
   const [account, setAccount] = useState<Address>(),
     [other, setOther] = useState(''),
@@ -78,6 +93,7 @@ export function GameEconomyTable({
     [amount, setAmount] = useState('1'),
     [backSeat, setBackSeat] = useState('sea_player_1'),
     [live, setLive] = useState(false)
+  const [entryMode, setEntryMode] = useState<'host' | 'join'>('host')
   const creation = useRef<unknown>(null)
   async function request(path: string, body?: unknown) {
     const r = await fetch(service + path, {
@@ -173,6 +189,8 @@ export function GameEconomyTable({
   }, [table?.id])
   async function create() {
     const address = account ?? (await connect())
+    if (address.toLowerCase() === other.toLowerCase())
+      throw new Error('Use a different wallet for the other player.')
     const proposed = {
       recipients: [address, other],
       economy: economyConfigSchema.parse(economy),
@@ -209,6 +227,22 @@ export function GameEconomyTable({
     })
     setTable(next)
     creation.current = null
+    window.history.replaceState(null, '', `?matchId=${next.id}`)
+  }
+  async function openTable() {
+    const input = matchInput.trim()
+    let id = input
+    try {
+      id =
+        new URL(input, window.location.origin).searchParams.get('matchId') ??
+        input
+    } catch {
+      // A plain table ID is also accepted.
+    }
+    if (!/^mat_[A-Za-z0-9_-]{1,190}$/.test(id))
+      throw new Error('Paste a table invitation link or a valid table ID.')
+    const next = await request(`/v1/economy/matches/${encodeURIComponent(id)}`)
+    setTable(next)
     window.history.replaceState(null, '', `?matchId=${next.id}`)
   }
   async function observe() {
@@ -284,7 +318,9 @@ export function GameEconomyTable({
     const units =
       operation === 'stake'
         ? BigInt(table.economy.stakeUnits)
-        : usdcUnits(amount)
+        : operation === 'bounty' || operation === 'bet'
+          ? usdcUnits(amount)
+          : 0n
     if (['stake', 'bounty', 'bet'].includes(operation))
       await adapter.submit(approvalCall(table.deployment, units))
     const hash = await adapter.submit(
@@ -300,7 +336,13 @@ export function GameEconomyTable({
         beneficiary: beneficiary ?? address,
       }),
     )
-    setMessage(`Confirmed ${operation}: ${hash}`)
+    setLocalReceipts((receipts) => [...receipts, { operation, hash }])
+    setMessage(
+      operation === 'stake'
+        ? 'Entry stake confirmed. The host can start once both players are ready.'
+        : `${operation === 'withdraw' ? 'Withdrawal' : operation === 'bounty' ? 'Prize contribution' : operation === 'bet' ? 'Spectator bet' : operation === 'void' ? 'Cancellation' : 'Claim'} confirmed. View the receipt below.`,
+    )
+    setTable(await request(`/v1/economy/matches/${table.id}`))
   }
   const seat =
       table?.recipients.findIndex(
@@ -317,229 +359,250 @@ export function GameEconomyTable({
         the arcade.
       </p>
     )
+  const ended =
+    table?.stage === 'settled' || table?.stage === 'settlement-pending'
+  const connectButton = (
+    <button
+      className={account ? 'secondary' : 'primary'}
+      disabled={busy}
+      onClick={() =>
+        run(async () => {
+          await connect()
+        })
+      }
+    >
+      {account
+        ? `${account.slice(0, 8)}…${account.slice(-6)}`
+        : ended
+          ? 'Connect wallet to claim'
+          : 'Connect wallet'}
+    </button>
+  )
   return (
-    <div style={{ display: 'grid', gap: 24, maxWidth: 960, marginTop: 28 }}>
-      <div>
-        <button
-          className="secondary"
-          disabled={busy}
-          onClick={() =>
-            run(async () => {
-              await connect()
-            })
-          }
-        >
-          {account
-            ? `${account.slice(0, 8)}…${account.slice(-6)}`
-            : 'Connect wallet'}
-        </button>
-        <span role="status" style={{ marginLeft: 16 }}>
-          {busy
-            ? 'Waiting for confirmation…'
-            : table
-              ? live
-                ? 'Live table connected'
-                : 'Reconnecting…'
-              : ''}
-        </span>
-      </div>
+    <div className="game-economy-table">
       {message && (
-        <p role="status" style={{ overflowWrap: 'anywhere' }}>
+        <p role="status" className="wrap-anywhere">
           {message}
         </p>
       )}
+      {busy && <p role="status">Waiting for confirmation…</p>}
       {!table ? (
         <>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              void run(create)
-            }}
-            style={{ display: 'grid', gap: 20 }}
+          <div
+            className="payment-entry-tabs"
+            role="group"
+            aria-label="Choose how to play"
           >
-            <label>
-              Other player or agent wallet{' '}
-              <input
-                required
-                pattern="0x[0-9a-fA-F]{40}"
-                value={other}
-                onChange={(e) => setOther(e.target.value)}
-                placeholder="0x…"
-                style={{ width: '100%' }}
-              />
-            </label>
-            <EconomySettings
-              value={economy}
-              onChange={setEconomy}
-              enabledNetworks={networks}
-            />
             <button
-              className="primary"
-              disabled={
-                busy ||
-                (economy.mode === 'escrow' &&
-                  !networks.includes(economy.network))
-              }
+              className={entryMode === 'host' ? 'primary' : 'secondary'}
+              aria-pressed={entryMode === 'host'}
+              onClick={() => setEntryMode('host')}
             >
-              Create table
+              Host a table
             </button>
-          </form>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              void run(async () => {
-                setTable(
-                  await request(
-                    `/v1/economy/matches/${encodeURIComponent(matchInput)}`,
-                  ),
-                )
-              })
-            }}
-          >
-            <label>
-              Watch or join an existing table{' '}
-              <input
-                required
-                value={matchInput}
-                onChange={(e) => setMatchInput(e.target.value)}
-                placeholder="mat_…"
-              />
-            </label>
-            <button className="secondary" disabled={busy}>
-              Open table
+            <button
+              className={entryMode === 'join' ? 'primary' : 'secondary'}
+              aria-pressed={entryMode === 'join'}
+              onClick={() => setEntryMode('join')}
+            >
+              Join a table
             </button>
-          </form>
+          </div>
+          {entryMode === 'join' ? (
+            <>
+              <form
+                className="payment-join-form"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void run(openTable)
+                }}
+              >
+                <label>
+                  Table ID or invitation{' '}
+                  <input
+                    required
+                    value={matchInput}
+                    onChange={(e) => setMatchInput(e.target.value)}
+                    placeholder="Paste a table link or ID"
+                  />
+                </label>
+                <button className="secondary" disabled={busy}>
+                  Open table
+                </button>
+              </form>
+            </>
+          ) : !account ? (
+            <section className="payment-connect-step">
+              <h2>Connect to get started</h2>
+              <p>
+                {economy.mode === 'escrow'
+                  ? `${formatUnits(BigInt(economy.stakeUnits), 6)} test USDC per player · ${NETWORKS[economy.network].chain.name}`
+                  : 'Choose your opponent and payment options after connecting.'}
+              </p>
+              {connectButton}
+              <small>Connecting does not charge your wallet.</small>
+            </section>
+          ) : (
+            <>
+              <div className="payment-wallet-connection">{connectButton}</div>
+              <form
+                className="payment-setup-form"
+                onInvalidCapture={(event) => {
+                  let ancestor = (event.target as HTMLElement).parentElement
+                  while (ancestor && ancestor !== event.currentTarget) {
+                    if (ancestor instanceof HTMLDetailsElement)
+                      ancestor.open = true
+                    ancestor = ancestor.parentElement
+                  }
+                }}
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void run(create)
+                }}
+              >
+                <p>
+                  Invite your opponent, then create the table. You will fund
+                  your entry next.
+                </p>
+                <label>
+                  Other player or agent wallet{' '}
+                  <input
+                    required
+                    pattern="0x[0-9a-fA-F]{40}"
+                    value={other}
+                    onChange={(e) => setOther(e.target.value)}
+                    placeholder="0x…"
+                    style={{ width: '100%' }}
+                  />
+                </label>
+                {initialEconomy ? (
+                  <>
+                    <div className="payment-terms-summary">
+                      <strong>
+                        {economy.mode === 'free'
+                          ? 'Free entry'
+                          : `${formatUnits(BigInt(economy.stakeUnits), 6)} test USDC per player`}
+                      </strong>
+                      <p>
+                        {economy.mode === 'escrow'
+                          ? `${NETWORKS[economy.network].chain.name} · ${economy.feeBps / 100}% success fee`
+                          : 'No prize pool'}
+                      </p>
+                    </div>
+                    <details className="payment-disclosure">
+                      <PaymentSummary>
+                        Review or change payment options
+                      </PaymentSummary>
+                      <EconomySettings
+                        value={economy}
+                        onChange={setEconomy}
+                        enabledNetworks={networks}
+                      />
+                    </details>
+                  </>
+                ) : (
+                  <EconomySettings
+                    value={economy}
+                    onChange={setEconomy}
+                    enabledNetworks={networks}
+                  />
+                )}
+                <button
+                  className="primary"
+                  disabled={
+                    busy ||
+                    (economy.mode === 'escrow' &&
+                      !networks.includes(economy.network))
+                  }
+                >
+                  Create table
+                </button>
+              </form>
+              <details className="payment-disclosure">
+                <PaymentSummary>Play with a Commons agent</PaymentSummary>
+                <AgentWalletPanel table={table} onWalletSelected={setOther} />
+              </details>{' '}
+            </>
+          )}
         </>
       ) : (
         <>
-          <div>
-            <strong>{table.stage.replaceAll('-', ' ')}</strong> ·{' '}
-            {table.economy.mode === 'free'
-              ? 'Free play'
-              : `${NETWORKS[table.economy.network].chain.name} · ${Number(table.economy.stakeUnits) / 1e6} USDC per seat`}
-            <p>
-              <a href={`?matchId=${table.id}`}>
-                Share this table with players and spectators
-              </a>
-            </p>
-            <small>{table.trust}</small>
-          </div>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))',
-              gap: 20,
-            }}
-          >
-            {table.recipients.map((recipient, i) => {
-              const id = i === 0 ? 'sea_player_1' : 'sea_player_2'
-              if (!service)
-                return (
-                  <p role="status">
-                    Testnet game tables are not available yet. You can still
-                    play games in the arcade.
-                  </p>
-                )
-              return (
-                <section
-                  key={id}
-                  style={{
-                    padding: 24,
-                    border: '1px solid var(--border, #444)',
-                    borderRadius: 16,
-                    background: 'rgba(15,90,65,.16)',
-                  }}
-                >
-                  <h2>
-                    Player {i + 1}
-                    {seat === i ? ' · You' : ''}
-                  </h2>
-                  <small>
-                    {recipient.slice(0, 10)}…{recipient.slice(-6)}
-                  </small>
-                  <div
-                    style={{
-                      display: 'flex',
-                      gap: 8,
-                      margin: '24px 0',
-                      minHeight: 90,
-                    }}
-                  >
-                    {table.state?.hands[id]?.map((card) => (
-                      <span
-                        key={card}
-                        style={{
-                          padding: 14,
-                          borderRadius: 8,
-                          background: '#faf6ec',
-                          color: card >= 26 ? '#bd3446' : '#13241d',
-                          fontSize: 24,
-                        }}
-                      >
-                        {
-                          [
-                            'A',
-                            '2',
-                            '3',
-                            '4',
-                            '5',
-                            '6',
-                            '7',
-                            '8',
-                            '9',
-                            '10',
-                            'J',
-                            'Q',
-                            'K',
-                          ][card % 13]
-                        }
-                        {['♠', '♣', '♥', '♦'][Math.floor(card / 13)]}
-                      </span>
-                    )) ??
-                      (releaseId
-                        ? 'Use your private observation below'
-                        : 'Waiting for funding lock')}
-                  </div>
-                  <strong>
-                    {table.state ? `Total: ${table.state.totals[id]}` : ''}
-                  </strong>
-                </section>
-              )
-            })}
-          </div>
-          {table.stage === 'funding' && (
-            <div className="actions">
-              {table.economy.mode === 'escrow' &&
-                seat >= 0 &&
-                BigInt(table.economy.stakeUnits) > 0n && (
+          {ended ? (
+            <PaidSessionResult
+              stage={table.stage}
+              result={table.result}
+              accounting={table.accounting}
+              economy={table.economy}
+              recipients={table.recipients}
+              showBreakdown={false}
+            />
+          ) : (
+            <div className="payment-table-heading">
+              <h2>{table.game ?? 'Game table'}</h2>
+              <p>
+                {table.economy.mode === 'escrow'
+                  ? `${formatUnits(BigInt(table.economy.stakeUnits), 6)} test USDC per player · ${NETWORKS[table.economy.network].chain.name}`
+                  : 'Free entry'}
+              </p>
+              {table.stage === 'funding' && (
+                <p>
+                  {account
+                    ? 'Fund your entry, then the host can start.'
+                    : 'Connect your wallet to fund your entry.'}
+                </p>
+              )}
+            </div>
+          )}
+          {(!ended ||
+            (table.stage === 'settled' && table.economy.mode === 'escrow')) && (
+            <div className="payment-wallet-connection">{connectButton}</div>
+          )}
+          {table.stage === 'funding' && account && (
+            <div className="payment-funding">
+              {table.economy.mode === 'escrow' && (
+                <p>
+                  Fund each player’s entry, then start. Your wallet will request
+                  a token allowance followed by the entry deposit. Network fees
+                  are separate.
+                </p>
+              )}
+              <div className="actions">
+                {table.economy.mode === 'escrow' &&
+                  seat >= 0 &&
+                  BigInt(table.economy.stakeUnits) > 0n && (
+                    <button
+                      disabled={busy}
+                      className="primary"
+                      onClick={() => run(() => transact('stake'))}
+                    >
+                      Fund my entry ·{' '}
+                      {table.economy.mode === 'escrow'
+                        ? formatUnits(BigInt(table.economy.stakeUnits), 6)
+                        : '0'}{' '}
+                      test USDC
+                    </button>
+                  )}
+                {seat === 0 && (
                   <button
                     disabled={busy}
-                    className="primary"
-                    onClick={() => run(() => transact('stake'))}
+                    className="secondary"
+                    onClick={() =>
+                      run(async () => {
+                        setTable(
+                          await request(
+                            `/v1/economy/matches/${table.id}/start`,
+                            await auth(table.id, 'start', {}),
+                          ),
+                        )
+                      })
+                    }
                   >
-                    Approve and stake USDC
+                    {releaseId
+                      ? 'Lock funding and start'
+                      : 'Lock funding and deal'}
                   </button>
                 )}
-              {seat === 0 && (
-                <button
-                  disabled={busy}
-                  className="secondary"
-                  onClick={() =>
-                    run(async () => {
-                      setTable(
-                        await request(
-                          `/v1/economy/matches/${table.id}/start`,
-                          await auth(table.id, 'start', {}),
-                        ),
-                      )
-                    })
-                  }
-                >
-                  {releaseId
-                    ? 'Lock funding and start'
-                    : 'Lock funding and deal'}
-                </button>
-              )}
+              </div>
             </div>
           )}
           {!releaseId && table.stage === 'playing' && (
@@ -560,7 +623,7 @@ export function GameEconomyTable({
               </button>
             </div>
           )}
-          {releaseId && (
+          {releaseId && table.stage === 'playing' && (
             <section>
               <h2>{table.game}</h2>
               {table.stage === 'playing' && seat >= 0 && (
@@ -589,7 +652,7 @@ export function GameEconomyTable({
                 </>
               )}
               <details>
-                <summary>Public game events</summary>
+                <PaymentSummary>Public game events</PaymentSummary>
                 <pre
                   style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
                 >
@@ -598,111 +661,136 @@ export function GameEconomyTable({
               </details>
             </section>
           )}
-          {table.revenue && (
-            <section>
-              <h3>Creator earnings</h3>
-              <p>
-                {table.revenue.creatorShareBps / 100}% of the 2.5% success fee
-                supports this release’s creators.
-              </p>
-              {[
-                table.revenue.creator,
-                ...table.revenue.royalties.map((r) => r.recipient),
-              ].map((recipient) => (
-                <button
-                  key={recipient}
-                  disabled={busy || table.stage !== 'settled'}
-                  onClick={() => run(() => transact('withdraw', recipient))}
-                >
-                  Send earnings to {recipient.slice(0, 10)}…
-                </button>
-              ))}
-            </section>
-          )}
           {table.economy.mode === 'escrow' && (
-            <details>
-              <summary>Bounties, spectator bets and claims</summary>
-              <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-                <label>
-                  USDC amount{' '}
-                  <input
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    inputMode="decimal"
-                  />
-                </label>
-                <label>
-                  Back player{' '}
-                  <select
-                    value={backSeat}
-                    onChange={(e) => setBackSeat(e.target.value)}
-                  >
-                    <option value="sea_player_1">Player 1</option>
-                    <option value="sea_player_2">Player 2</option>
-                  </select>
-                </label>
-                <div className="actions">
-                  {table.economy.bounties && (
-                    <button
-                      disabled={busy || table.stage !== 'funding'}
-                      onClick={() => run(() => transact('bounty'))}
-                    >
-                      Fund bounty
-                    </button>
+            <>
+              {table.stage === 'settled' && account && (
+                <section className="payment-claims">
+                  <h3>Claim funds</h3>
+                  <p>
+                    {NETWORKS[table.economy.network].chain.name} · test USDC.
+                    {table.accounting?.status === 'refundable'
+                      ? ' Refunds return to the wallet that contributed.'
+                      : ' Withdraw your available escrow balance, including any earnings from other tables.'}
+                  </p>
+                  <div className="actions">
+                    {table.accounting?.status !== 'refundable' && (
+                      <button
+                        className="primary"
+                        disabled={busy}
+                        onClick={() => run(() => transact('withdraw'))}
+                      >
+                        Withdraw my available balance
+                      </button>
+                    )}
+                    {table.accounting?.status === 'refundable' && (
+                      <button
+                        className="primary"
+                        disabled={busy}
+                        onClick={() => run(() => transact('refund'))}
+                      >
+                        Refund my contribution
+                      </button>
+                    )}
+                    {table.economy.spectatorBets && (
+                      <button
+                        className="secondary"
+                        disabled={busy}
+                        onClick={() => run(() => transact('claimBet'))}
+                      >
+                        Claim my spectator payout
+                      </button>
+                    )}
+                  </div>
+                  {!!table.accounting?.allocations.length && (
+                    <details>
+                      <PaymentSummary>
+                        Send a recipient’s available balance
+                      </PaymentSummary>
+                      <div className="actions">
+                        {table.accounting.allocations.map(
+                          (allocation, index) => (
+                            <button
+                              key={index}
+                              disabled={busy}
+                              onClick={() =>
+                                run(() =>
+                                  transact(
+                                    'withdraw',
+                                    allocation.recipient as Address,
+                                  ),
+                                )
+                              }
+                            >
+                              {allocation.role} ·{' '}
+                              {allocation.recipient.slice(0, 8)}…
+                            </button>
+                          ),
+                        )}
+                      </div>
+                    </details>
                   )}
-                  {table.economy.spectatorBets && (
-                    <button
-                      disabled={busy || table.stage !== 'funding'}
-                      onClick={() => run(() => transact('bet'))}
-                    >
-                      Place bet
-                    </button>
-                  )}
-                  <button
-                    disabled={busy}
-                    onClick={() => run(() => transact('withdraw'))}
-                  >
-                    Claim prize
-                  </button>
-                  <button
-                    disabled={busy}
-                    onClick={() => run(() => transact('claimBet'))}
-                  >
-                    Claim spectator payout
-                  </button>
-                  <button
-                    disabled={busy}
-                    onClick={() => run(() => transact('refund'))}
-                  >
-                    Claim refund
-                  </button>
-                  {table.recipients.map((recipient, index) => (
-                    <button
-                      key={`refund-${recipient}`}
-                      disabled={busy}
-                      onClick={() => run(() => transact('refund', recipient))}
-                    >
-                      Refund player {index + 1}
-                    </button>
-                  ))}
-                  <button
-                    disabled={busy}
-                    onClick={() => run(() => transact('void'))}
-                  >
-                    Void expired match
-                  </button>
-                  {table.recipients.map((recipient, index) => (
-                    <button
-                      key={recipient}
-                      disabled={busy || table.stage !== 'settled'}
-                      onClick={() => run(() => transact('withdraw', recipient))}
-                    >
-                      Send prize to player {index + 1}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </details>
+                </section>
+              )}
+              {table.stage === 'funding' &&
+                (table.economy.bounties || table.economy.spectatorBets) && (
+                  <details className="payment-disclosure">
+                    <PaymentSummary>Support this match</PaymentSummary>
+                    <p>
+                      Contributions close when the host starts. Use test USDC on{' '}
+                      {NETWORKS[table.economy.network].chain.name}.
+                    </p>
+                    <label>
+                      Amount (test USDC)
+                      <input
+                        value={amount}
+                        onChange={(event) => setAmount(event.target.value)}
+                        inputMode="decimal"
+                      />
+                    </label>
+                    {table.economy.bounties && (
+                      <div className="payment-support-option">
+                        <h3>Add to the prize pool</h3>
+                        <p>
+                          Your contribution rewards the winner after the success
+                          fee.
+                        </p>
+                        <button
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() => run(() => transact('bounty'))}
+                        >
+                          Contribute {amount} test USDC
+                        </button>
+                      </div>
+                    )}
+                    {table.economy.spectatorBets && (
+                      <div className="payment-support-option">
+                        <h3>Back a player</h3>
+                        <p>
+                          You can lose your contribution. A{' '}
+                          {table.economy.feeBps / 100}% fee applies to spectator
+                          profits.
+                        </p>
+                        <Select
+                          value={backSeat}
+                          onValueChange={setBackSeat}
+                          ariaLabel="Player to back"
+                        >
+                          <SelectOption value="sea_player_1" title="Player 1" />
+                          <SelectOption value="sea_player_2" title="Player 2" />
+                        </Select>
+                        <button
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() => run(() => transact('bet'))}
+                        >
+                          Bet {amount} test USDC
+                        </button>
+                      </div>
+                    )}
+                  </details>
+                )}
+            </>
           )}
           {table.stage === 'settlement-pending' && (
             <button
@@ -718,51 +806,223 @@ export function GameEconomyTable({
               Retry settlement
             </button>
           )}
-          <details>
-            <summary>Payment and replay evidence</summary>
-            <p style={{ overflowWrap: 'anywhere' }}>
-              Shuffle commitment: {table.commitment}
-            </p>
-            {table.transactions.map((hash) => (
-              <p key={hash} style={{ overflowWrap: 'anywhere' }}>
-                {table.economy.mode === 'escrow' ? (
-                  <a
-                    target="_blank"
-                    rel="noreferrer"
-                    href={`${NETWORKS[table.economy.network].explorer}/tx/${hash}`}
-                  >
-                    {hash}
+          <details className="payment-disclosure payment-session-details">
+            <PaymentSummary>Session & payment details</PaymentSummary>
+            <div className="payment-details-body">
+              <div>
+                <strong>{table.game ?? 'Game table'}</strong> ·{' '}
+                {table.economy.mode === 'free'
+                  ? 'Free play'
+                  : `${NETWORKS[table.economy.network].chain.name} · ${formatUnits(BigInt(table.economy.stakeUnits), 6)} test USDC per seat`}
+                <p>
+                  <a href={`?matchId=${table.id}`}>
+                    Share this table with players and spectators
                   </a>
-                ) : (
-                  hash
-                )}
-              </p>
-            ))}
-            {!!table.replay && (
-              <button
-                onClick={() => {
-                  const url = URL.createObjectURL(
-                    new Blob([JSON.stringify(table.replay, null, 2)], {
-                      type: 'application/json',
-                    }),
-                  )
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = `${table.id}.json`
-                  a.click()
-                  URL.revokeObjectURL(url)
+                </p>
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))',
+                  gap: 20,
                 }}
               >
-                Download completed replay
-              </button>
-            )}
+                {table.recipients.map((recipient, i) => {
+                  const id = i === 0 ? 'sea_player_1' : 'sea_player_2'
+                  if (!service)
+                    return (
+                      <p role="status">
+                        Testnet game tables are not available yet. You can still
+                        play games in the arcade.
+                      </p>
+                    )
+                  return (
+                    <section key={id} className="paid-player-card">
+                      <h2>
+                        Player {i + 1}
+                        {seat === i ? ' · You' : ''}
+                      </h2>
+                      <small>
+                        {recipient.slice(0, 10)}…{recipient.slice(-6)}
+                      </small>
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 8,
+                          margin: table.state ? '24px 0' : '12px 0',
+                          minHeight: table.state ? 90 : undefined,
+                        }}
+                      >
+                        {table.state?.hands[id]?.map((card) => (
+                          <span
+                            key={card}
+                            style={{
+                              padding: 14,
+                              borderRadius: 'var(--radius-md)',
+                              background: '#faf6ec',
+                              color: card >= 26 ? '#bd3446' : '#13241d',
+                              fontSize: 24,
+                            }}
+                          >
+                            {
+                              [
+                                'A',
+                                '2',
+                                '3',
+                                '4',
+                                '5',
+                                '6',
+                                '7',
+                                '8',
+                                '9',
+                                '10',
+                                'J',
+                                'Q',
+                                'K',
+                              ][card % 13]
+                            }
+                            {['♠', '♣', '♥', '♦'][Math.floor(card / 13)]}
+                          </span>
+                        )) ??
+                          (table.stage === 'funding'
+                            ? 'Waiting for entry funding'
+                            : table.stage === 'playing'
+                              ? 'Use your private observation to play'
+                              : 'Session complete')}
+                      </div>
+                      <strong>
+                        {table.state ? `Total: ${table.state.totals[id]}` : ''}
+                      </strong>
+                    </section>
+                  )
+                })}
+              </div>
+              {ended && (
+                <PaidSessionResult
+                  stage={table.stage}
+                  result={table.result}
+                  accounting={table.accounting}
+                  economy={table.economy}
+                  recipients={table.recipients}
+                  breakdownOnly
+                />
+              )}
+              {releaseId && ended && (
+                <details>
+                  <PaymentSummary>Public game events</PaymentSummary>
+                  <pre className="payment-event-data">
+                    {JSON.stringify(table.events, null, 2)}
+                  </pre>
+                </details>
+              )}
+              <details>
+                <PaymentSummary>Onchain receipts & replay</PaymentSummary>
+                {table.economy.mode === 'escrow' && (
+                  <p>
+                    <a href="/docs/guides/live-matches#optional-paid-matches">
+                      How match payments work
+                    </a>
+                  </p>
+                )}
+                <p style={{ overflowWrap: 'anywhere' }}>
+                  Shuffle commitment: {table.commitment}
+                </p>
+                {[
+                  ...table.transactions.map((hash) => ({
+                    hash,
+                    operation: 'Match transaction',
+                  })),
+                  ...localReceipts,
+                ].map(({ hash, operation }) => (
+                  <p key={hash} style={{ overflowWrap: 'anywhere' }}>
+                    {table.economy.mode === 'escrow' ? (
+                      <a
+                        target="_blank"
+                        rel="noreferrer"
+                        href={transactionExplorerUrl(
+                          table.economy.network,
+                          hash,
+                        )}
+                        className="payment-receipt-link"
+                      >
+                        {operation} · {hash.slice(0, 10)}…{hash.slice(-8)}
+                        <ExternalLink size={14} aria-hidden />
+                      </a>
+                    ) : (
+                      hash
+                    )}
+                  </p>
+                ))}
+                {!!table.replay && (
+                  <button
+                    onClick={() => {
+                      const url = URL.createObjectURL(
+                        new Blob([JSON.stringify(table.replay, null, 2)], {
+                          type: 'application/json',
+                        }),
+                      )
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `${table.id}.json`
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    }}
+                  >
+                    Download completed replay
+                  </button>
+                )}
+              </details>
+              <p className="field-hint">{table.trust}</p>
+              {table.economy.mode === 'escrow' && (
+                <>
+                  <details className="payment-disclosure">
+                    <PaymentSummary>
+                      Expired table or missing refund?
+                    </PaymentSummary>
+                    <p>
+                      If funding or play runs past its deadline, cancel the
+                      expired table, then claim your contribution. Refunds
+                      always return to the contributing wallet.
+                    </p>
+                    <div className="actions">
+                      <button
+                        disabled={busy || table.stage === 'settled'}
+                        onClick={() => run(() => transact('void'))}
+                      >
+                        Cancel expired table
+                      </button>
+                      <button
+                        className="primary"
+                        disabled={busy}
+                        onClick={() => run(() => transact('refund'))}
+                      >
+                        Claim my refund
+                      </button>
+                    </div>
+                  </details>
+                </>
+              )}
+              {ended && (
+                <details>
+                  <PaymentSummary>Agent payment history</PaymentSummary>
+                  <AgentWalletPanel table={table} />
+                </details>
+              )}
+              <small role="status">
+                {live ? 'Live table connected' : 'Reconnecting…'}
+              </small>
+            </div>
           </details>
+          {!ended && (
+            <>
+              <details className="payment-disclosure">
+                <PaymentSummary>Play with a Commons agent</PaymentSummary>
+                <AgentWalletPanel table={table} onWalletSelected={setOther} />
+              </details>{' '}
+            </>
+          )}
         </>
       )}
-      <details open={table?.economy.mode === 'escrow'}>
-        <summary>Use a Commons agent · wallets & spending grants</summary>
-        <AgentWalletPanel table={table} onWalletSelected={setOther} />
-      </details>
     </div>
   )
 }

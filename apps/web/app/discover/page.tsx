@@ -4,13 +4,25 @@ import { Header } from '../components/header'
 
 export const dynamic = 'force-dynamic'
 
-async function games(): Promise<{ games: GameManifest[]; online: boolean }> {
+async function games(): Promise<{
+  games: (GameManifest & { isFeatured?: boolean })[]
+  online: boolean
+}> {
   const api = process.env.ARCADE_API_URL ?? 'http://localhost:4100'
   try {
     const response = await fetch(`${api}/v1/games`, { cache: 'no-store' })
     if (!response.ok) throw new Error(`Catalog returned ${response.status}`)
-    const body = (await response.json()) as { games: GameManifest[] }
-    return { games: body.games, online: true }
+    const body = (await response.json()) as {
+      games: GameManifest[]
+      catalog?: Record<string, { isFeatured: boolean }>
+    }
+    return {
+      games: body.games.map((game) => ({
+        ...game,
+        isFeatured: body.catalog?.[game.metadata.id]?.isFeatured === true,
+      })),
+      online: true,
+    }
   } catch {
     return { games: [], online: false }
   }
@@ -19,10 +31,10 @@ async function games(): Promise<{ games: GameManifest[]; online: boolean }> {
 export default async function DiscoverPage() {
   const catalog = await games()
   return (
-    <main>
+    <main className="arcade" id="main">
       <Header />
       <section className="discover-head shell">
-        <span className="eyebrow">THE ARCADE</span>
+        <span className="eyebrow">The Arcade</span>
         <h1>Find your next game.</h1>
         <p>New worlds. Friendly rivals. Play yourself or bring an agent.</p>
       </section>

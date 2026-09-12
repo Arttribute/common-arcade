@@ -1,0 +1,334 @@
+main.arcade.game-store-page {
+  padding-left: 0;
+}
+/* An artwork-led detail page. Its two equal columns fill the content area;
+   only the story grows, keeping the artwork and Play shelf in view. */
+.game-store-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  min-height: 100dvh;
+}
+.game-store-art {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--sunken);
+  border-right: 1px solid var(--line);
+}
+.game-store-art > .game-artwork {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: 0;
+}
+.game-store-art > .game-artwork img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+.game-store-art .game-artwork-fallback {
+  height: 100%;
+  padding: 36px;
+}
+.game-store-art > .game-artwork .game-artwork-fallback svg {
+  width: 80px;
+  height: 80px;
+  stroke-width: 1;
+}
+.game-store-art > .game-artwork .game-artwork-fallback span {
+  max-width: 16ch;
+  font-size: clamp(24px, 3vw, 42px);
+  font-weight: 500;
+  line-height: 1.15;
+  text-align: center;
+}
+.game-store-action-shelf {
+  position: absolute;
+  inset: auto 24px 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow-floating);
+}
+.game-store-game-icon {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.game-store-game-icon .game-artwork {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 1;
+  border-radius: 0;
+}
+.game-store-game-icon .game-artwork-fallback {
+  padding: 8px;
+}
+.game-store-game-icon .game-artwork-fallback span {
+  display: none;
+}
+.game-store-action-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.game-store-action-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+}
+.game-store-action-copy span {
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.game-store-action-shelf .game-play-button {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 9px 16px;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.game-store-action-shelf .preview-game-actions {
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.game-store-story {
+  min-width: 0;
+  padding: clamp(24px, 3.5vw, 56px);
+  background: var(--canvas);
+}
+.game-store-back {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  box-shadow: var(--shadow-card);
+}
+.game-store-back:hover {
+  color: var(--ink);
+}
+.game-store-heading {
+  padding-top: 8px;
+}
+.game-store-heading .eyebrow {
+  font-size: 11px;
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+.arcade .game-store-heading h1 {
+  margin: 14px 0 22px;
+  font-size: clamp(26px, 2.4vw, 36px);
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+
+.arcade .game-store-heading p {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 15px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.game-store-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 24px 0 30px;
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+.game-store-facts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  text-transform: capitalize;
+}
+.game-store-facts svg {
+  flex-shrink: 0;
+}
+.game-store-section-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.arcade .game-store-section-heading h2 {
+  font-size: 16px;
+  font-weight: 500;
+  margin: 0;
+}
+.game-store-section-heading > span {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+.game-store-preview {
+  width: 100%;
+  height: clamp(300px, 34vw, 520px);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+}
+.game-store-preview > * {
+  height: 100%;
+}
+.arcade .game-store-caption {
+  margin: 12px 0 0;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.65;
+}
+.game-store-recordings {
+  margin: 34px 0;
+}
+.game-store-recordings .recording-shelf {
+  border: 0;
+  padding: 0;
+}
+.game-store-recordings .recording-shelf h3 {
+  font-size: 16px;
+  font-weight: 500;
+}
+.game-store-recordings input[type='file'] {
+  max-width: 100%;
+}
+.game-store-disclosure {
+  border-top: 1px solid var(--line);
+  padding: 18px 0;
+  font-size: 13px;
+}
+.game-store-disclosure > summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.game-store-disclosure > p {
+  margin: 16px 0;
+  color: var(--ink-muted);
+  line-height: 1.7;
+}
+.game-store-disclosure a {
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.game-store-forward {
+  transform: rotate(180deg);
+}
+.game-store-compatibility .contract-grid,
+.game-store-compatibility .capability-contract {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  padding: 20px 0 0;
+  margin: 0;
+  width: 100%;
+}
+.game-store-compatibility .contract-grid article,
+.game-store-compatibility .capability-contract > div {
+  min-width: 0;
+}
+.game-store-compatibility .manifest-block {
+  padding-top: 20px;
+  max-width: 100%;
+}
+.game-store-compatibility pre {
+  max-width: 100%;
+  overflow: auto;
+}
+.game-store-footer {
+  margin-top: 16px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1000px) and (min-width: 761px) {
+  .game-store-action-shelf {
+    inset: auto 14px 14px;
+    gap: 10px;
+    padding: 14px;
+  }
+  .game-store-game-icon {
+    display: none;
+  }
+  .game-store-story {
+    padding: 28px;
+  }
+}
+@media (max-width: 760px) {
+  .game-store-layout {
+    display: block;
+  }
+  .game-store-art {
+    position: relative;
+    height: min(72dvh, 620px);
+    min-height: 340px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .game-store-action-shelf {
+    inset: auto 16px 16px;
+    gap: 10px;
+    padding: 14px;
+  }
+  .game-store-game-icon {
+    width: 40px;
+    height: 40px;
+    flex-basis: 40px;
+  }
+  .game-store-story {
+    padding: 28px 24px 44px;
+  }
+  .game-store-heading {
+    padding-top: 28px;
+  }
+  .game-store-preview {
+    height: 380px;
+    max-height: 65dvh;
+  }
+}
+@media (max-width: 400px) {
+  .game-store-game-icon {
+    display: none;
+  }
+  .game-store-action-copy strong {
+    font-size: 13px;
+  }
+  .game-store-action-shelf .game-play-button {
+    padding-inline: 12px;
+  }
+}

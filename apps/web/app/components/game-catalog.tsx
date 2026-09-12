@@ -2,11 +2,15 @@
 import type { GameManifest } from '@common-arcade/protocol'
 import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowUpRight, Search, Users } from 'lucide-react'
+import { Search, Users } from 'lucide-react'
 import { legacyGameCovers } from '../lib/legacy-game-covers'
 import { GameArtwork } from './game-artwork'
 
-export function GameCatalog({ games: catalog }: { games: GameManifest[] }) {
+export function GameCatalog({
+  games: catalog,
+}: {
+  games: (GameManifest & { isFeatured?: boolean })[]
+}) {
   const games = catalog.map((game) => ({
     ...game,
     metadata: {
@@ -17,38 +21,23 @@ export function GameCatalog({ games: catalog }: { games: GameManifest[] }) {
   const [query, setQuery] = useState(''),
     [mode, setMode] = useState('all'),
     [order, setOrder] = useState('az')
-  const visible = games
-    .filter(
-      (g) =>
-        (mode === 'all' || g.spec.mode === mode) &&
-        `${g.metadata.title} ${g.metadata.summary} ${g.metadata.tags.join(' ')}`
-          .toLowerCase()
-          .includes(query.toLowerCase()),
-    )
-    .sort((a, b) =>
-      order === 'az'
-        ? a.metadata.title.localeCompare(b.metadata.title)
-        : b.metadata.title.localeCompare(a.metadata.title),
-    )
-  const featured = games
-    .filter((g) => g.metadata.thumbnail)
-    .sort((a, b) => {
-      const featuredIds = [
-        'gam_cc8de8704f48428cb0cd4d3e3aba5810',
-        'gam_310da5dfaaab49f080756583615e5af2',
-      ]
-      const rank = (id: string) =>
-        featuredIds.includes(id) ? featuredIds.indexOf(id) : featuredIds.length
-      return (
-        rank(a.metadata.id) - rank(b.metadata.id) ||
-        a.metadata.title.localeCompare(b.metadata.title)
-      )
-    })
-    .slice(0, 2)
+  const filtered = games.filter(
+    (g) =>
+      (mode === 'all' || g.spec.mode === mode) &&
+      `${g.metadata.title} ${g.metadata.summary} ${g.metadata.tags.join(' ')}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+  )
+  const visible = filtered.sort((a, b) =>
+    order === 'az'
+      ? a.metadata.title.localeCompare(b.metadata.title)
+      : b.metadata.title.localeCompare(a.metadata.title),
+  )
+  const featured = games.filter((game) => game.isFeatured)
   return (
     <div className="catalog shell">
       {!query && mode === 'all' && featured.length > 0 && (
-        <section className="catalog-featured" aria-label="In the arcade">
+        <section className="catalog-featured" aria-label="Featured games">
           {featured.map((game) => (
             <Link
               key={game.metadata.id}
@@ -58,14 +47,12 @@ export function GameCatalog({ games: catalog }: { games: GameManifest[] }) {
               <GameArtwork
                 title={game.metadata.title}
                 src={game.metadata.thumbnail}
+                mode={game.spec.mode}
               />
               <div>
-                <span className="eyebrow">READY TO PLAY</span>
+                <span className="eyebrow">Featured game</span>
                 <h2>{game.metadata.title}</h2>
                 <p>{game.metadata.summary}</p>
-                <span className="feature-play">
-                  Explore game <ArrowUpRight size={16} />
-                </span>
               </div>
             </Link>
           ))}
@@ -128,13 +115,13 @@ export function GameCatalog({ games: catalog }: { games: GameManifest[] }) {
             <GameArtwork
               title={game.metadata.title}
               src={game.metadata.thumbnail}
+              mode={game.spec.mode}
             />
             <div className="catalog-card-info">
               <div>
                 <h3>{game.metadata.title}</h3>
                 <p>{game.metadata.summary}</p>
               </div>
-              <span className="play-pill">Play</span>
             </div>
             <div className="catalog-card-meta">
               <span>{game.spec.mode.replaceAll('-', ' ')}</span>

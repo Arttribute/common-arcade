@@ -1,0 +1,109 @@
+--- a/src/compiled-frame.tsx
++++ b/src/compiled-frame.tsx
+@@ -7,6 +7,7 @@
+   useMemo,
+   useRef,
+   useState,
++  type ReactNode,
+ } from "react";
+ import { recorderBundle } from "./recorder-bundle";
+ import { replayerBundle } from "./replayer-bundle";
+@@ -74,6 +75,12 @@
+     className?: string;
+     revision?: string | number;
+     interactive?: boolean;
++    /** Optional control content, for the host application's icon system. */
++    recordingLabels?: {
++      start?: ReactNode;
++      stop?: ReactNode;
++      dismissError?: ReactNode;
++    };
+     onRecording?: (recording: CanvasRecording) => void;
+     onInteraction?: (interaction: CanvasInteraction) => void;
+   }
+@@ -84,6 +91,7 @@
+     className = "",
+     revision,
+     interactive = true,
++    recordingLabels,
+     onRecording,
+     onInteraction,
+   },
+@@ -156,6 +164,20 @@
+     setSaved(result);
+     callbacks.current.onRecording?.(result);
+   }
++  function probeReady() {
++    // A fast srcDoc can emit its one-shot ready event before hydration has
++    // installed our listener. The existing mode command acknowledges that
++    // the current frame's recorder is listening; load alone is not proof.
++    frame.current?.contentWindow?.postMessage(
++      {
++        channel,
++        command: "mode",
++        payload: { editing: !interactive },
++        requestId: "mode-ready-probe",
++      },
++      "*",
++    );
++  }
+   useEffect(() => {
+     ready.current = false;
+     const receive = (event: MessageEvent) => {
+@@ -177,6 +199,8 @@
+           "*",
+         );
+       } else if (type === "response") {
++        if (payload?.requestId === "mode-ready-probe" && !payload.error)
++          ready.current = true;
+         const request = pending.current.get(payload?.requestId);
+         if (request) {
+           clearTimeout(request.timer);
+@@ -198,6 +222,7 @@
+         setError(String(payload?.message ?? "Game error"));
+     };
+     window.addEventListener("message", receive);
++    probeReady();
+     return () => {
+       window.removeEventListener("message", receive);
+       for (const request of pending.current.values()) {
+@@ -296,7 +321,9 @@
+               }
+             }}
+           >
+-            {recording ? "■ Stop recording" : "○ Record interaction"}
++            {recording
++              ? (recordingLabels?.stop ?? "■ Stop recording")
++              : (recordingLabels?.start ?? "○ Record interaction")}
+           </button>
+           {saved && (
+             <>
+@@ -327,7 +354,7 @@
+             aria-label="Dismiss preview error"
+             onClick={() => setError("")}
+           >
+-            ×
++            {recordingLabels?.dismissError ?? "×"}
+           </button>
+         </div>
+       )}
+@@ -337,6 +364,7 @@
+         <iframe
+           ref={frame}
+           key={revision}
++          onLoad={probeReady}
+           title={title}
+           src={preview.type === "url" ? preview.url : undefined}
+           srcDoc={html}
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -844,6 +844,9 @@
+   z-index: 2;
+ }
+ .ac-recording-controls button {
++  display: inline-flex;
++  align-items: center;
++  gap: 8px;
+   background: none;
+   border: 0;
+   cursor: pointer;

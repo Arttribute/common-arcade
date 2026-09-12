@@ -199,6 +199,26 @@ it.skipIf(!rpc)(
     expect(updates).toBeGreaterThan(2)
     expect(view.stage).toBe('settled')
     expect(view.replay).toBeTruthy()
+    expect(view.result).toMatchObject({ winnerSeatId: 'sea_player_1' })
+    expect(view.accounting).toEqual({
+      status: 'allocated',
+      prizePoolUnits: '3000000',
+      spectatorPoolUnits: '3000000',
+      allocations: [
+        {
+          role: 'winner',
+          recipient: accounts[2]!.address,
+          amountUnits: '2925000',
+        },
+        {
+          role: 'platform',
+          recipient: accounts[0]!.address,
+          amountUnits: '125000',
+        },
+      ],
+      spectatorPayoutUnits: '2950000',
+      feeUnits: '125000',
+    })
     expect(
       await reader.readContract({
         address: contract,
@@ -238,6 +258,8 @@ it.skipIf(!rpc)(
         args: [accounts[0]!.address],
       }),
     ).toBe(125_000n)
+    // Reporting preserves this table's allocation after the cumulative balance is withdrawn.
+    expect((await host.view(id)).accounting).toEqual(view.accounting)
   },
   90000,
 )

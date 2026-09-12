@@ -9,6 +9,7 @@ export function GameArtwork({
 }: {
   title: string
   src?: string
+  mode?: string
   className?: string
 }) {
   const [failed, setFailed] = useState<string>()
@@ -33,10 +34,10 @@ export function GameArtwork({
       ) : (
         <div
           className="game-artwork-fallback"
+          role="img"
           aria-label={`${title} — artwork coming soon`}
         >
-          <Gamepad2 size={56} strokeWidth={1.1} />
-          <span>{title}</span>
+          <Gamepad2 size={40} strokeWidth={1.75} aria-hidden />
         </div>
       )}
     </div>

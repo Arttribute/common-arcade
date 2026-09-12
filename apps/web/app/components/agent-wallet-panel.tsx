@@ -1,12 +1,22 @@
 'use client'
+import { PaymentSummary } from './payment-disclosure'
+import './payments.css'
 import type { Observation } from '@common-arcade/protocol'
 import { useEffect, useState, useRef } from 'react'
+import { Wallet2, X } from 'lucide-react'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
 import {
   NETWORKS,
-  hashArcadeId,
-  usdcUnits,
+  transactionExplorerUrl,
   type PaymentNetwork,
 } from '@common-arcade/economy'
+import { formatUnits } from 'viem'
+import {
+  preparePaymentBudget,
+  type ReviewedPaymentBudget,
+} from '../../lib/payment-budget'
+import { AgentSelect } from './agent-select'
+import { Select, SelectOption } from './ui/select'
 export interface AgentTableContext {
   id: string
   stage?: string
@@ -86,6 +96,9 @@ export function AgentWalletPanel({
   initialRuntimeId?: string
   returnTo?: string
 }) {
+  const budgetDialog = useRef<HTMLDivElement>(null)
+  const [budgetOpen, setBudgetOpen] = useState(false)
+  const [reviewBudget, setReviewBudget] = useState<ReviewedPaymentBudget>()
   const [agentRunning, setAgentRunning] = useState(false),
     [agents, setAgents] = useState<Agent[]>([]),
     [agentId, setAgentId] = useState(''),
@@ -118,6 +131,13 @@ export function AgentWalletPanel({
   const [runtimeSessions, setRuntimeSessions] = useState<
     { sessionId: string; title: string | null }[]
   >([])
+  /* Technical settings start open only if something in them still needs
+   * filling; after that the reader owns the disclosure. Initialised once on
+   * purpose, so it does not spring back open as they type. */
+  const [showAdvanced, setShowAdvanced] = useState(
+    () =>
+      !(initialRuntimeId ?? '') || !process.env.NEXT_PUBLIC_ARCADE_PAYMENTS_URL,
+  )
   useEffect(() => {
     if (!agentId) return
     let cancelled = false
@@ -202,6 +222,9 @@ export function AgentWalletPanel({
   useEffect(() => {
     if (!agentId) return
     let cancelled = false
+    setReviewBudget(undefined)
+    setAgentRunning(false)
+    setWalletId('')
     setWallets([])
     setGrants([])
     setAttempts([])
@@ -236,7 +259,7 @@ export function AgentWalletPanel({
         if (!cancelled) setBalance(r.usdc)
       })
       .catch(() => {
-        if (!cancelled) setBalance('Unavailable — fund/activate this network')
+        if (!cancelled) setBalance('Unavailable')
       })
     return () => {
       cancelled = true
@@ -249,37 +272,48 @@ export function AgentWalletPanel({
       setNetwork(table.economy.network as PaymentNetwork)
     }
   }, [table?.id])
-  async function createGrant() {
-    const policy = {
-      network: config.x402Network,
-      asset: config.asset,
-      payTo: kind === 'arcade' ? table?.deployment?.contract : recipient,
-      origin: new URL(origin).origin,
-      maxPaymentUnits: usdcUnits(perPayment).toString(),
-      ...(kind === 'arcade'
-        ? {
-            arcade: {
-              poolId: table?.pool,
-              matchId: table?.id,
-              seatId: hashArcadeId(seat),
-              allowedOperations: Object.entries(operations)
-                .filter(([, on]) => on)
-                .map(([name]) => name),
-            },
-          }
-        : {}),
-    }
-    const created = await api<Grant>(
-      `wallets/agent/${agentId}/payment-sessions`,
-      {
+  function reviewCurrentBudget() {
+    setReviewBudget(
+      preparePaymentBudget({
+        agentId,
+        agentName:
+          agents.find((agent) => agent.agentId === agentId)?.name ?? agentId,
         walletId,
-        runtimeSessionId: runtime,
-        policy,
-        budgetUnits: usdcUnits(budget).toString(),
-        expiresAt: new Date(Date.now() + Number(minutes) * 60000).toISOString(),
+        walletAddress: wallet?.address,
+        runtime,
+        kind,
+        network,
+        recipient,
+        origin,
+        budget,
+        perPayment,
+        minutes,
+        seat,
+        operations,
+        table,
+      }),
+    )
+  }
+  useEffect(() => {
+    if (reviewBudget) budgetDialog.current?.scrollTo({ top: 0 })
+  }, [reviewBudget])
+  async function createGrant() {
+    if (!reviewBudget || reviewBudget.agentId !== agentId)
+      throw new Error(
+        'Review the budget for the selected agent before authorizing it.',
+      )
+    const created = await api<Grant>(
+      `wallets/agent/${reviewBudget.agentId}/payment-sessions`,
+      {
+        ...reviewBudget.body,
+        expiresAt: new Date(
+          Date.now() + reviewBudget.minutes * 60000,
+        ).toISOString(),
       },
     )
+    setBudgetOpen(false)
     setSelectedGrant(created.id)
+    setReviewBudget(undefined)
     setNotice(
       'Spending grant created. The agent can spend only within these limits.',
     )
@@ -337,7 +371,9 @@ export function AgentWalletPanel({
     await inspect(active.id)
     await refresh()
     if (result.status >= 400) throw new Error(JSON.stringify(result.body))
-    setNotice(`Paid analysis completed: ${JSON.stringify(result.body)}`)
+    setNotice(
+      'Analysis received. Check payment history for its payment status.',
+    )
   }
   const grant = grants.find((g) => g.id === selectedGrant)
   async function deposit() {
@@ -350,7 +386,7 @@ export function AgentWalletPanel({
     })
     await inspect(grant.id)
     await refresh()
-    setNotice('Agent stake confirmed.')
+    setNotice('Stake request sent. Check payment history for confirmation.')
   }
   async function play() {
     if (!grant || !table || grant.policy.arcade?.matchId !== table.id)
@@ -421,15 +457,9 @@ export function AgentWalletPanel({
       .finally(() => setBusy(false))
   }, [agentRunning, table?.sequence, busy, selectedGrant, walletId])
   return (
-    <section
-      className="launch-card payment-panel"
-      style={{ display: 'grid', gap: 16 }}
-    >
-      <h2>Agent wallets & spending</h2>
-      <p>
-        Give an Agent Commons agent a budget for this session. Payments remain
-        off until you create a grant.
-      </p>
+    <section className="launch-card payment-panel payment-panel-body">
+      <h2>Agent payments</h2>
+      <p>Choose an agent and set its spending limit.</p>
       {!signedIn ? (
         <a
           className="primary"
@@ -439,268 +469,509 @@ export function AgentWalletPanel({
         </a>
       ) : (
         <>
-          <label>
-            Agent{' '}
-            <select
-              value={agentId}
-              onChange={(e) => setAgentId(e.target.value)}
-              disabled={busy}
-            >
-              {agents.map((a) => (
-                <option key={a.agentId} value={a.agentId}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {!agents.length && (
-            <p>Create an agent in Commons to use its wallet here.</p>
-          )}
-          <label>
-            Wallet{' '}
-            <select
-              value={walletId}
-              onChange={(e) => setWalletId(e.target.value)}
-              disabled={busy}
-            >
-              {wallets.map((w) => (
-                <option
-                  key={w.id}
-                  value={w.id}
-                  disabled={!w.isActive || w.walletType !== 'eoa'}
-                >
-                  {w.address.slice(0, 10)}… · {w.walletType}
-                  {!w.isActive ? ' (inactive)' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          {wallet && (
-            <div>
-              <code style={{ overflowWrap: 'anywhere' }}>{wallet.address}</code>
-              <p>
-                {config.chain.name} balance: {balance || 'Loading…'} USDC
-              </p>
-              {onWalletSelected && (
-                <button
-                  type="button"
-                  onClick={() => onWalletSelected(wallet.address)}
-                >
-                  Use as other player
-                </button>
-              )}
-            </div>
-          )}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              void run(createGrant)
+          <DialogPrimitive.Root
+            open={budgetOpen}
+            onOpenChange={(open) => {
+              if (busy) return
+              setBudgetOpen(open)
+              if (!open) setReviewBudget(undefined)
             }}
-            style={{ display: 'grid', gap: 12 }}
           >
-            <label>
-              Purpose{' '}
-              <select
-                value={kind}
-                onChange={(e) => setKind(e.target.value as typeof kind)}
+            <DialogPrimitive.Trigger asChild>
+              <button className="secondary">New spending budget</button>
+            </DialogPrimitive.Trigger>
+            <DialogPrimitive.Portal>
+              <DialogPrimitive.Overlay className="dialog-overlay" />
+              <DialogPrimitive.Content
+                ref={budgetDialog}
+                className="arcade dialog-content payment-panel payment-budget-dialog"
               >
-                <option value="x402">Pay for x402 services</option>
-                <option value="arcade" disabled={!table?.pool}>
-                  Fund this match
-                </option>
-              </select>
-            </label>
-            <label>
-              Network{' '}
-              <select
-                value={network}
-                onChange={(e) => setNetwork(e.target.value as PaymentNetwork)}
-                disabled={kind === 'arcade'}
-              >
-                {Object.values(NETWORKS)
-                  .filter((n) => n.testnet)
-                  .map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.chain.name}
-                    </option>
+                <header>
+                  <DialogPrimitive.Title>
+                    Agent spending budget
+                  </DialogPrimitive.Title>
+                  <DialogPrimitive.Description>
+                    Set limits, then review before authorizing.
+                  </DialogPrimitive.Description>
+                </header>
+                <div className="field">
+                  <span className="field-label">Agent</span>
+                  <AgentSelect
+                    agents={agents}
+                    value={agentId}
+                    onChange={setAgentId}
+                    disabled={busy}
+                  />
+                  {!agents.length && (
+                    <p className="field-hint">
+                      You have no Commons agents yet.{' '}
+                      <a
+                        href="https://www.agentcommons.io"
+                        className="inline-link"
+                      >
+                        Create one in Commons
+                      </a>{' '}
+                      to give it a wallet here.
+                    </p>
+                  )}
+                </div>
+
+                {/* The agent's payment wallet is chosen for it — the first active EOA
+              — so this reports which wallet will pay rather than offering a
+              choice. It was previously a <select> whose only enabled option was
+              already selected. */}
+                {!reviewBudget &&
+                  agentId &&
+                  (wallet ? (
+                    <details className="wallet-summary">
+                      <PaymentSummary>Wallet details</PaymentSummary>
+                      <div className="wallet-summary-head">
+                        <Wallet2 size={16} aria-hidden />
+                        <span>Payment wallet</span>
+                        <strong className="wallet-balance">
+                          {balance === 'Unavailable'
+                            ? 'Balance unavailable'
+                            : balance
+                              ? `${balance} USDC`
+                              : 'Loading…'}
+                        </strong>
+                      </div>
+                      <code>{wallet.address}</code>
+                      <p className="field-hint">
+                        On {config.chain.name}. New budgets use this wallet.
+                        Existing permissions keep their recorded wallets.
+                      </p>
+                      {onWalletSelected && (
+                        <button
+                          type="button"
+                          className="secondary compact"
+                          onClick={() => onWalletSelected(wallet.address)}
+                        >
+                          Use as other player
+                        </button>
+                      )}
+                    </details>
+                  ) : (
+                    <p className="field-hint" role="status">
+                      {wallets.length
+                        ? 'This agent has no active wallet that can make payments. Activate one in Commons.'
+                        : 'Looking up this agent’s wallet…'}
+                    </p>
                   ))}
-              </select>
-            </label>
-            <label>
-              Runtime session ID{' '}
-              <input
-                required
-                value={runtime}
-                onChange={(e) => setRuntime(e.target.value)}
-                placeholder="Choose a session or enter an external runtime ID"
-                list="wallet-runtime-sessions"
-              />
-              <datalist id="wallet-runtime-sessions">
-                {runtimeSessions.map((s) => (
-                  <option key={s.sessionId} value={s.sessionId}>
-                    {s.title ?? s.sessionId}
-                  </option>
-                ))}
-              </datalist>
-            </label>
-            <label>
-              Service origin{' '}
-              <input
-                required
-                type="url"
-                value={origin}
-                onChange={(e) => setOrigin(e.target.value)}
-                placeholder="https://payments.example.com"
-              />
-            </label>
-            <label>
-              {kind === 'arcade' ? 'Match escrow' : 'Service recipient'}{' '}
-              <input
-                required
-                value={
-                  kind === 'arcade'
-                    ? (table?.deployment?.contract ?? '')
-                    : recipient
-                }
-                readOnly={kind === 'arcade'}
-                onChange={(e) => setRecipient(e.target.value)}
-                placeholder={
-                  network === 'hedera-testnet' && kind === 'x402'
-                    ? '0.0.…'
-                    : '0x…'
-                }
-              />
-            </label>
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-              <label>
-                Total budget (USDC){' '}
-                <input
-                  required
-                  value={budget}
-                  onChange={(e) => setBudget(e.target.value)}
-                  inputMode="decimal"
-                />
-              </label>
-              <label>
-                Per-payment limit (USDC){' '}
-                <input
-                  required
-                  value={perPayment}
-                  onChange={(e) => setPerPayment(e.target.value)}
-                  inputMode="decimal"
-                />
-              </label>
-              <label>
-                Expires in minutes{' '}
-                <input
-                  required
-                  type="number"
-                  min="1"
-                  max="1440"
-                  value={minutes}
-                  onChange={(e) => setMinutes(e.target.value)}
-                />
-              </label>
-            </div>
-            {kind === 'arcade' && (
-              <>
-                <label>
-                  Seat{' '}
-                  <select
-                    value={seat}
-                    onChange={(e) => setSeat(e.target.value)}
+                <div className="payment-budget-editor">
+                  <form
+                    onInvalidCapture={(event) => {
+                      const input = event.target as HTMLInputElement
+                      let ancestor = input.parentElement
+                      while (ancestor && ancestor !== event.currentTarget) {
+                        if (ancestor instanceof HTMLDetailsElement)
+                          ancestor.open = true
+                        ancestor = ancestor.parentElement
+                      }
+                      setShowAdvanced(true)
+                    }}
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      if (reviewBudget) void run(createGrant)
+                      else void run(async () => reviewCurrentBudget())
+                    }}
+                    className="grant-form"
                   >
-                    <option value="sea_player_1">Player 1</option>
-                    <option value="sea_player_2">Player 2</option>
-                  </select>
-                </label>
-                <div>
-                  {(['stake', 'bounty', 'bet'] as const).map((op) => (
-                    <label key={op} style={{ marginRight: 20 }}>
-                      <input
-                        type="checkbox"
-                        checked={operations[op]}
-                        onChange={(e) =>
-                          setOperations({
-                            ...operations,
-                            [op]: e.target.checked,
+                    <div
+                      className="budget-fields"
+                      hidden={Boolean(reviewBudget)}
+                    >
+                      {/* What the money is for. Everything below reshapes around this,
+                so it leads. */}
+                      <div className="field">
+                        <span className="field-label">
+                          What is this budget for?
+                        </span>
+                        <Select
+                          value={kind}
+                          onValueChange={(next) => {
+                            // Radix may emit an empty native value before its options register.
+                            if (next === 'arcade' || next === 'x402')
+                              setKind(next)
+                          }}
+                          ariaLabel="Grant purpose"
+                        >
+                          <SelectOption
+                            value="x402"
+                            title="Paid services"
+                            hint="Let the agent pay x402 services as it works"
+                          />
+                          <SelectOption
+                            value="arcade"
+                            disabled={!table?.pool}
+                            title="This match"
+                            hint={
+                              table?.pool
+                                ? 'Stake and play in the current match'
+                                : 'Only available from a match with a prize pool'
+                            }
+                          />
+                        </Select>
+                      </div>
+
+                      {kind === 'x402' && (
+                        <label>
+                          Who gets paid
+                          <input
+                            required
+                            aria-label="Recipient"
+                            value={recipient}
+                            onChange={(e) => setRecipient(e.target.value)}
+                            placeholder={
+                              network === 'hedera-testnet' ? '0.0.…' : '0x…'
+                            }
+                          />
+                          <small>The service wallet this agent may pay.</small>
+                        </label>
+                      )}
+
+                      <div className="grant-limits">
+                        <label>
+                          Total budget
+                          <input
+                            required
+                            value={budget}
+                            onChange={(e) => setBudget(e.target.value)}
+                            inputMode="decimal"
+                          />
+                          <small>USDC in total</small>
+                        </label>
+                        <label>
+                          Per-payment cap
+                          <input
+                            required
+                            value={perPayment}
+                            onChange={(e) => setPerPayment(e.target.value)}
+                            inputMode="decimal"
+                          />
+                          <small>Max for any one payment</small>
+                        </label>
+                        <label>
+                          Expires in
+                          <input
+                            required
+                            type="number"
+                            min="1"
+                            max="1440"
+                            value={minutes}
+                            onChange={(e) => setMinutes(e.target.value)}
+                          />
+                          <small>Minutes, then it stops</small>
+                        </label>
+                      </div>
+
+                      {kind === 'arcade' && (
+                        <div className="field">
+                          <span className="field-label">
+                            Seat and permitted actions
+                          </span>
+                          <Select
+                            value={seat}
+                            onValueChange={(next) => {
+                              if (
+                                next === 'sea_player_1' ||
+                                next === 'sea_player_2'
+                              )
+                                setSeat(next)
+                            }}
+                            ariaLabel="Seat"
+                          >
+                            <SelectOption
+                              value="sea_player_1"
+                              title="Player 1"
+                            />
+                            <SelectOption
+                              value="sea_player_2"
+                              title="Player 2"
+                            />
+                          </Select>
+                          <div className="grant-operations">
+                            {(['stake', 'bounty', 'bet'] as const).map((op) => (
+                              <label key={op}>
+                                <input
+                                  type="checkbox"
+                                  checked={operations[op]}
+                                  onChange={(e) =>
+                                    setOperations({
+                                      ...operations,
+                                      [op]: e.target.checked,
+                                    })
+                                  }
+                                />
+                                {op}
+                              </label>
+                            ))}
+                          </div>
+                          <p className="field-hint">
+                            Only selected actions are allowed in this match.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Network, runtime session and service origin all have working
+                defaults, so they are folded away — but only once they are
+                actually filled. A required field inside a closed <details>
+                cannot be focused, so the browser would refuse to submit with
+                no visible explanation. */}
+                      <details
+                        className="grant-advanced"
+                        open={showAdvanced}
+                        onToggle={(e) => setShowAdvanced(e.currentTarget.open)}
+                      >
+                        <PaymentSummary>
+                          Network & session settings
+                        </PaymentSummary>
+                        <div className="field">
+                          <span className="field-label">Network</span>
+                          <Select
+                            value={network}
+                            onValueChange={(next) => {
+                              if (Object.hasOwn(NETWORKS, next))
+                                setNetwork(next as PaymentNetwork)
+                            }}
+                            disabled={kind === 'arcade'}
+                            ariaLabel="Payment network"
+                          >
+                            {Object.values(NETWORKS)
+                              .filter((n) => n.testnet)
+                              .map((n) => (
+                                <SelectOption
+                                  key={n.id}
+                                  value={n.id}
+                                  title={n.chain.name}
+                                />
+                              ))}
+                          </Select>
+                          <p className="field-hint">
+                            {kind === 'arcade'
+                              ? 'Set by the match.'
+                              : 'Which chain the payments settle on.'}
+                          </p>
+                        </div>
+                        <label>
+                          Runtime session ID
+                          <input
+                            required
+                            value={runtime}
+                            onChange={(e) => setRuntime(e.target.value)}
+                            placeholder="Choose a session or enter an external runtime ID"
+                            list="wallet-runtime-sessions"
+                          />
+                          <datalist id="wallet-runtime-sessions">
+                            {runtimeSessions.map((s) => (
+                              <option key={s.sessionId} value={s.sessionId}>
+                                {s.title ?? s.sessionId}
+                              </option>
+                            ))}
+                          </datalist>
+                          <small>The agent run this budget belongs to.</small>
+                        </label>
+                        <label>
+                          Service origin
+                          <input
+                            required
+                            type="url"
+                            value={origin}
+                            onChange={(e) => setOrigin(e.target.value)}
+                            placeholder="https://payments.example.com"
+                          />
+                          <small>Only this origin may charge the grant.</small>
+                        </label>
+                      </details>
+
+                      <p className="field-hint">
+                        Network fees are separate from this USDC budget.
+                      </p>
+                    </div>
+                    {reviewBudget && (
+                      <section className="budget-review">
+                        <h3>Review spending permission</h3>
+                        <dl className="payment-facts">
+                          <div>
+                            <dt>Agent</dt>
+                            <dd>{reviewBudget.agentName}</dd>
+                          </div>
+                          <div>
+                            <dt>Permission</dt>
+                            <dd>{reviewBudget.permission}</dd>
+                          </div>
+                          <div>
+                            <dt>Maximum total</dt>
+                            <dd>
+                              {formatUnits(
+                                BigInt(reviewBudget.body.budgetUnits),
+                                6,
+                              )}{' '}
+                              USDC
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Per payment</dt>
+                            <dd>
+                              Up to{' '}
+                              {formatUnits(
+                                BigInt(
+                                  reviewBudget.body.policy.maxPaymentUnits,
+                                ),
+                                6,
+                              )}{' '}
+                              USDC
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Expires</dt>
+                            <dd>In {reviewBudget.minutes} minutes</dd>
+                          </div>
+                          <div>
+                            <dt>Network</dt>
+                            <dd>
+                              {NETWORKS[reviewBudget.network].chain.name}
+                              {NETWORKS[reviewBudget.network].testnet
+                                ? ' · test tokens'
+                                : ''}
+                            </dd>
+                          </div>
+                        </dl>
+                        <details className="payment-disclosure">
+                          <PaymentSummary>Account details</PaymentSummary>
+                          <dl className="payment-facts">
+                            <div>
+                              <dt>Paying wallet</dt>
+                              <dd className="wrap-anywhere">
+                                {reviewBudget.walletAddress}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Recipient</dt>
+                              <dd className="wrap-anywhere">
+                                {reviewBudget.body.policy.payTo}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Session</dt>
+                              <dd className="wrap-anywhere">
+                                {reviewBudget.body.runtimeSessionId}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Allowed service</dt>
+                              <dd className="wrap-anywhere">
+                                {reviewBudget.body.policy.origin}
+                              </dd>
+                            </div>
+                            {reviewBudget.body.policy.arcade && (
+                              <div>
+                                <dt>Match</dt>
+                                <dd className="wrap-anywhere">
+                                  {reviewBudget.body.policy.arcade.matchId}
+                                </dd>
+                              </div>
+                            )}
+                          </dl>
+                        </details>
+                        <p>
+                          Authorizing lets this agent spend within these limits
+                          without asking each time. You can revoke it from
+                          Spending permissions.
+                        </p>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => setReviewBudget(undefined)}
+                          disabled={busy}
+                        >
+                          Edit budget
+                        </button>
+                      </section>
+                    )}
+                    <button
+                      className="primary"
+                      disabled={busy || !walletId || !agentId}
+                    >
+                      {reviewBudget
+                        ? 'Authorize spending budget'
+                        : 'Review budget'}
+                    </button>
+                  </form>
+                </div>
+                {busy && <p role="status">Working…</p>}
+                {error && <p role="alert">{error}</p>}
+                <DialogPrimitive.Close
+                  className="dialog-close"
+                  aria-label="Close budget"
+                  disabled={busy}
+                >
+                  <X size={18} />
+                </DialogPrimitive.Close>
+              </DialogPrimitive.Content>
+            </DialogPrimitive.Portal>
+          </DialogPrimitive.Root>
+          {!!grants.length && (
+            <details className="payment-disclosure">
+              <PaymentSummary>
+                Spending permissions · {grants.length}
+              </PaymentSummary>
+              <div className="payment-grants-scroll">
+                {!grants.length && (
+                  <p>
+                    No grants. This agent has no payment permission from this
+                    panel.
+                  </p>
+                )}
+                {grants.map((g) => (
+                  <div key={g.id} className="grant-row">
+                    <strong>{g.runtime_session_id}</strong>
+                    <p>
+                      {format(g.reserved_units)} / {format(g.budget_units)} USDC
+                      used or reserved ·{' '}
+                      {g.revoked_at
+                        ? 'Revoked'
+                        : new Date(g.expires_at).getTime() < Date.now()
+                          ? 'Expired'
+                          : `Expires ${new Date(g.expires_at).toLocaleString()}`}
+                    </p>
+                    <details className="payment-grant-policy">
+                      <PaymentSummary>Recipient & network</PaymentSummary>
+                      <p className="wrap-anywhere">
+                        {g.policy.network} · {g.policy.origin} →{' '}
+                        {g.policy.payTo}
+                      </p>
+                    </details>
+                    <button
+                      disabled={busy}
+                      onClick={() => run(() => inspect(g.id))}
+                    >
+                      {selectedGrant === g.id
+                        ? 'Selected · inspect attempts'
+                        : 'Select / inspect'}
+                    </button>
+                    {!g.revoked_at && (
+                      <button
+                        disabled={busy}
+                        onClick={() =>
+                          run(async () => {
+                            await api(
+                              `wallets/agent/${agentId}/payment-sessions/${g.id}`,
+                              undefined,
+                              'DELETE',
+                            )
+                            await refresh()
                           })
                         }
-                      />
-                      {op}
-                    </label>
-                  ))}
-                </div>
-                <small>
-                  Bound to match {table?.id}. Only the selected operations are
-                  permitted.
-                </small>
-              </>
-            )}
-            <p className="studio-help">
-              Budget covers USDC payments; onchain deposits also use network
-              gas. Uncertain attempts remain reserved.
-            </p>
-            <button
-              className="primary"
-              disabled={busy || !walletId || !agentId}
-            >
-              Create spending grant
-            </button>
-          </form>
-          <div>
-            <h3>Session grants</h3>
-            {!grants.length && (
-              <p>
-                No grants. This agent has no payment permission from this panel.
-              </p>
-            )}
-            {grants.map((g) => (
-              <div
-                key={g.id}
-                style={{ padding: '14px 0', borderTop: '1px solid #ddd' }}
-              >
-                <strong>{g.runtime_session_id}</strong>
-                <p>
-                  {format(g.reserved_units)} / {format(g.budget_units)} USDC
-                  reserved ·{' '}
-                  {g.revoked_at
-                    ? 'Revoked'
-                    : new Date(g.expires_at).getTime() < Date.now()
-                      ? 'Expired'
-                      : `Expires ${new Date(g.expires_at).toLocaleString()}`}
-                </p>
-                <p style={{ overflowWrap: 'anywhere' }}>
-                  {g.policy.network} · {g.policy.origin} → {g.policy.payTo}
-                </p>
-                <button
-                  disabled={busy}
-                  onClick={() => run(() => inspect(g.id))}
-                >
-                  {selectedGrant === g.id
-                    ? 'Selected · inspect attempts'
-                    : 'Select / inspect'}
-                </button>
-                {!g.revoked_at && (
-                  <button
-                    disabled={busy}
-                    onClick={() =>
-                      run(async () => {
-                        await api(
-                          `wallets/agent/${agentId}/payment-sessions/${g.id}`,
-                          undefined,
-                          'DELETE',
-                        )
-                        await refresh()
-                      })
-                    }
-                  >
-                    Revoke
-                  </button>
-                )}
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </details>
+          )}
           {grant && !grant.policy.arcade && !grant.revoked_at && (
             <button disabled={busy} onClick={() => run(paidAnalysis)}>
               Pay for test card analysis with x402
@@ -728,7 +999,10 @@ export function AgentWalletPanel({
               </div>
             )}
           {!!attempts.length && (
-            <div>
+            <details className="payment-disclosure">
+              <PaymentSummary>
+                Payment history · {attempts.length} attempts
+              </PaymentSummary>
               <h3>Payment attempts</h3>
               <p>
                 Uncertain payments keep their budget reserved until reconciled;
@@ -736,26 +1010,40 @@ export function AgentWalletPanel({
                 authorizations may still settle before expiry.
               </p>
               {attempts.map((a) => (
-                <p key={a.id} style={{ overflowWrap: 'anywhere' }}>
+                <p key={a.id} className="wrap-anywhere">
                   {a.state} · {format(a.amount_units)} USDC · {a.resource}
-                  {a.settlement?.transaction && (
-                    <>
-                      <br />
-                      <a
-                        href={`${config.explorer}/tx/${a.settlement.transaction}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        View transaction receipt
-                      </a>
-                    </>
-                  )}
+                  {a.settlement?.transaction &&
+                    grant &&
+                    transactionExplorerUrl(
+                      grant.policy.network,
+                      a.settlement.transaction,
+                    ) && (
+                      <>
+                        <br />
+                        <a
+                          href={transactionExplorerUrl(
+                            grant.policy.network,
+                            a.settlement.transaction,
+                          )}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          View transaction
+                        </a>
+                      </>
+                    )}
                 </p>
               ))}
-            </div>
+            </details>
           )}
         </>
       )}
+      <a
+        className="inline-link"
+        href="/docs/guides/live-matches#optional-paid-matches"
+      >
+        How match payments work
+      </a>
       {busy && <p role="status">Working…</p>}
       {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}

@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Bot, KeyRound, Plus } from 'lucide-react'
+import { ArrowUpRight, Bot, KeyRound, Plus } from 'lucide-react'
 import { AgentWalletPanel } from '../components/agent-wallet-panel'
 import { Header } from '../components/header'
 import { arcade } from '../../lib/api'
@@ -48,78 +48,32 @@ export default function AgentsPage() {
     }
   }
   return (
-    <main>
+    <main className="arcade" id="main">
       <Header />
       <section className="discover-head shell">
-        <span className="eyebrow">YOUR PLAYERS & CREATIVE PARTNERS</span>
-        <h1>Bring your agents.</h1>
+        <h1>
+          <span className="page-title">Agents</span>
+        </h1>
         <p>
           Create a Commons agent for your studio, or give an external agent a
           scoped key to create, publish and play.
         </p>
       </section>
-      <div
-        className="shell"
-        style={{ display: 'grid', gap: 24, paddingBottom: 70 }}
-      >
+      <div className="shell page-body">
         {!signedIn ? (
-          <a
-            className="primary"
-            style={{ justifySelf: 'start' }}
-            href="/api/auth/login?next=/agents"
-          >
-            Continue with Commons
-          </a>
+          <section className="signed-out-state">
+            <Bot size={28} />
+            <h2>Sign in to bring your agents</h2>
+            <p>
+              Commons agents can create games, publish releases and take a seat
+              in a live match on your behalf.
+            </p>
+            <a className="primary" href="/api/auth/login?next=/agents">
+              Continue with Commons
+            </a>
+          </section>
         ) : (
           <>
-            <AgentWalletPanel />
-            <section className="launch-card">
-              <h2 style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
-                <Bot size={20} />
-                Commons agents
-              </h2>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <input
-                  aria-label="New agent name"
-                  placeholder="Give your agent a name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  maxLength={100}
-                />
-                <button
-                  className="primary"
-                  disabled={busy || !name.trim()}
-                  onClick={() =>
-                    void act(async () => {
-                      await arcade('commons/agents', { name, role: 'player' })
-                      setName('')
-                      await refresh()
-                    })
-                  }
-                >
-                  <Plus size={14} />
-                  Create agent
-                </button>
-              </div>
-              {agents.map((a) => (
-                <a
-                  key={a.agentId}
-                  href={`https://agentcommons.io/studio/agents/${a.agentId}`}
-                  style={{
-                    padding: '14px 0',
-                    borderBottom: '1px solid #e7e5e4',
-                    fontSize: 13,
-                  }}
-                >
-                  {a.name}{' '}
-                  <span
-                    style={{ color: '#a8a29e', fontSize: 10, marginLeft: 10 }}
-                  >
-                    Open in Commons ↗
-                  </span>
-                </a>
-              ))}
-            </section>
             <section className="launch-card">
               <h2 style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
                 <KeyRound size={20} />
@@ -157,7 +111,7 @@ export default function AgentsPage() {
                   style={{
                     padding: 16,
                     background: '#f3f2ef',
-                    borderRadius: 8,
+                    borderRadius: 'var(--radius-lg)',
                   }}
                 >
                   <p style={{ fontSize: 12 }}>
@@ -221,9 +175,72 @@ export default function AgentsPage() {
                 </div>
               ))}
               <a href="/docs/creator-quickstart" style={{ fontSize: 12 }}>
-                SDK, CLI & MCP quick start ↗
+                SDK, CLI & MCP quick start{' '}
+                <ArrowUpRight size={14} aria-hidden />
               </a>
             </section>
+            <section className="launch-card">
+              <h2 style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
+                <Bot size={20} />
+                Commons agents
+              </h2>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <input
+                  aria-label="New agent name"
+                  placeholder="Give your agent a name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  maxLength={100}
+                />
+                <button
+                  className="primary"
+                  disabled={busy || !name.trim()}
+                  onClick={() =>
+                    void act(async () => {
+                      await arcade('commons/agents', { name, role: 'player' })
+                      setName('')
+                      await refresh()
+                    })
+                  }
+                >
+                  <Plus size={14} />
+                  Create agent
+                </button>
+              </div>
+              <div
+                className="agent-directory"
+                role="region"
+                aria-label="Your Commons agents"
+                tabIndex={0}
+              >
+                {agents.map((a) => (
+                  <a
+                    key={a.agentId}
+                    href={`https://agentcommons.io/studio/agents/${a.agentId}`}
+                    style={{
+                      padding: '14px 0',
+                      borderBottom: '1px solid #e7e5e4',
+                      fontSize: 13,
+                    }}
+                  >
+                    {a.name}{' '}
+                    <span
+                      style={{ color: '#a8a29e', fontSize: 10, marginLeft: 10 }}
+                    >
+                      Open in Commons <ArrowUpRight size={14} aria-hidden />
+                    </span>
+                  </a>
+                ))}
+                {!agents.length && (
+                  <p>No agents yet. Create one to get started.</p>
+                )}
+              </div>
+            </section>
+
+            <details className="launch-card">
+              <summary>Agent wallets & spending</summary>
+              <AgentWalletPanel />
+            </details>
           </>
         )}
         {error && (

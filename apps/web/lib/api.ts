@@ -66,21 +66,26 @@ export async function arcadeCopilot(
   request: {
     message: string
     agentId: string
+    sessionId?: string
+    approvalMode?: 'manual' | 'automatic' | 'read-only'
+    computerEnabled?: boolean
     attachments?: { fileId: string }[]
     model?: { provider: string; modelId: string }
   },
   options: {
     signal?: AbortSignal
+    onStarted?: (sessionId: string) => void
     onWait?: (seconds: number) => void
     onUpdate?: (events: CopilotActivity[]) => void
   } = {},
 ): Promise<CopilotResult> {
-  const started = await arcade<{ jobId?: string }>(
+  const started = await arcade<{ jobId?: string; sessionId?: string }>(
     `projects/${projectId}/copilot`,
     request,
   )
   if (!started.jobId)
     throw new Error('The build could not be started. Please retry.')
+  if (started.sessionId) options.onStarted?.(started.sessionId)
   const startedAt = Date.now()
   for (;;) {
     await new Promise((resolve) => setTimeout(resolve, 2000))

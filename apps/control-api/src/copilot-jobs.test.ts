@@ -384,3 +384,516 @@ describe('building a game in a native Commons agent session', () => {
     ).toBe(404)
   })
 })
+
+// Sessions and edit permissions cross a durable API boundary; cover them here,
+// including legacy native-v1 records and attempts to mix projects or agents.
+describe('project conversations and reviewed edits', () => {
+  async function createProject(app: ReturnType<typeof createApp>) {
+    return (
+      await app.request('/v1/projects', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ document: emptyBrowserDocument }),
+      })
+    ).json()
+  }
+  async function turn(
+    app: ReturnType<typeof createApp>,
+    projectId: string,
+    extra: Record<string, unknown> = {},
+  ) {
+    const response = await app.request(`/v1/projects/${projectId}/copilot`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        message: rawPrompt,
+        agentId: 'agt_copilot',
+        ...extra,
+      }),
+    })
+    expect(response.status).toBe(202)
+    return poll(app, (await response.json()).jobId)
+  }
+  it('preserves the legacy conversation while independently resuming new Commons sessions', async () => {
+    const calls = stubCommons()
+    const originalFetch = globalThis.fetch
+    let created = 0
+    vi.stubGlobal('fetch', (input: any, init: any) =>
+      String(input).endsWith('/v1/sessions')
+        ? Promise.resolve(
+            Response.json({
+              data: { sessionId: `ses_conversation_${++created}` },
+            }),
+          )
+        : originalFetch(input, init),
+    )
+    const app = createApp({
+      store: new MemoryDocumentStore(),
+      logRequests: false,
+    })
+    const project = await createProject(app)
+    const first = await turn(app, project.id)
+    const fresh = await app.request(
+      `/v1/projects/${project.id}/copilot-sessions`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          agentId: 'agt_copilot',
+          title: 'Improve the controls',
+        }),
+      },
+    )
+    expect(fresh.status).toBe(201)
+    const session = await fresh.json()
+    expect(session.sessionId).not.toBe(first.sessionId)
+    await turn(app, project.id, {
+      sessionId: session.sessionId,
+      message: 'Discuss the controls',
+      approvalMode: 'read-only',
+    })
+    const list = await (
+      await app.request(`/v1/projects/${project.id}/copilot-sessions`, {
+        headers,
+      })
+    ).json()
+    expect(list.sessions).toHaveLength(2)
+    const legacy = await (
+      await app.request(
+        `/v1/projects/${project.id}/copilot-session?agentId=agt_copilot`,
+        { headers },
+      )
+    ).json()
+    const resumed = await (
+      await app.request(
+        `/v1/projects/${project.id}/copilot-session?agentId=agt_copilot&sessionId=${session.sessionId}`,
+        { headers },
+      )
+    ).json()
+    expect(legacy.sessionId).toBe(first.sessionId)
+    expect(legacy.messages).toHaveLength(2)
+    expect(resumed.messages).toHaveLength(2)
+    expect(resumed.messages[0].text).toBe('Discuss the controls')
+    const other = await createProject(app)
+    expect(
+      (
+        await app.request(
+          `/v1/projects/${other.id}/copilot-session?agentId=agt_copilot&sessionId=${session.sessionId}`,
+          { headers },
+        )
+      ).status,
+    ).toBe(404)
+    expect(
+      (
+        await app.request(
+          `/v1/projects/${project.id}/copilot-session?agentId=another_agent&sessionId=${session.sessionId}`,
+          { headers },
+        )
+      ).status,
+    ).toBe(404)
+    expect(
+      calls.filter((call) => call.url.endsWith('/v1/agents/run/stream')).at(-1)
+        ?.body.cliContext,
+    ).toContain('current revision 2')
+  })
+  it('stages manual edits without changing the game, then applies an approved change only once', async () => {
+    stubCommons()
+    const app = createApp({
+      store: new MemoryDocumentStore(),
+      logRequests: false,
+    })
+    const project = await createProject(app)
+    const job = await turn(app, project.id, { approvalMode: 'manual' })
+    expect(job.projectRevision).toBe(1)
+    const changes = await (
+      await app.request(`/v1/projects/${project.id}/copilot-changes`, {
+        headers,
+      })
+    ).json()
+    expect(changes.changes).toHaveLength(1)
+    const change = changes.changes[0]
+    expect(change).toMatchObject({
+      status: 'pending',
+      baseRevision: 1,
+      sessionId: job.sessionId,
+    })
+    const route = `/v1/projects/${project.id}/copilot-changes/${change.id}/approve`
+    const results = await Promise.all(
+      [0, 1].map(() =>
+        app.request(route, { method: 'POST', headers, body: '{}' }),
+      ),
+    )
+    expect(results.some((response) => response.ok)).toBe(true)
+    const saved = await (
+      await app.request(`/v1/projects/${project.id}`, { headers })
+    ).json()
+    expect(saved.revision).toBe(2)
+    expect(saved.document.title).toBe('Live Lines')
+    expect(
+      (
+        await (
+          await app.request(route, { method: 'POST', headers, body: '{}' })
+        ).json()
+      ).status,
+    ).toBe('applied')
+    expect(
+      (
+        await (
+          await app.request(`/v1/projects/${project.id}`, { headers })
+        ).json()
+      ).revision,
+    ).toBe(2)
+  })
+  it('rejects stale approvals after another revision and supports rejecting proposals', async () => {
+    stubCommons()
+    const app = createApp({
+      store: new MemoryDocumentStore(),
+      logRequests: false,
+    })
+    const project = await createProject(app)
+    await turn(app, project.id, { approvalMode: 'manual' })
+    const change = (
+      await (
+        await app.request(`/v1/projects/${project.id}/copilot-changes`, {
+          headers,
+        })
+      ).json()
+    ).changes[0]
+    await turn(app, project.id, { approvalMode: 'automatic' })
+    const base = `/v1/projects/${project.id}/copilot-changes/${change.id}`
+    expect(
+      (
+        await app.request(`${base}/approve`, {
+          method: 'POST',
+          headers,
+          body: '{}',
+        })
+      ).status,
+    ).toBe(409)
+    expect(
+      (
+        await (
+          await app.request(`${base}/reject`, {
+            method: 'POST',
+            headers,
+            body: '{}',
+          })
+        ).json()
+      ).status,
+    ).toBe('rejected')
+    expect(
+      (
+        await (
+          await app.request(`/v1/projects/${project.id}`, { headers })
+        ).json()
+      ).revision,
+    ).toBe(2)
+  })
+  it('enforces discuss-only mode at the tool boundary and disables requested computer use', async () => {
+    const calls = stubCommons()
+    const app = createApp({
+      store: new MemoryDocumentStore(),
+      logRequests: false,
+    })
+    const project = await createProject(app)
+    const job = await turn(app, project.id, {
+      approvalMode: 'read-only',
+      computerEnabled: true,
+    })
+    expect(job.projectRevision).toBe(1)
+    const run = calls.find((call) => call.url.endsWith('/v1/agents/run/stream'))
+    expect(run?.body.computerRequest).toEqual({ enabled: false })
+    const writeResult = calls.find(
+      (call) =>
+        call.url.endsWith('/v1/agents/cli-tool-result') &&
+        call.body.requestId === 'req_write',
+    )
+    expect(JSON.parse(writeResult?.body.result).error).toContain('read-only')
+  })
+  it('prevents concurrent turns from interleaving one conversation', async () => {
+    stubCommons()
+    const app = createApp({
+      store: new MemoryDocumentStore(),
+      logRequests: false,
+      dispatchCopilotJob: async () => {},
+    })
+    const project = await createProject(app)
+    const body = JSON.stringify({ message: rawPrompt, agentId: 'agt_copilot' })
+    const first = await app.request(`/v1/projects/${project.id}/copilot`, {
+      method: 'POST',
+      headers,
+      body,
+    })
+    expect(first.status).toBe(202)
+    const second = await app.request(`/v1/projects/${project.id}/copilot`, {
+      method: 'POST',
+      headers,
+      body,
+    })
+    expect(second.status).toBe(409)
+  })
+})
+
+it('reserves a conversation only after its active job is durably visible', async () => {
+  stubCommons()
+  let release!: () => void
+  let reserved!: () => void
+  const waitForReservation = new Promise<void>((resolve) => {
+    reserved = resolve
+  })
+  const reservationGate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  class PausedStore extends MemoryDocumentStore {
+    private paused = false
+    override async put(
+      partition: string,
+      key: string,
+      document: any,
+      version?: number,
+    ) {
+      await super.put(partition, key, document, version)
+      if (
+        !this.paused &&
+        partition.startsWith('commons-project-sessions:') &&
+        document.activeJobId
+      ) {
+        this.paused = true
+        reserved()
+        await reservationGate
+      }
+    }
+  }
+  const app = createApp({
+    store: new PausedStore(),
+    logRequests: false,
+    dispatchCopilotJob: async () => {},
+  })
+  const project = await (
+    await app.request('/v1/projects', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ document: emptyBrowserDocument }),
+    })
+  ).json()
+  const body = JSON.stringify({ message: rawPrompt, agentId: 'agt_copilot' })
+  const first = app.request(`/v1/projects/${project.id}/copilot`, {
+    method: 'POST',
+    headers,
+    body,
+  })
+  await waitForReservation
+  const second = await app.request(`/v1/projects/${project.id}/copilot`, {
+    method: 'POST',
+    headers,
+    body,
+  })
+  release()
+  expect(second.status).toBe(409)
+  expect((await first).status).toBe(202)
+})
+
+it('marks a failed worker dispatch so the conversation can be retried immediately', async () => {
+  stubCommons()
+  const app = createApp({
+    store: new MemoryDocumentStore(),
+    logRequests: false,
+    dispatchCopilotJob: async () => {
+      throw new Error('unavailable')
+    },
+  })
+  const project = await (
+    await app.request('/v1/projects', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ document: emptyBrowserDocument }),
+    })
+  ).json()
+  const body = JSON.stringify({ message: rawPrompt, agentId: 'agt_copilot' })
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await app.request(`/v1/projects/${project.id}/copilot`, {
+      method: 'POST',
+      headers,
+      body,
+    })
+    expect(response.status).toBe(502)
+  }
+  const conversation = await (
+    await app.request(
+      `/v1/projects/${project.id}/copilot-session?agentId=agt_copilot`,
+      { headers },
+    )
+  ).json()
+  const job = await (
+    await app.request(`/v1/studio/copilot-jobs/${conversation.activeJobId}`, {
+      headers,
+    })
+  ).json()
+  expect(job.status).toBe('failed')
+})
+
+describe('revision provenance across concurrent conversations', () => {
+  async function overlap(mode: 'manual' | 'automatic', retry = false) {
+    stubCommons()
+    const fallback = globalThis.fetch
+    let release!: () => void
+    let read!: () => void
+    const hasRead = new Promise<void>((resolve) => {
+      read = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const results = new Map<string, any>()
+    let sessions = 0
+    let runs = 0
+    const request = (requestId: string, tool: string, args: unknown) => ({
+      type: 'cli_tool_request',
+      requestId,
+      tool,
+      args,
+    })
+    vi.stubGlobal('fetch', async (input: any, init: any = {}) => {
+      const url = String(input)
+      const body = init.body ? JSON.parse(init.body) : undefined
+      if (url.endsWith('/v1/sessions'))
+        return Response.json({
+          data: { sessionId: `ses_overlap_${++sessions}` },
+        })
+      if (url.endsWith('/v1/agents/run/stream')) {
+        runs++
+        return sse(
+          runs === 1
+            ? [
+                request('read_a', 'arcade_read_project', {}),
+                // B saves while A is waiting. Looking at old source afterwards must
+                // not label A's old draft as based on B's newer revision.
+                request('history_a', 'arcade_read_project', { revision: 1 }),
+                request('stale_a', 'arcade_write_live_game', {
+                  ...liveGame,
+                  title: 'Stale overwrite',
+                }),
+                ...(retry
+                  ? [
+                      request('refresh_a', 'arcade_read_project', {}),
+                      request('retry_a', 'arcade_write_live_game', {
+                        ...liveGame,
+                        title: 'Refreshed edit',
+                      }),
+                      request('followup_a', 'arcade_write_live_game', {
+                        ...liveGame,
+                        title: 'Follow-up edit',
+                      }),
+                    ]
+                  : []),
+                { type: 'final', content: 'Finished A.' },
+              ]
+            : [
+                request('read_b', 'arcade_read_project', {}),
+                request('write_b', 'arcade_write_live_game', {
+                  ...liveGame,
+                  title: 'Concurrent edit',
+                }),
+                { type: 'final', content: 'Finished B.' },
+              ],
+        )
+      }
+      if (url.endsWith('/v1/agents/cli-tool-result')) {
+        results.set(body.requestId, JSON.parse(body.result))
+        if (body.requestId === 'read_a') {
+          read()
+          await gate
+        }
+        return Response.json({ ok: true })
+      }
+      return fallback(input, init)
+    })
+    const app = createApp({
+      store: new MemoryDocumentStore(),
+      logRequests: false,
+    })
+    const project = await (
+      await app.request('/v1/projects', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ document: emptyBrowserDocument }),
+      })
+    ).json()
+    const turn = async (extra: Record<string, unknown>) => {
+      const response = await app.request(`/v1/projects/${project.id}/copilot`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          agentId: 'agt_copilot',
+          message: rawPrompt,
+          ...extra,
+        }),
+      })
+      expect(response.status).toBe(202)
+      return (await response.json()).jobId
+    }
+    const jobA = await turn({ approvalMode: mode })
+    await hasRead
+    try {
+      const session = await (
+        await app.request(`/v1/projects/${project.id}/copilot-sessions`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ agentId: 'agt_copilot' }),
+        })
+      ).json()
+      const jobB = await turn({
+        sessionId: session.sessionId,
+        approvalMode: 'automatic',
+      })
+      expect((await poll(app, jobB)).status).toBe('ready')
+    } finally {
+      release()
+    }
+    expect((await poll(app, jobA)).status).toBe('ready')
+    const saved = await (
+      await app.request(`/v1/projects/${project.id}`, { headers })
+    ).json()
+    const proposals = await (
+      await app.request(`/v1/projects/${project.id}/copilot-changes`, {
+        headers,
+      })
+    ).json()
+    return { saved, results, proposals }
+  }
+
+  it.each(['manual', 'automatic'] as const)(
+    'rejects stale %s writes without overwriting another conversation',
+    async (mode) => {
+      const { saved, results, proposals } = await overlap(mode)
+      expect(results.get('read_a').currentRevision).toBe(1)
+      expect(results.get('read_b').currentRevision).toBe(1)
+      expect(results.get('history_a')).toMatchObject({
+        currentRevision: 2,
+        project: { revision: 1 },
+      })
+      expect(results.get('stale_a')).toMatchObject({
+        expectedRevision: 1,
+        currentRevision: 2,
+      })
+      expect(results.get('stale_a').error).toContain(
+        'changed since this run read it',
+      )
+      expect(saved.revision).toBe(2)
+      expect(saved.document.title).toBe('Concurrent edit')
+      expect(proposals.changes).toHaveLength(0)
+    },
+  )
+
+  it('allows a current reread to recover, then advances the baseline after its own successful write', async () => {
+    const { saved, results } = await overlap('automatic', true)
+    expect(results.get('stale_a').error).toContain(
+      'changed since this run read it',
+    )
+    expect(results.get('refresh_a').project.revision).toBe(2)
+    expect(results.get('retry_a')).toMatchObject({ ok: true, revision: 3 })
+    expect(results.get('followup_a')).toMatchObject({ ok: true, revision: 4 })
+    expect(saved.revision).toBe(4)
+    expect(saved.document.title).toBe('Follow-up edit')
+  })
+})

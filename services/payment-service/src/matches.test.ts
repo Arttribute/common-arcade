@@ -99,7 +99,103 @@ describe('blackjack match lifecycle', () => {
     expect((await verifyReplay(blackjackGame, record.replay!)).valid).toBe(true)
     expect(() => replaySchema.parse(record.replay)).not.toThrow()
     expect((await restarted.view(id)).seed).toBe(record.seed)
+    expect((await restarted.view(id)).result).toBeDefined()
+    expect((await restarted.view(id)).accounting).toBeUndefined()
   })
+  it('retains the completed result and retries unavailable accounting without resettling', async () => {
+    let settled = false
+    let accountingAvailable = false
+    let settlements = 0
+    let recoveredReports = 0
+    const report = {
+      status: 'allocated' as const,
+      prizePoolUnits: '200',
+      spectatorPoolUnits: '0',
+      allocations: [
+        {
+          role: 'winner' as const,
+          recipient: alice.address,
+          amountUnits: '195',
+        },
+      ],
+      spectatorPayoutUnits: '0',
+      feeUnits: '5',
+    }
+    const adapter = {
+      deployment: {
+        chainId: 84532,
+        contract: alice.address,
+        token: bob.address,
+      },
+      inspect: async () => ({ status: 0 }),
+      create: async () => `0x${'ab'.repeat(32)}`,
+      lock: async () => `0x${'bc'.repeat(32)}`,
+      settle: async () => {
+        settled = true
+        settlements++
+        return `0x${'cd'.repeat(32)}`
+      },
+      accounting: async () => {
+        if (!accountingAvailable) throw new Error('RPC unavailable')
+        recoveredReports++
+        return report
+      },
+    } as MatchSettlementAdapter
+    const store = new MemoryMatchStore()
+    const host = new MatchHost(
+      store,
+      { 'base-sepolia': adapter },
+      domain,
+      () => 'seed',
+    )
+    const body = {
+      id: randomUUID(),
+      recipients: [alice.address, bob.address],
+      economy: {
+        mode: 'escrow',
+        network: 'base-sepolia',
+        stakeUnits: '100',
+        bounties: false,
+        spectatorBets: false,
+        feeBps: 250,
+        fundingSeconds: 600,
+        settlementSeconds: 3600,
+      },
+    }
+    const id = `mat_${body.id}`
+    await host.create(body, await auth(alice, id, 'create', body))
+    await host.start(id, await auth(alice, id, 'start', {}))
+    for (const [sequence, account] of [alice, bob].entries()) {
+      const action = {
+        actionId: randomUUID(),
+        sequence,
+        type: 'stand' as const,
+      }
+      await host.action(id, action, await auth(account, id, 'action', action))
+    }
+    expect(settled).toBe(true)
+    expect((await host.view(id)).stage).toBe('settled')
+    expect((await host.view(id)).result).toBeDefined()
+    expect((await host.view(id)).accounting).toBeUndefined()
+    accountingAvailable = true
+    const recovered = new MatchHost(store, { 'base-sepolia': adapter }, domain)
+    const concurrentViews = await Promise.all([
+      recovered.view(id),
+      recovered.view(id),
+    ])
+    expect(
+      concurrentViews.every(
+        (view) => JSON.stringify(view.accounting) === JSON.stringify(report),
+      ),
+    ).toBe(true)
+    expect(recoveredReports).toBe(1)
+    await recovered.settle(id)
+    expect(settlements).toBe(1)
+    expect((await recovered.view(id)).transactions).toContain(
+      `0x${'cd'.repeat(32)}`,
+    )
+  })
+
   it('never deals when escrow funding lock fails', async () => {
     const adapter = {
       deployment: {

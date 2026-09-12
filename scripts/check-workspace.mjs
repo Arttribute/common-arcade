@@ -1,7 +1,12 @@
 import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const root = new URL('../', import.meta.url)
+/* `root.pathname` is `/C:/…` on Windows, so joining it produced `C:\C:\…` and
+ * the check — and therefore every commit and `pnpm verify` — failed there.
+ * fileURLToPath is the platform-correct conversion. */
+const rootPath = fileURLToPath(root)
 
 async function childPackageDirectories(relativeDirectory) {
   const directory = new URL(`${relativeDirectory}/`, root)
@@ -25,7 +30,7 @@ firstLevel.push(...(await childPackageDirectories('packages/adapters')))
 
 const names = new Map()
 for (const relativeDirectory of firstLevel) {
-  const path = join(root.pathname, relativeDirectory, 'package.json')
+  const path = join(rootPath, relativeDirectory, 'package.json')
   const manifest = JSON.parse(await readFile(path, 'utf8'))
 
   if (!manifest.name)

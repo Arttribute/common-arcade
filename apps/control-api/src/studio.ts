@@ -56,6 +56,8 @@ type CopilotJob = StoredDocument & {
   projectId: string
   agentId: string
   sessionId?: string
+  approvalMode?: 'manual' | 'automatic' | 'read-only'
+  computerEnabled?: boolean
   status: 'running' | 'ready' | 'failed'
   startedAt: string
   finishedAt?: string
@@ -87,7 +89,28 @@ type CommonsProjectSession = StoredDocument & {
   sessionId: string
   createdAt: string
   messages: StudioConversationMessage[]
+  title?: string
+  updatedAt?: string
+  activeJobId?: string
 }
+type CopilotChange = StoredDocument & {
+  id: string
+  projectId: string
+  sessionId: string
+  agentId: string
+  tool: string
+  args: unknown
+  baseRevision: number
+  createdAt: string
+  status: 'pending' | 'applying' | 'applied' | 'rejected' | 'failed'
+  result?: unknown
+}
+const mutatingCopilotTools = new Set([
+  'arcade_write_live_game',
+  'arcade_write_preview_game',
+  'arcade_configure_earnings',
+  'arcade_publish_game',
+])
 type StudioConversationMessage = {
   role: 'user' | 'assistant'
   text: string
@@ -113,8 +136,19 @@ const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_read_project',
     description:
-      'Read the current Common Arcade Studio project, including every source file, open annotation, revision, and project limit. Call before changing a game.',
-    parameters: { type: 'object', properties: {}, required: [] },
+      'Read the current game, source files, annotations, and revision history. Optionally read a saved revision for comparison. Read the current revision before editing.',
+    parameters: {
+      type: 'object',
+      properties: {
+        revision: {
+          type: 'integer',
+          minimum: 1,
+          description: 'Optional saved revision to inspect',
+        },
+      },
+      required: [],
+      additionalProperties: false,
+    },
   },
   {
     name: 'arcade_write_live_game',
@@ -1311,21 +1345,164 @@ export function createStudioApi(
       throw error
     }
   })
+  // Existing native-v1 records stay addressable; new conversations use their
+  // Commons session ID as a suffix. Every lookup remains owner/project scoped.
+  async function projectConversation(
+    p: Principal,
+    projectId: string,
+    agentId: string,
+    sessionId?: string,
+  ) {
+    const partition = `commons-project-sessions:${p.id}`
+    const key = commonsProjectSessionKey(projectId, agentId)
+    if (!sessionId)
+      return {
+        key,
+        record: await store.get<CommonsProjectSession>(partition, key),
+      }
+    const legacy = await store.get<CommonsProjectSession>(partition, key)
+    if (legacy?.sessionId === sessionId) return { key, record: legacy }
+    const sessionKey = `${key}:${sessionId}`
+    const record = await store.get<CommonsProjectSession>(partition, sessionKey)
+    if (
+      !record ||
+      record.projectId !== projectId ||
+      record.agentId !== agentId ||
+      record.sessionId !== sessionId
+    )
+      throw new CopilotRequestError(
+        404,
+        'Conversation not found for this game and agent.',
+      )
+    return { key: sessionKey, record }
+  }
+  app.get('/v1/projects/:id/copilot-sessions', async (c) => {
+    const p = await authenticate(c.req.header('Authorization'), 'projects:read')
+    const { project } = await owned(p.id, c.req.param('id'))
+    const sessions = await store.list<CommonsProjectSession>(
+      `commons-project-sessions:${p.id}`,
+      `${project.id}:`,
+    )
+    return c.json({
+      sessions: sessions
+        .map(({ sessionId, agentId, createdAt, updatedAt, title }) => ({
+          sessionId,
+          agentId,
+          createdAt,
+          updatedAt,
+          title,
+        }))
+        .sort((a, b) =>
+          (b.updatedAt ?? b.createdAt).localeCompare(
+            a.updatedAt ?? a.createdAt,
+          ),
+        ),
+    })
+  })
+  app.post('/v1/projects/:id/copilot-sessions', async (c) => {
+    const p = await authenticate(
+      c.req.header('Authorization'),
+      'projects:write',
+    )
+    const { project } = await owned(p.id, c.req.param('id'))
+    const body = z
+      .object({
+        agentId: z.string().min(1).max(200),
+        title: z.string().trim().min(1).max(120).optional(),
+      })
+      .strict()
+      .parse(await c.req.json())
+    await commonsRequest(p, `/v1/agents/${encodeURIComponent(body.agentId)}`)
+    const sessionId = await ensureCommonsProjectSession(
+      p,
+      project,
+      body.agentId,
+      true,
+      body.title,
+    )
+    return c.json(
+      (await projectConversation(p, project.id, body.agentId, sessionId))
+        .record,
+      201,
+    )
+  })
   app.get('/v1/projects/:id/copilot-session', async (c) => {
     const p = await authenticate(c.req.header('Authorization'), 'projects:read')
     const { project } = await owned(p.id, c.req.param('id'))
     const agentId = z.string().min(1).max(200).parse(c.req.query('agentId'))
-    const current = await store.get<CommonsProjectSession>(
-      `commons-project-sessions:${p.id}`,
-      commonsProjectSessionKey(project.id, agentId),
+    const sessionId = z
+      .string()
+      .min(1)
+      .max(200)
+      .optional()
+      .parse(c.req.query('sessionId'))
+    const { record } = await projectConversation(
+      p,
+      project.id,
+      agentId,
+      sessionId,
     )
-    return c.json(
-      current ?? {
-        projectId: project.id,
-        agentId,
-        messages: [],
-      },
+    return c.json(record ?? { projectId: project.id, agentId, messages: [] })
+  })
+  app.get('/v1/projects/:id/copilot-changes', async (c) => {
+    const p = await authenticate(c.req.header('Authorization'), 'projects:read')
+    const { project } = await owned(p.id, c.req.param('id'))
+    const changes = await store.list<CopilotChange>(
+      `copilot-changes:${p.id}`,
+      `${project.id}:`,
     )
+    return c.json({ changes })
+  })
+  app.post('/v1/projects/:id/copilot-changes/:changeId/:action', async (c) => {
+    const p = await authenticate(
+      c.req.header('Authorization'),
+      'projects:write',
+    )
+    const { project } = await owned(p.id, c.req.param('id'))
+    const action = z.enum(['approve', 'reject']).parse(c.req.param('action'))
+    const partition = `copilot-changes:${p.id}`
+    const key = `${project.id}:${c.req.param('changeId')}`
+    const change = await store.get<CopilotChange>(partition, key)
+    if (!change) throw new CopilotRequestError(404, 'Change not found.')
+    if (change.status !== 'pending') return c.json(change)
+    if (action === 'reject') {
+      const next = {
+        ...change,
+        version: change.version + 1,
+        status: 'rejected' as const,
+      }
+      await store.put(partition, key, next, change.version)
+      return c.json(next)
+    }
+    if (project.revision !== change.baseRevision)
+      throw new CopilotRequestError(
+        409,
+        'The game changed after this proposal. Ask Copilot to prepare a change for the latest revision.',
+      )
+    // Claim the approval before executing, so retries cannot apply it twice.
+    const claimed = {
+      ...change,
+      version: change.version + 1,
+      status: 'applying' as const,
+    }
+    await store.put(partition, key, claimed, change.version)
+    const result = JSON.parse(
+      await executeArcadeCopilotTool(
+        p,
+        project.id,
+        change.tool,
+        change.args,
+        change.baseRevision,
+      ),
+    )
+    const next = {
+      ...claimed,
+      version: claimed.version + 1,
+      status: result.error ? ('failed' as const) : ('applied' as const),
+      result,
+    }
+    await store.put(partition, key, next, claimed.version)
+    return c.json(next)
   })
   app.post('/v1/projects/:id/copilot', async (c) => {
     const p = await authenticate(
@@ -1340,6 +1517,11 @@ export function createStudioApi(
           .max(8000)
           .refine((value) => value.trim().length > 0, 'Message is required'),
         agentId: z.string().min(1).max(200),
+        sessionId: z.string().min(1).max(200).optional(),
+        approvalMode: z
+          .enum(['manual', 'automatic', 'read-only'])
+          .default('automatic'),
+        computerEnabled: z.boolean().default(false),
         model: z
           .object({
             provider: z.string().min(1).max(40),
@@ -1355,11 +1537,30 @@ export function createStudioApi(
       .strict()
       .parse(await c.req.json())
     await commonsRequest(p, `/v1/agents/${encodeURIComponent(body.agentId)}`)
-    const sessionId = await ensureCommonsProjectSession(
+    const sessionId = body.sessionId
+      ? (await projectConversation(p, project.id, body.agentId, body.sessionId))
+          .record!.sessionId
+      : await ensureCommonsProjectSession(p, project, body.agentId)
+    const conversation = await projectConversation(
       p,
-      project,
+      project.id,
       body.agentId,
+      sessionId,
     )
+    if (conversation.record?.activeJobId) {
+      const active = await store.get<CopilotJob>(
+        `copilot:${p.id}`,
+        conversation.record.activeJobId,
+      )
+      if (
+        active?.status === 'running' &&
+        Date.now() - Date.parse(active.startedAt) < COPILOT_JOB_DEADLINE_MS
+      )
+        throw new CopilotRequestError(
+          409,
+          'Copilot is already working in this conversation.',
+        )
+    }
     // Building a game routinely takes minutes, and every CDN and gateway in
     // front of this service closes a response long before then. The run is
     // started here and its result is collected by polling, so a slow game is a
@@ -1371,17 +1572,35 @@ export function createStudioApi(
       projectId: project.id,
       agentId: body.agentId,
       sessionId,
+      approvalMode: body.approvalMode,
+      computerEnabled: body.computerEnabled,
       status: 'running',
       startedAt: new Date().toISOString(),
       events: [],
     }
     await store.put(`copilot:${p.id}`, jobId, job)
-    await appendCommonsProjectHistory(p, project, body.agentId, {
-      role: 'user',
-      text: body.message,
-      createdAt: job.startedAt,
-      jobId,
-    })
+    await store.put(
+      `commons-project-sessions:${p.id}`,
+      conversation.key,
+      {
+        ...conversation.record!,
+        version: conversation.record!.version + 1,
+        activeJobId: jobId,
+      },
+      conversation.record!.version,
+    )
+    await appendCommonsProjectHistory(
+      p,
+      project,
+      body.agentId,
+      {
+        role: 'user',
+        text: body.message,
+        createdAt: job.startedAt,
+        jobId,
+      },
+      sessionId,
+    )
     const invocation: CopilotJobInvocation = {
       jobId,
       authorization: `Bearer ${p.token}`,
@@ -1391,9 +1610,29 @@ export function createStudioApi(
         model: body.model,
       },
     }
-    if (options.dispatchCopilotJob) await options.dispatchCopilotJob(invocation)
-    else void runCopilotJob(p, job, invocation.input)
-    return c.json({ jobId, status: 'running' as const }, 202)
+    if (options.dispatchCopilotJob) {
+      try {
+        await options.dispatchCopilotJob(invocation)
+      } catch {
+        await store.put(
+          `copilot:${p.id}`,
+          jobId,
+          {
+            ...job,
+            version: job.version + 1,
+            status: 'failed',
+            finishedAt: new Date().toISOString(),
+            error: 'Copilot could not start. Please try again.',
+          },
+          job.version,
+        )
+        throw new CommonsServiceError(
+          502,
+          'Copilot could not start. Please try again.',
+        )
+      }
+    } else void runCopilotJob(p, job, invocation.input)
+    return c.json({ jobId, sessionId, status: 'running' as const }, 202)
   })
   app.post('/v1/internal/copilot-jobs/:jobId/run', async (c) => {
     if (
@@ -1523,6 +1762,9 @@ export function createStudioApi(
     try {
       await assignArcadeSkill(p, job.agentId)
       let response = ''
+      // Each invocation must build on a revision it has actually seen. Another
+      // conversation may save the project while this agent is drafting.
+      let observedRevision = (await owned(p.id, job.projectId)).project.revision
       for await (const event of commonsAgentStream(p, {
         agentId: job.agentId,
         sessionId: job.sessionId,
@@ -1533,8 +1775,11 @@ export function createStudioApi(
         // Game writes, compilation and runtime smoke tests are all provided by
         // the scoped Arcade tools. Do not make creation depend on an optional
         // remote desktop attached to the Commons agent.
-        computerRequest: { enabled: false },
-        cliContext: `Common Arcade Studio project ${job.projectId} is connected through the supplied arcade_* tools. Read it first. Build the requested mechanics with arcade_write_live_game using browser presentation files plus a sandboxed authoritative server module; never replace the request with a grid game. Require arcade_test_game to return liveReady true.`,
+        computerRequest: {
+          enabled:
+            job.computerEnabled === true && job.approvalMode !== 'read-only',
+        },
+        cliContext: `Common Arcade Studio project ${job.projectId}, current revision ${observedRevision}, is connected through the supplied arcade_* tools. Read it first; its saved revisions and annotations are the source of project context across conversations. Answer questions normally; only edit when asked. Editing permission: ${job.approvalMode ?? 'automatic'}. In manual mode, writes are proposals until the user approves them. Never claim a pending proposal was applied or tested as the saved game. Build the requested mechanics with arcade_write_live_game using browser presentation files plus a sandboxed authoritative server module; never replace the request with a grid game. Require arcade_test_game to return liveReady true.`,
         // Preview-only writing is not even exposed during an ordinary build.
         // This makes authoritative hosting the default execution path rather
         // than a convention the model may accidentally ignore.
@@ -1557,12 +1802,87 @@ export function createStudioApi(
             label: copilotToolLabel(tool),
             status: 'running',
           })
-          const result = await executeArcadeCopilotTool(
-            p,
-            job.projectId,
-            tool,
-            event.args,
-          )
+          let result: string
+          const mutationProject = mutatingCopilotTools.has(tool)
+            ? (await owned(p.id, job.projectId)).project
+            : undefined
+          if (
+            mutatingCopilotTools.has(tool) &&
+            job.approvalMode === 'read-only'
+          ) {
+            result = JSON.stringify({
+              error:
+                'This conversation is read-only. Discuss the proposed change without making edits.',
+            })
+          } else if (
+            mutationProject &&
+            mutationProject.revision !== observedRevision
+          ) {
+            result = JSON.stringify({
+              error:
+                'The project changed since this run read it. Read the current project and prepare the change again.',
+              expectedRevision: observedRevision,
+              currentRevision: mutationProject.revision,
+            })
+          } else if (mutationProject && job.approvalMode === 'manual') {
+            const project = mutationProject
+            const change: CopilotChange = {
+              version: 1,
+              id: id('chg'),
+              projectId: project.id,
+              sessionId: job.sessionId!,
+              agentId: job.agentId,
+              tool,
+              args:
+                typeof event.args === 'string'
+                  ? JSON.parse(event.args)
+                  : (event.args ?? {}),
+              baseRevision: observedRevision,
+              createdAt: new Date().toISOString(),
+              status: 'pending',
+            }
+            if (
+              new TextEncoder().encode(JSON.stringify(change)).length > 340000
+            )
+              throw new CopilotRequestError(
+                413,
+                'The proposed change is too large. Ask for a smaller change.',
+              )
+            await store.put(
+              `copilot-changes:${p.id}`,
+              `${project.id}:${change.id}`,
+              change,
+            )
+            result = JSON.stringify({
+              approvalRequired: true,
+              changeId: change.id,
+              message:
+                'Proposal saved for review. The game has NOT changed. Tests run against the saved revision, not this pending proposal.',
+            })
+          } else {
+            result = await executeArcadeCopilotTool(
+              p,
+              job.projectId,
+              tool,
+              event.args,
+              observedRevision,
+            )
+            const outcome = JSON.parse(result)
+            if (!outcome.error) {
+              // Inspecting a historical revision must not silently rebase an
+              // old draft onto the current head. Only a current read does so.
+              if (
+                tool === 'arcade_read_project' &&
+                outcome.project?.revision === outcome.currentRevision
+              )
+                observedRevision = outcome.currentRevision
+              else if (
+                mutatingCopilotTools.has(tool) &&
+                typeof outcome.revision === 'number'
+              )
+                observedRevision = outcome.revision
+            }
+          }
           if (requestId)
             await commonsRequest(p, '/v1/agents/cli-tool-result', {
               requestId,
@@ -1572,7 +1892,11 @@ export function createStudioApi(
             type: 'tool',
             tool,
             label: copilotToolLabel(tool),
-            status: result.includes('"error"') ? 'failed' : 'completed',
+            status: result.includes('"error"')
+              ? 'failed'
+              : result.includes('"approvalRequired"')
+                ? 'pending-approval'
+                : 'completed',
           })
         } else if (event.type === 'tool') {
           const tool = String(event.toolName ?? event.tool ?? event.name ?? '')
@@ -1605,12 +1929,18 @@ export function createStudioApi(
         },
         true,
       )
-      await appendCommonsProjectHistory(p, latest, job.agentId, {
-        role: 'assistant',
-        text: response.trim() || 'Done.',
-        createdAt: new Date().toISOString(),
-        jobId: job.id,
-      })
+      await appendCommonsProjectHistory(
+        p,
+        latest,
+        job.agentId,
+        {
+          role: 'assistant',
+          text: response.trim() || 'Done.',
+          createdAt: new Date().toISOString(),
+          jobId: job.id,
+        },
+        job.sessionId,
+      )
     } catch (error) {
       await persist(
         {
@@ -1633,14 +1963,39 @@ export function createStudioApi(
     projectId: string,
     tool: string,
     rawArgs: unknown,
+    expectedRevision?: number,
   ) {
     try {
       const args =
         typeof rawArgs === 'string' ? JSON.parse(rawArgs) : (rawArgs ?? {})
       if (tool === 'arcade_read_project') {
-        const { project } = await owned(p.id, projectId)
+        const { project: current } = await owned(p.id, projectId)
+        const input = z
+          .object({ revision: z.number().int().positive().optional() })
+          .strict()
+          .parse(args)
+        const revisions = (
+          await store.list<ProjectRecord>(`revisions:${projectId}`)
+        )
+          .map((record) => record.project)
+          .filter((project) => project.revision <= current.revision)
+          .sort((a, b) => b.revision - a.revision)
+        const project =
+          input.revision === undefined || input.revision === current.revision
+            ? current
+            : revisions.find((revision) => revision.revision === input.revision)
+        if (!project) throw new Error('That saved revision does not exist.')
         return JSON.stringify({
           project,
+          currentRevision: current.revision,
+          recentRevisions: revisions
+            .slice(0, 20)
+            .map(({ revision, digest, updatedAt, document }) => ({
+              revision,
+              digest,
+              updatedAt,
+              title: document.title,
+            })),
           liveReadiness: assessLiveReadiness(project.document),
           limits: { sourceBytes: 120000, files: 60 },
           previewPath: `/studio/${project.id}`,
@@ -1648,6 +2003,13 @@ export function createStudioApi(
       }
       if (tool === 'arcade_write_live_game') {
         const record = await owned(p.id, projectId)
+        if (
+          expectedRevision !== undefined &&
+          record.project.revision !== expectedRevision
+        )
+          throw new Error(
+            'The project changed before approval could be applied. Prepare a new proposal.',
+          )
         const document = gameDocumentSchema.parse({ kind: 'browser', ...args })
         if (!isManagedBrowserGame(document))
           throw new Error(
@@ -1677,6 +2039,13 @@ export function createStudioApi(
       }
       if (tool === 'arcade_write_preview_game') {
         const record = await owned(p.id, projectId)
+        if (
+          expectedRevision !== undefined &&
+          record.project.revision !== expectedRevision
+        )
+          throw new Error(
+            'The project changed before approval could be applied. Prepare a new proposal.',
+          )
         const { acceptPreviewOnly, ...source } = args as Record<string, unknown>
         if (acceptPreviewOnly !== true)
           throw new Error(
@@ -1710,6 +2079,13 @@ export function createStudioApi(
         if (!p.scopes.includes('projects:write'))
           throw new IdentityError(403, 'Project write scope required')
         const record = await owned(p.id, projectId)
+        if (
+          expectedRevision !== undefined &&
+          record.project.revision !== expectedRevision
+        )
+          throw new Error(
+            'The project changed before approval could be applied. Prepare a new proposal.',
+          )
         const input = z
           .object({
             monetization: gameMonetizationSchema,
@@ -1788,6 +2164,13 @@ export function createStudioApi(
         if (!p.scopes.includes('releases:publish'))
           throw new IdentityError(403, 'This account cannot publish releases.')
         const record = await owned(p.id, projectId)
+        if (
+          expectedRevision !== undefined &&
+          record.project.revision !== expectedRevision
+        )
+          throw new Error(
+            'The project changed before approval could be applied. Prepare a new proposal.',
+          )
         const project = record.project
         if (project.ownerId !== p.id)
           throw new IdentityError(
@@ -1857,7 +2240,7 @@ export function createStudioApi(
   }
 
   /**
-   * Give each project/agent pair one ordinary Commons web session. This is the
+   * Give each game conversation an ordinary Commons web session. This is the
    * same durable conversation model used by CommonLab: Arcade supplies the
    * current project context while Commons owns history, memory, usage, logs,
    * model routing and the agent runtime itself.
@@ -1866,18 +2249,20 @@ export function createStudioApi(
     p: Principal,
     project: StudioProject,
     agentId: string,
+    newConversation = false,
+    title?: string,
   ) {
     const partition = `commons-project-sessions:${p.id}`
     // JSON proposal sessions contain the retired response contract in their
     // history. A versioned key gives the native tool runtime a clean first turn
     // while preserving every prior Commons session for audit and review.
-    const key = commonsProjectSessionKey(project.id, agentId)
+    let key = commonsProjectSessionKey(project.id, agentId)
     const current = await store.get<CommonsProjectSession>(partition, key)
-    if (current?.sessionId) return current.sessionId
+    if (current?.sessionId && !newConversation) return current.sessionId
     const created = (await commonsRequest(p, '/v1/sessions', {
       agentId,
       initiator: p.id,
-      title: `Common Arcade · ${project.document.title}`.slice(0, 120),
+      title: title ?? `Common Arcade · ${project.document.title}`.slice(0, 120),
       source: 'web',
     })) as { sessionId?: string }
     if (!created.sessionId)
@@ -1885,11 +2270,18 @@ export function createStudioApi(
         502,
         'Commons could not create a conversation for this game. Try again.',
       )
+    if (newConversation) key = `${key}:${created.sessionId}`
     const record: CommonsProjectSession = {
       version: 1,
       projectId: project.id,
       agentId,
       sessionId: created.sessionId,
+      title:
+        title ??
+        `Revision ${project.revision} · ${project.document.title}`.slice(
+          0,
+          120,
+        ),
       createdAt: new Date().toISOString(),
       messages: [],
     }
@@ -1908,9 +2300,10 @@ export function createStudioApi(
     project: StudioProject,
     agentId: string,
     message: StudioConversationMessage,
+    sessionId?: string,
   ) {
     const partition = `commons-project-sessions:${p.id}`
-    const key = commonsProjectSessionKey(project.id, agentId)
+    const { key } = await projectConversation(p, project.id, agentId, sessionId)
     for (let attempt = 0; attempt < 3; attempt++) {
       const current = await store.get<CommonsProjectSession>(partition, key)
       if (!current) {
@@ -1933,6 +2326,7 @@ export function createStudioApi(
             ...current,
             version: current.version + 1,
             messages: [...(current.messages ?? []), message].slice(-100),
+            updatedAt: message.createdAt,
           },
           current.version,
         )
@@ -2461,5 +2855,23 @@ export class CommonsServiceError extends Error {
   ) {
     super(message)
     this.name = 'Commons agent service'
+  }
+}
+
+/** Request errors are distinct from failures of the upstream Commons runtime. */
+export class CopilotRequestError extends Error {
+  readonly code: string
+  constructor(
+    readonly status: 404 | 409 | 413,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'Copilot request'
+    this.code =
+      status === 404
+        ? 'NOT_FOUND'
+        : status === 409
+          ? 'CONFLICT'
+          : 'REQUEST_TOO_LARGE'
   }
 }

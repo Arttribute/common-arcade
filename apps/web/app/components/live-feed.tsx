@@ -161,7 +161,10 @@ export function LiveFeed() {
                   title={match.gameTitle}
                   src={covers[match.gameId]}
                 />
-                <strong>
+                {/* `data-live` separates a session that is actually in play
+                    from one still filling seats, so the red badge stays
+                    meaningful. */}
+                <strong data-live={match.status === 'running' ? 'yes' : 'no'}>
                   <Radio size={12} /> {match.status.toUpperCase()}
                 </strong>
               </div>

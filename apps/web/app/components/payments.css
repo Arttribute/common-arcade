@@ -1,0 +1,403 @@
+.play-choice,
+.game-economy-table,
+.payment-support-option,
+.budget-review {
+  display: grid;
+  gap: 16px;
+}
+.game-economy-table {
+  max-width: 960px;
+  margin-top: 24px;
+}
+.play-choice h3,
+.payment-support-option h3,
+.budget-review h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.play-choice p,
+.payment-support-option p,
+.budget-review p {
+  color: var(--ink-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+.payment-back {
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  padding: 6px 0;
+  text-align: left;
+  width: fit-content;
+}
+.payment-disclosure {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  background: var(--paper);
+}
+.payment-disclosure > summary {
+  color: var(--ink);
+  font-size: 14px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.payment-disclosure[open] > summary {
+  margin-bottom: 16px;
+}
+.payment-disclosure .match-setup-grid {
+  margin-top: 12px;
+}
+.payment-facts {
+  margin: 16px 0;
+  display: grid;
+  gap: 12px;
+}
+.payment-facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+}
+.payment-facts dt {
+  color: var(--ink-muted);
+}
+.payment-facts dd {
+  margin: 0;
+  text-align: right;
+}
+.payment-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.payment-steps [aria-current='step'] {
+  font-weight: 600;
+  color: var(--ink);
+}
+.payment-terms-summary,
+.paid-result,
+.paid-player-card {
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+.paid-result {
+  background: var(--paper);
+}
+.paid-result h2 {
+  font-size: 24px;
+  margin: 8px 0;
+}
+.payment-allocation-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.payment-allocation-list li {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.payment-allocation-list li > div {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+.payment-allocation-list code {
+  display: block;
+  color: var(--ink-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  margin-top: 4px;
+}
+.payment-grants-scroll {
+  max-height: 360px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.payment-grant-policy {
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+.payment-funding > p {
+  font-size: 14px;
+  color: var(--ink-muted);
+}
+.payment-support-option {
+  padding-top: 16px;
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.payment-panel .grant-form {
+  margin-top: 0;
+}
+@media (max-width: 600px) {
+  .payment-facts > div {
+    display: grid;
+    gap: 4px;
+  }
+  .payment-facts dd {
+    text-align: left;
+  }
+  .payment-steps {
+    gap: 8px 12px;
+    font-size: 12px;
+  }
+}
+
+.host-payment-settings > .match-setup-grid {
+  grid-column: 1 / -1;
+}
+
+.game-economy-table,
+.game-economy-table > *,
+.payment-panel .grant-form,
+.budget-fields,
+.budget-review {
+  min-width: 0;
+}
+.budget-fields:not([hidden]) {
+  display: grid;
+  gap: 12px;
+}
+.game-economy-table > .payment-disclosure > .payment-panel {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.payment-panel .grant-form > button,
+.payment-panel .budget-review button {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+}
+
+/* Payment sections own their rhythm: controls never rely on touching inline borders. */
+.payment-wallet-connection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.payment-setup-form,
+.payment-join-form {
+  display: grid;
+  gap: var(--space-4);
+}
+.payment-setup-form > label,
+.payment-join-form > label,
+.payment-disclosure > label {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+.payment-join-form > button {
+  justify-self: start;
+}
+.paid-result > p {
+  margin: 0 0 var(--space-4);
+}
+.payment-allocation-list {
+  margin: var(--space-4) 0;
+}
+.payment-allocation-list li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.payment-disclosure .actions {
+  margin: var(--space-3) 0 0;
+  gap: var(--space-2);
+}
+.payment-disclosure .actions + details {
+  margin-top: var(--space-4);
+}
+.payment-panel .ui-select-trigger,
+.payment-panel .agent-select-trigger,
+.payment-panel .wallet-summary > button,
+.payment-panel .grant-form > button,
+.payment-panel .budget-review button {
+  margin: 0;
+}
+.live-payment-content > section {
+  display: grid;
+  gap: var(--space-4);
+}
+.live-payment-content > section > h3,
+.live-payment-content > section > p {
+  margin: 0;
+}
+.live-payment-content > section > button {
+  justify-self: start;
+}
+
+.payment-funding .actions:empty {
+  display: none;
+  margin: 0;
+}
+
+.payment-back,
+.payment-receipt-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.payment-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  list-style: none;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.payment-summary::-webkit-details-marker {
+  display: none;
+}
+.payment-summary > span {
+  min-width: 0;
+}
+.payment-summary-chevron {
+  flex: none;
+}
+.payment-panel .grant-advanced > .payment-summary::before {
+  content: none;
+}
+details[open] > .payment-summary > .payment-summary-chevron {
+  transform: rotate(90deg);
+}
+
+/* Each payment view presents one next action; supporting records stay folded. */
+.payment-entry-tabs,
+.payment-connect-step,
+.payment-budget-editor,
+.payment-details-body {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.payment-entry-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.payment-connect-step,
+.payment-table-heading {
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+}
+.payment-connect-step h2,
+.payment-connect-step p,
+.payment-table-heading h2,
+.payment-table-heading p,
+.payment-claims h3 {
+  margin: 0;
+}
+.payment-table-heading p {
+  margin-top: var(--space-2);
+}
+.payment-connect-step > button {
+  justify-self: start;
+}
+.payment-connect-step > small,
+.payment-table-heading > p {
+  color: var(--ink-muted);
+}
+.payment-budget-dialog.dialog-content {
+  width: min(620px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  display: grid;
+  gap: var(--space-4);
+}
+.payment-budget-dialog .wallet-summary {
+  margin: 0;
+}
+.payment-budget-dialog .wallet-summary[open] > summary {
+  margin-bottom: var(--space-3);
+}
+.payment-budget-dialog .payment-facts {
+  margin: 0;
+}
+.payment-budget-dialog .budget-review {
+  scroll-margin: var(--space-4);
+}
+.payment-budget-dialog .grant-form {
+  gap: var(--space-4);
+}
+.payment-budget-dialog .grant-limits {
+  gap: var(--space-3);
+}
+.payment-claims {
+  min-width: 0;
+}
+.payment-claims > p {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+.payment-event-data {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.payment-result-reward {
+  color: var(--ink);
+  font-weight: 500;
+}
+.payment-session-details .paid-player-card h2 {
+  font-size: var(--text-base);
+  margin-top: 0;
+}
+.payment-session-details .payment-panel {
+  padding: 0;
+  border: 0;
+}
+@media (max-width: 600px) {
+  .payment-budget-dialog .grant-limits {
+    grid-template-columns: 1fr;
+  }
+  .payment-budget-dialog.dialog-content {
+    padding: var(--space-4);
+  }
+  .payment-connect-step,
+  .payment-table-heading {
+    padding: var(--space-4);
+  }
+}
+
+.payment-budget-dialog .payment-facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.payment-budget-dialog .payment-facts dd {
+  text-align: right;
+}
+.payment-budget-dialog .payment-facts dt {
+  flex-shrink: 0;
+}
+.payment-budget-dialog .payment-facts dd {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.payment-claims .actions {
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+}
+.payment-claims .actions + details {
+  margin-top: var(--space-4);
+}
+.payment-claims .actions > button {
+  max-width: 100%;
+  white-space: normal;
+}

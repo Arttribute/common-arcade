@@ -1,15 +1,10 @@
 'use client'
-import {
-  AlertTriangle,
-  Bot,
-  Code2,
-  Copy,
-  ExternalLink,
-  Radio,
-  Users,
-} from 'lucide-react'
+import { PaymentSummary } from './payment-disclosure'
+import './payments.css'
+import { ArrowLeft, Code2, Copy, ExternalLink, Users } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Select, SelectOption } from './ui/select'
 import { arcade, browserControlClient } from '../../lib/api'
 import { Dialog } from './ui/dialog'
 import { Play } from 'lucide-react'
@@ -38,6 +33,7 @@ export function MatchLauncher({
   const [signedIn, setSignedIn] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [showHost, setShowHost] = useState(false)
   const [mode, setMode] = useState<'commons' | 'external'>('commons')
   const [visibility, setVisibility] = useState<
     'public' | 'unlisted' | 'private'
@@ -77,7 +73,15 @@ export function MatchLauncher({
   }
   async function create() {
     for (const input of setup.current?.querySelectorAll('input') ?? []) {
-      if (!input.reportValidity()) return
+      if (!input.checkValidity()) {
+        let ancestor = input.parentElement
+        while (ancestor && ancestor !== setup.current) {
+          if (ancestor instanceof HTMLDetailsElement) ancestor.open = true
+          ancestor = ancestor.parentElement
+        }
+        input.reportValidity()
+        return
+      }
     }
     setBusy(true)
     setError('')
@@ -207,164 +211,245 @@ export function MatchLauncher({
         </div>
         {mode === 'commons' ? (
           <div className="agent-launcher-copy">
-            <HostPaymentSettings
-              value={economy}
-              onChange={setEconomy}
-              terms={paymentTerms}
-              supported={paidMatchSupported}
-            />
-            {!browserGame && economy.mode === 'free' ? (
-              <div className="match-setup-grid">
-                <label>
-                  Discoverability
-                  <select
-                    value={visibility}
-                    onChange={(event) =>
-                      setVisibility(
-                        event.target.value as 'public' | 'unlisted' | 'private',
-                      )
-                    }
-                  >
-                    <option value="public">Public · listed in Live</option>
-                    <option value="unlisted">Unlisted · link only</option>
-                    <option value="private">Private · owner only</option>
-                  </select>
-                </label>
-                <p className="match-setup-wide match-rule-note">
-                  {visibility === 'public'
-                    ? 'This session will appear on the Live page.'
-                    : visibility === 'unlisted'
-                      ? 'Link only. Find it in Your sessions; it will not appear in the public feed.'
-                      : 'Only you can access this session. Find it in Your sessions.'}
-                </p>
-                <label>
-                  Joining
-                  <select
-                    value={joinPolicy}
-                    onChange={(event) =>
-                      setJoinPolicy(event.target.value as typeof joinPolicy)
-                    }
-                  >
-                    <option value="open">Open lobby</option>
-                    <option value="invite-only">Invite only</option>
-                  </select>
-                </label>
-                {joinPolicy === 'invite-only' ? (
-                  <label className="match-setup-wide">
-                    Invited Commons IDs
-                    <input
-                      value={invites}
-                      onChange={(event) => setInvites(event.target.value)}
-                      placeholder="user_one, agent_owner_two"
-                    />
-                  </label>
-                ) : null}
-                <label>
-                  Rounds
-                  <select
-                    value={maximumRounds}
-                    onChange={(event) =>
-                      setMaximumRounds(Number(event.target.value))
-                    }
-                  >
-                    {[1, 3, 5, 7, 9].map((rounds) => (
-                      <option key={rounds} value={rounds}>
-                        {rounds}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Between rounds
-                  <select
-                    value={restartPolicy}
-                    onChange={(event) =>
-                      setRestartPolicy(
-                        event.target.value as typeof restartPolicy,
-                      )
-                    }
-                  >
-                    <option value="owner">Host starts next round</option>
-                    <option value="unanimous">Every player agrees</option>
-                    <option value="automatic">Automatic</option>
-                  </select>
-                </label>
-                <label>
-                  Watching
-                  <select
-                    value={spectating}
-                    onChange={(event) =>
-                      setSpectating(event.target.value as typeof spectating)
-                    }
-                  >
-                    <option value="enabled">Live spectators</option>
-                    <option value="disabled">Players only</option>
-                  </select>
-                </label>
-                <fieldset className="controller-options">
-                  <legend>Who can play?</legend>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={allowHumans}
-                      onChange={(event) => setAllowHumans(event.target.checked)}
-                    />
-                    Humans
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={allowAgents}
-                      onChange={(event) => setAllowAgents(event.target.checked)}
-                    />
-                    Agents
-                  </label>
-                </fieldset>
-              </div>
-            ) : null}
-            {signedIn ? (
-              <div className="match-launch-actions">
-                <button
-                  className="primary"
-                  disabled={
-                    busy ||
-                    (economy.mode === 'free' &&
-                      !browserGame &&
-                      !allowHumans &&
-                      !allowAgents)
-                  }
-                  onClick={create}
-                >
-                  {busy
-                    ? 'Preparing room…'
-                    : browserGame
-                      ? 'Open creator workspace or remix'
-                      : economy.mode === 'escrow'
-                        ? 'Continue to paid lobby'
-                        : 'Host a live session'}
-                </button>
-                {!browserGame && economy.mode === 'free' ? (
+            {!showHost ? (
+              <div className="play-choice">
+                <h3>Ready to play?</h3>
+                <p>Join an open session with room for you. Entry is free.</p>
+                {signedIn ? (
                   <button
-                    className="secondary"
+                    className="primary"
                     disabled={busy}
                     onClick={() => void findOpenGame()}
                   >
-                    Find an open game
+                    {busy ? 'Finding a session…' : 'Find an open game'}
                   </button>
-                ) : null}
+                ) : (
+                  <a
+                    className="primary"
+                    href={`/api/auth/login?next=/games/${encodeURIComponent(gameId)}`}
+                  >
+                    Sign in to play
+                  </a>
+                )}
+                <button
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => setShowHost(true)}
+                >
+                  Host your own session
+                </button>
               </div>
             ) : (
-              <a className="primary" href="/api/auth/login?next=/discover">
-                Sign in with Commons
-              </a>
+              <>
+                <button
+                  type="button"
+                  className="payment-back"
+                  disabled={busy}
+                  onClick={() => setShowHost(false)}
+                >
+                  <ArrowLeft size={16} aria-hidden /> Playing options
+                </button>
+                <HostPaymentSettings
+                  value={economy}
+                  onChange={setEconomy}
+                  terms={paymentTerms}
+                  supported={paidMatchSupported}
+                />
+                {!browserGame && economy.mode === 'free' ? (
+                  <details className="payment-disclosure">
+                    <PaymentSummary>
+                      Session options · {maximumRounds}{' '}
+                      {maximumRounds === 1 ? 'round' : 'rounds'} · {visibility}
+                    </PaymentSummary>
+                    <div className="match-setup-grid">
+                      <div className="field">
+                        <span className="field-label">Discoverability</span>
+                        <Select
+                          value={visibility}
+                          onValueChange={(next) =>
+                            setVisibility(
+                              next as 'public' | 'unlisted' | 'private',
+                            )
+                          }
+                          ariaLabel="Discoverability"
+                        >
+                          <SelectOption
+                            value="public"
+                            title="Public"
+                            hint="Listed on the Live page"
+                          />
+                          <SelectOption
+                            value="unlisted"
+                            title="Unlisted"
+                            hint="Anyone with the link can join"
+                          />
+                          <SelectOption
+                            value="private"
+                            title="Private"
+                            hint="Only you can open it"
+                          />
+                        </Select>
+                      </div>
+                      <p className="match-setup-wide match-rule-note">
+                        {visibility === 'public'
+                          ? 'This session will appear on the Live page.'
+                          : visibility === 'unlisted'
+                            ? 'Link only. Find it in Your sessions; it will not appear in the public feed.'
+                            : 'Only you can access this session. Find it in Your sessions.'}
+                      </p>
+                      <div className="field">
+                        <span className="field-label">Joining</span>
+                        <Select
+                          value={joinPolicy}
+                          onValueChange={(next) =>
+                            setJoinPolicy(next as typeof joinPolicy)
+                          }
+                          ariaLabel="Joining"
+                        >
+                          <SelectOption value="open" title="Open lobby" />
+                          <SelectOption
+                            value="invite-only"
+                            title="Invite only"
+                          />
+                        </Select>
+                      </div>
+                      {joinPolicy === 'invite-only' ? (
+                        <label className="match-setup-wide">
+                          Invited Commons IDs
+                          <input
+                            value={invites}
+                            onChange={(event) => setInvites(event.target.value)}
+                            placeholder="user_one, agent_owner_two"
+                          />
+                        </label>
+                      ) : null}
+                      <div className="field">
+                        <span className="field-label">Rounds</span>
+                        <Select
+                          value={String(maximumRounds)}
+                          onValueChange={(next) =>
+                            setMaximumRounds(Number(next))
+                          }
+                          ariaLabel="Rounds"
+                        >
+                          {[1, 3, 5, 7, 9].map((rounds) => (
+                            <SelectOption
+                              key={rounds}
+                              value={String(rounds)}
+                              title={
+                                rounds === 1
+                                  ? 'Single round'
+                                  : `${rounds} rounds`
+                              }
+                            />
+                          ))}
+                        </Select>
+                      </div>
+                      <div className="field">
+                        <span className="field-label">Between rounds</span>
+                        <Select
+                          value={restartPolicy}
+                          onValueChange={(next) =>
+                            setRestartPolicy(next as typeof restartPolicy)
+                          }
+                          ariaLabel="Between rounds"
+                        >
+                          <SelectOption
+                            value="owner"
+                            title="Host starts next round"
+                          />
+                          <SelectOption
+                            value="unanimous"
+                            title="Every player agrees"
+                          />
+                          <SelectOption value="automatic" title="Automatic" />
+                        </Select>
+                      </div>
+                      <div className="field">
+                        <span className="field-label">Watching</span>
+                        <Select
+                          value={spectating}
+                          onValueChange={(next) =>
+                            setSpectating(next as typeof spectating)
+                          }
+                          ariaLabel="Watching"
+                        >
+                          <SelectOption
+                            value="enabled"
+                            title="Live spectators"
+                            hint="Anyone can watch"
+                          />
+                          <SelectOption
+                            value="disabled"
+                            title="Players only"
+                            hint="No spectators"
+                          />
+                        </Select>
+                      </div>
+                      <fieldset className="controller-options">
+                        <legend>Who can play?</legend>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={allowHumans}
+                            onChange={(event) =>
+                              setAllowHumans(event.target.checked)
+                            }
+                          />
+                          Humans
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={allowAgents}
+                            onChange={(event) =>
+                              setAllowAgents(event.target.checked)
+                            }
+                          />
+                          Agents
+                        </label>
+                      </fieldset>
+                    </div>
+                  </details>
+                ) : null}
+                {signedIn ? (
+                  <div className="match-launch-actions">
+                    <button
+                      className="primary"
+                      disabled={
+                        busy ||
+                        (economy.mode === 'free' &&
+                          !browserGame &&
+                          !allowHumans &&
+                          !allowAgents)
+                      }
+                      onClick={create}
+                    >
+                      {busy
+                        ? 'Preparing room…'
+                        : browserGame
+                          ? 'Open creator workspace or remix'
+                          : economy.mode === 'escrow'
+                            ? 'Continue to paid lobby'
+                            : 'Host a live session'}
+                    </button>
+                  </div>
+                ) : (
+                  <a
+                    className="primary"
+                    href={`/api/auth/login?next=/games/${encodeURIComponent(gameId)}`}
+                  >
+                    Sign in with Commons
+                  </a>
+                )}
+              </>
             )}
           </div>
         ) : (
           <div className="agent-launcher-copy">
             <p>
-              Read the immutable release contract, then use an Arcade access key
-              and the SDK or realtime runner. Realtime games must use a
-              persistent policy runner—not one model request per frame.
+              Bring an agent from another platform using an Arcade access key.
+              The connection guide walks through setup.
             </p>
             <button
               className="copy-contract"
@@ -382,7 +467,11 @@ export function MatchLauncher({
             </a>
           </div>
         )}
-        {error ? <p className="error-text">{error}</p> : null}
+        {error ? (
+          <p className="error-text" role="alert">
+            {error}
+          </p>
+        ) : null}
       </div>
     </Dialog>
   )

@@ -76,6 +76,8 @@ export interface PersistedMatch {
   lobby?: MatchLobbyRules
   series?: MatchSeriesState
   completedRounds?: Replay[]
+  /** Running time only; lobby, pauses, and inter-round breaks do not spend it. */
+  activeDurationMs?: number
 }
 
 interface MatchRecord {
@@ -92,6 +94,8 @@ interface MatchRecord {
   readonly series: MatchSeriesState
   readonly completedRounds: Replay[]
   lastActiveAt: number
+  activeDurationMs: number
+  activeSince?: number
 }
 
 interface SessionRecord {
@@ -378,6 +382,8 @@ export class LocalArcadePlatform {
           },
           completedRounds: saved.completedRounds ?? [],
           lastActiveAt: now().getTime(),
+          activeDurationMs: saved.activeDurationMs ?? 0,
+          activeSince: saved.status === 'running' ? now().getTime() : undefined,
         }
         await platform.persist(record)
         platform.matches.set(saved.replay.matchId, record)
@@ -551,6 +557,7 @@ export class LocalArcadePlatform {
       series: seriesState(request),
       completedRounds: [],
       lastActiveAt: this.now().getTime(),
+      activeDurationMs: 0,
     }
     await this.persist(record)
     this.matches.set(matchId, record)
@@ -728,6 +735,7 @@ export class LocalArcadePlatform {
       record.runtime.getStatus() === 'lobby'
     ) {
       record.runtime.start()
+      record.activeSince = this.now().getTime()
       this.startClock(record)
     }
     record.updatedAt = this.now().toISOString()
@@ -1177,25 +1185,7 @@ export class LocalArcadePlatform {
       })
       if (previous) this.sessions.delete(previous.sessionId)
       this.coachingRequests.delete(key)
-      if (!this.agentTimers.has(matchId)) {
-        let pending = false
-        const timer = setInterval(() => {
-          if (pending) return
-          pending = true
-          void this.exclusive(matchId, () => this.runAgentPolicies(matchId))
-            .catch(() => {
-              // A failure stops agent control, never the simulation clock.
-              const active = this.agentTimers.get(matchId)
-              if (active) clearInterval(active)
-              this.agentTimers.delete(matchId)
-            })
-            .finally(() => {
-              pending = false
-            })
-        }, 16)
-        timer.unref()
-        this.agentTimers.set(matchId, timer)
-      }
+      this.startAgentPolicies(matchId)
       // Do not wait for the old decision cadence or for the coaching HTTP response.
       await this.runAgentPolicies(matchId)
       return {
@@ -1211,9 +1201,42 @@ export class LocalArcadePlatform {
     })
   }
 
+  private startAgentPolicies(matchId: string): void {
+    const record = this.record(matchId)
+    if (
+      !record.seats.some((seat) =>
+        this.agentPolicies.has(`${matchId}/${seat.id}`),
+      )
+    )
+      return
+    if (!this.agentTimers.has(matchId)) {
+      let pending = false
+      const timer = setInterval(() => {
+        if (pending) return
+        pending = true
+        void this.exclusive(matchId, () => this.runAgentPolicies(matchId))
+          .catch(() => {
+            // A failure stops agent control, never the simulation clock.
+            const active = this.agentTimers.get(matchId)
+            if (active) clearInterval(active)
+            this.agentTimers.delete(matchId)
+          })
+          .finally(() => {
+            pending = false
+          })
+      }, 16)
+      timer.unref()
+      this.agentTimers.set(matchId, timer)
+    }
+  }
+
   private async runAgentPolicies(matchId: string) {
     const record = this.record(matchId)
-    if (record.runtime.getStatus() === 'completed') {
+    if (
+      ['completed', 'canceled', 'expired', 'failed', 'invalidated'].includes(
+        record.runtime.getStatus(),
+      )
+    ) {
       const timer = this.agentTimers.get(matchId)
       if (timer) clearInterval(timer)
       this.agentTimers.delete(matchId)
@@ -1309,12 +1332,20 @@ export class LocalArcadePlatform {
       const changed = agent.held?.id !== decision.actionId
       if (changed) await this.releaseAgentInput(record, seat.id, agent)
       if (!changed && agent.held?.mode === 'hold') continue
+      const round = record.series.currentRound
       const result = await this.submitPolicyAction(
         record,
         seat.id,
         agent,
         payload,
       )
+      // A finishing action can advance the round. Do not restore stale held
+      // inputs or learning feedback over the new round's reset.
+      if (
+        record.series.currentRound !== round ||
+        record.runtime.getStatus() !== 'running'
+      )
+        break
       if (
         result.disposition === 'accepted' &&
         (control?.mode === 'hold' || control?.mode === 'pulse')
@@ -1577,21 +1608,29 @@ export class LocalArcadePlatform {
         const agent = this.agentPolicies.get(`${matchId}/${seat.id}`)
         if (agent) await this.releaseAgentInput(record, seat.id, agent)
       }
+      this.accountActiveTime(record)
+      record.activeSince = undefined
       record.runtime.pause()
       this.stopClock(matchId)
       record.updatedAt = this.now().toISOString()
+      await this.persist(record)
       await this.notify(matchId)
       return this.describe(record)
     })
   }
 
   async resumeMatch(matchId: string): Promise<MatchDescriptor> {
-    const record = this.record(matchId)
-    record.runtime.resume()
-    this.startClock(record)
-    record.updatedAt = this.now().toISOString()
-    await this.notify(matchId)
-    return this.describe(record)
+    return this.exclusive(matchId, async () => {
+      const record = this.record(matchId)
+      record.runtime.resume()
+      record.activeSince = this.now().getTime()
+      this.startMaintenance()
+      this.startClock(record)
+      record.updatedAt = this.now().toISOString()
+      await this.persist(record)
+      await this.notify(matchId)
+      return this.describe(record)
+    })
   }
 
   subscribe(
@@ -1634,6 +1673,8 @@ export class LocalArcadePlatform {
           403,
           'Only the match owner can end this match.',
         )
+      this.accountActiveTime(record)
+      record.activeSince = undefined
       record.runtime.end('canceled', 'Ended by the match owner.')
       record.series.status = 'complete'
       this.stopClock(matchId)
@@ -1675,30 +1716,33 @@ export class LocalArcadePlatform {
           )
         )
           continue
-        const connected = [...this.sessions.values()].some(
-          (session) =>
-            session.matchId === record.runtime.matchId &&
-            session.connected &&
-            session.mode === 'control',
-        )
-        if (connected) record.lastActiveAt = this.now().getTime()
-        const idle = this.now().getTime() - record.lastActiveAt
-        const age = this.now().getTime() - Date.parse(record.createdAt)
-        const maxDuration =
-          (record.manifest.spec.clock.maxDurationSeconds ?? 600) *
-          1000 *
-          record.series.maximumRounds
-        if (
-          idle < (record.runtime.getStatus() === 'lobby' ? 300_000 : 60_000) &&
-          age < maxDuration
-        )
-          continue
         void this.exclusive(record.runtime.matchId, async () => {
+          // Recheck after queued gameplay: a finishing action may already have
+          // moved this session into an inter-round break.
+          const status = record.runtime.getStatus()
+          if (!['lobby', 'ready', 'running', 'paused'].includes(status)) return
+          const now = this.now().getTime()
+          const connected = [...this.sessions.values()].some(
+            (session) =>
+              session.matchId === record.runtime.matchId &&
+              session.connected &&
+              session.mode === 'control',
+          )
+          if (connected) record.lastActiveAt = now
+          this.accountActiveTime(record)
+          const idleLimit = status === 'lobby' ? 300_000 : 60_000
+          const idleExpired = now - record.lastActiveAt >= idleLimit
+          const maxDuration =
+            (record.manifest.spec.clock.maxDurationSeconds ?? 600) *
+            1000 *
+            record.series.maximumRounds
+          if (!idleExpired && record.activeDurationMs < maxDuration) return
+          record.activeSince = undefined
           record.runtime.end(
             'expired',
-            idle >= 60_000
+            idleExpired
               ? 'No connected players.'
-              : 'Maximum match duration reached.',
+              : 'Maximum active match duration reached.',
           )
           record.series.status = 'complete'
           this.stopClock(record.runtime.matchId)
@@ -1712,6 +1756,14 @@ export class LocalArcadePlatform {
     }, 5000)
     this.maintenance = timer
     timer.unref()
+  }
+
+  private accountActiveTime(record: MatchRecord): void {
+    if (record.activeSince === undefined) return
+    const now = this.now().getTime()
+    record.activeDurationMs += Math.max(0, now - record.activeSince)
+    record.activeSince =
+      record.runtime.getStatus() === 'running' ? now : undefined
   }
 
   private startClock(record: MatchRecord): void {
@@ -1797,6 +1849,7 @@ export class LocalArcadePlatform {
     this.clocks.delete(matchId)
   }
   private async persist(record: MatchRecord) {
+    this.accountActiveTime(record)
     if (!this.persistMatch) return
     const saved: PersistedMatch = {
       version: record.version + 1,
@@ -1813,6 +1866,7 @@ export class LocalArcadePlatform {
       lobby: record.lobby,
       series: record.series,
       completedRounds: record.completedRounds,
+      activeDurationMs: record.activeDurationMs,
     }
     try {
       await this.persistMatch(saved, record.version || undefined)
@@ -1892,6 +1946,7 @@ export class LocalArcadePlatform {
 
   private finishRound(record: MatchRecord): void {
     if (record.series.status !== 'active') return
+    this.accountActiveTime(record)
     const result = record.runtime.exportReplay().events.at(-1)?.payload
     if (
       typeof result === 'object' &&
@@ -1917,6 +1972,7 @@ export class LocalArcadePlatform {
     record.series.status = 'active'
     record.series.restartVotes = []
     for (const seat of record.seats) {
+      delete seat.heldReleaseAction
       const agent = this.agentPolicies.get(
         `${record.runtime.matchId}/${seat.id}`,
       )
@@ -1954,8 +2010,13 @@ export class LocalArcadePlatform {
             ? 'connected'
             : 'claimed'
     }
-    if (record.seats.every((seat) => seat.status !== 'open'))
+    if (record.seats.every((seat) => seat.status !== 'open')) {
       record.runtime.start()
+      record.activeSince = this.now().getTime()
+    }
+    record.lastActiveAt = this.now().getTime()
+    this.startMaintenance()
+    this.startAgentPolicies(record.runtime.matchId)
     this.startClock(record)
   }
 
@@ -1971,6 +2032,7 @@ export class LocalArcadePlatform {
     const snapshot = await record.runtime.snapshot()
     return {
       id: record.runtime.matchId,
+      ...(record.ownerId ? { ownerId: record.ownerId } : {}),
       releaseId: record.runtime.game.releaseId,
       releaseDigest: record.manifest.metadata.digest,
       mode: record.runtime.game.mode,

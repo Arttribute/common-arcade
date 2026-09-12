@@ -10,7 +10,16 @@ import type {
 } from '@common-arcade/protocol'
 import { useEffect, useRef, useState } from 'react'
 import {
+  ArrowRight,
+  Eye,
+  LogIn,
+  LogOut,
+  MessageSquare,
+  Plug,
+  Radio,
+  Square,
   Check,
+  ChevronDown,
   RotateCcw,
   Share2,
   User,
@@ -23,6 +32,8 @@ import {
 import { LiveControls, actionLabel } from './live-controls'
 import { ExternalSeatAgent } from './external-seat-agent'
 import { LivePaymentPanel } from './live-payment-panel'
+import { AgentSelect } from './agent-select'
+import './live-results.css'
 
 function resultLabel(
   result: JsonValue,
@@ -35,7 +46,24 @@ function resultLabel(
       return `Winner: ${seats.find((seat) => seat.id === winner)?.label ?? winner}`
     if (result.draw === true || result.winner === null) return 'Draw'
   }
-  return typeof result === 'string' ? result : JSON.stringify(result)
+  return typeof result === 'string' ? result : 'Round complete'
+}
+
+function seriesOutcome(match: MatchDescriptor, ended: boolean): string {
+  if (ended && (match.series?.maximumRounds ?? 1) > 1) {
+    const scores = match.seats.map((seat) => ({
+      label: seat.label,
+      wins: match.series?.scores[seat.id] ?? 0,
+    }))
+    const best = Math.max(0, ...scores.map((seat) => seat.wins))
+    const leaders = scores.filter((seat) => seat.wins === best)
+    if (best > 0 && leaders.length === 1)
+      return `${leaders[0]!.label} wins the session`
+    if (best > 0) return 'The session ends in a tie'
+  }
+  return match.result !== undefined
+    ? resultLabel(match.result, match.seats)
+    : 'Round complete'
 }
 
 export function PlayMatch({
@@ -70,6 +98,10 @@ export function PlayMatch({
   const [connecting, setConnecting] = useState(false)
   const [rosterOnline, setRosterOnline] = useState(true)
   const [match, setMatch] = useState<MatchDescriptor>()
+  // Only seated players may vote; ending a session belongs to its host.
+  const seatedHere = Boolean(
+    viewer && match?.seats.some((seat) => seat.actorId === viewer.id),
+  )
   const [observation, setObservation] = useState<Observation>()
   const [publicState, setPublicState] = useState<JsonValue>()
   const [lease, setLease] = useState<string>()
@@ -700,11 +732,15 @@ export function PlayMatch({
 
   return (
     <div className="match-shell">
-      <aside className="match-panel">
+      <aside
+        className="match-panel live-player-panel"
+        aria-label="Players and session options"
+        tabIndex={0}
+      >
         <div className="match-panel-title">
           <span className="panel-label">ROSTER</span>
           <button className="icon-copy" onClick={() => void share()}>
-            {copied ? <Check size={12} /> : <Share2 size={12} />}
+            {copied ? <Check size={16} /> : <Share2 size={16} />}
             {copied ? 'Copied' : 'Share'}
           </button>
         </div>
@@ -714,15 +750,22 @@ export function PlayMatch({
             / {match?.seats.length ?? 0} seats taken
           </strong>
           <span>
-            {terminal
-              ? ended
-                ? 'Session ended'
-                : 'Round complete'
-              : connection === 'connected'
-                ? '● Live seat updates'
-                : rosterOnline
-                  ? 'Seat availability refreshes automatically'
-                  : 'Reconnecting — availability may be out of date'}
+            {terminal ? (
+              ended ? (
+                'Session ended'
+              ) : (
+                'Round complete'
+              )
+            ) : connection === 'connected' ? (
+              <>
+                <Radio size={16} aria-hidden />
+                Live seat updates
+              </>
+            ) : rosterOnline ? (
+              'Seat availability refreshes automatically'
+            ) : (
+              'Reconnecting — availability may be out of date'
+            )}
           </span>
         </p>
         {match && (
@@ -755,24 +798,20 @@ export function PlayMatch({
             className="seat-sign-in"
             href={`/api/auth/login?next=/play/${encodeURIComponent(matchId)}`}
           >
+            <LogIn size={16} aria-hidden />
             Sign in to take a seat
           </a>
         ) : null}
         {agents.length > 0 ? (
-          <label>
-            Commons agent
-            <select
+          <div className="field">
+            <span className="field-label">Commons agent</span>
+            <AgentSelect
+              agents={agents}
               value={selectedAgent}
-              onChange={(event) => setSelectedAgent(event.target.value)}
-            >
-              <option value="">Choose an agent</option>
-              {agents.map((agent) => (
-                <option key={agent.agentId} value={agent.agentId}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              onChange={setSelectedAgent}
+              allowNone
+            />
+          </div>
         ) : null}
         {activeAgent ? (
           <div className="agent-live-status" role="status">
@@ -796,6 +835,7 @@ export function PlayMatch({
                   setAgentStatus('Retrying agent decision…')
                 }}
               >
+                <RotateCcw size={16} aria-hidden />
                 Retry agent
               </button>
             ) : null}
@@ -832,12 +872,13 @@ export function PlayMatch({
                 connection === 'connected',
               )
             return (
-              <article
+              <details
                 key={seat.id}
+                open={joinable || own || controlling}
                 className={`roster-seat ${open ? 'is-open' : 'is-taken'} ${controlling ? 'is-yours' : ''}`}
                 data-seat-id={seat.id}
               >
-                <div className="roster-seat-heading">
+                <summary className="roster-seat-heading">
                   <strong>
                     {seat.label ?? `${seat.role} · Seat ${index + 1}`}
                   </strong>
@@ -846,173 +887,198 @@ export function PlayMatch({
                   >
                     {open ? 'Open' : 'Taken'}
                   </span>
-                </div>
-                {seat.team ? <small>Team {seat.team}</small> : null}
-                <div className="seat-occupant">
-                  {seat.controllerKind === 'agent' ? (
-                    <Bot size={15} />
-                  ) : open ? (
-                    <Circle size={15} />
-                  ) : (
-                    <User size={15} />
-                  )}
-                  <span>
-                    {open
-                      ? 'Available seat'
-                      : (agent?.name ??
-                        (own
-                          ? `${viewer!.name} (you)`
-                          : seat.controllerKind === 'agent'
-                            ? 'Agent player'
-                            : 'Human player'))}
-                  </span>
-                </div>
-                {!open ? (
-                  <small className="seat-connection">
-                    {terminal
-                      ? 'Played in this session'
-                      : controlling
-                        ? 'You are controlling this seat'
-                        : seat.status === 'connected'
-                          ? 'Connected'
-                          : seat.status === 'disconnected'
-                            ? 'Disconnected · seat reserved'
-                            : 'Claimed · waiting to connect'}
-                  </small>
-                ) : null}
-                <details className="seat-identity">
-                  <summary>Seat details</summary>
-                  <dl>
-                    <dt>Seat ID</dt>
-                    <dd>{seat.id}</dd>
-                    {seat.actorId ? (
-                      <>
-                        <dt>Account</dt>
-                        <dd>{seat.actorId}</dd>
-                      </>
-                    ) : null}
-                    {seat.controllerId ? (
-                      <>
-                        <dt>Controller</dt>
-                        <dd>{seat.controllerId}</dd>
-                      </>
-                    ) : null}
-                  </dl>
-                </details>
-                {viewer &&
-                (!controlling || localControllerKind === 'agent') &&
-                (joinable || own) &&
-                match.lobby?.allowedControllers.includes('human') ? (
-                  <button
-                    disabled={disabled}
-                    onClick={() => void connect('control', seat.id)}
-                  >
-                    {connectingSeat === seat.id
-                      ? 'Connecting…'
-                      : own
-                        ? humanController
-                          ? 'Reconnect as human'
-                          : 'Play myself'
-                        : `Take seat ${index + 1}`}
-                  </button>
-                ) : null}
-                {viewer &&
-                selectedAgent &&
-                (!controlling || !agentController) &&
-                (joinable || own) &&
-                match.lobby?.allowedControllers.includes('agent') ? (
-                  <button
-                    disabled={disabled}
-                    onClick={() =>
-                      void connect('control', seat.id, selectedAgent)
-                    }
-                  >
-                    {connectingSeat === seat.id
-                      ? 'Connecting…'
-                      : `Assign ${agents.find((agent) => agent.agentId === selectedAgent)?.name ?? 'agent'}`}
-                  </button>
-                ) : null}
-                {viewer &&
-                !terminal &&
-                (joinable || own) &&
-                match.lobby?.allowedControllers.includes('agent') ? (
-                  <button
-                    className="secondary"
-                    disabled={disabled}
-                    onClick={() => {
-                      if (own && seat.controllerId?.startsWith('external-'))
-                        setExternalSetup({
-                          seatId: seat.id,
-                          controllerId: seat.controllerId,
-                        })
-                      else void reserveExternal(seat.id)
-                    }}
-                  >
-                    Connect external agent
-                  </button>
-                ) : null}
-                {own && agent && !terminal && seat.controllerId ? (
-                  <div>
-                    <textarea
-                      aria-label={`Coach ${seat.label ?? `Player ${index + 1}`}`}
-                      placeholder="Tell your agent how to change its play…"
-                      maxLength={2000}
-                      value={coaching[seat.id] ?? ''}
-                      onChange={(event) =>
-                        setCoaching((v) => ({
-                          ...v,
-                          [seat.id]: event.target.value,
-                        }))
-                      }
-                    />
-                    <button
-                      disabled={
-                        coachingBusy[seat.id] || !coaching[seat.id]?.trim()
-                      }
-                      onClick={() => void coach(seat.id, seat.controllerId!)}
-                    >
-                      Coach agent
-                    </button>
-                    <p role="status">{coachingStatus[seat.id]}</p>
+                  <ChevronDown
+                    size={16}
+                    className="roster-seat-chevron"
+                    aria-hidden
+                  />
+                </summary>
+                <div className="roster-seat-body">
+                  {seat.team ? <small>Team {seat.team}</small> : null}
+                  <div className="seat-occupant">
+                    {seat.controllerKind === 'agent' ? (
+                      <Bot size={16} />
+                    ) : open ? (
+                      <Circle size={16} />
+                    ) : (
+                      <User size={16} />
+                    )}
+                    <span>
+                      {open
+                        ? 'Available seat'
+                        : (agent?.name ??
+                          (own
+                            ? `${viewer!.name} (you)`
+                            : seat.controllerKind === 'agent'
+                              ? 'Agent player'
+                              : 'Human player'))}
+                    </span>
                   </div>
-                ) : null}
-                {own && !terminal ? (
-                  <button
-                    className="secondary"
-                    disabled={connecting}
-                    onClick={() => void leaveSeat(seat.id)}
-                  >
-                    Leave seat
-                  </button>
-                ) : null}
-              </article>
+                  {!open ? (
+                    <small className="seat-connection">
+                      {terminal
+                        ? 'Played in this session'
+                        : controlling
+                          ? 'You are controlling this seat'
+                          : seat.status === 'connected'
+                            ? 'Connected'
+                            : seat.status === 'disconnected'
+                              ? 'Disconnected · seat reserved'
+                              : 'Claimed · waiting to connect'}
+                    </small>
+                  ) : null}
+                  <details className="seat-identity live-disclosure">
+                    <summary>
+                      <span>Seat details</span>
+                      <ChevronDown size={16} aria-hidden />
+                    </summary>
+                    <dl>
+                      <dt>Seat ID</dt>
+                      <dd>{seat.id}</dd>
+                      {seat.actorId ? (
+                        <>
+                          <dt>Account</dt>
+                          <dd>{seat.actorId}</dd>
+                        </>
+                      ) : null}
+                      {seat.controllerId ? (
+                        <>
+                          <dt>Controller</dt>
+                          <dd>{seat.controllerId}</dd>
+                        </>
+                      ) : null}
+                    </dl>
+                  </details>
+                  {viewer &&
+                  (!controlling || localControllerKind === 'agent') &&
+                  (joinable || own) &&
+                  match.lobby?.allowedControllers.includes('human') ? (
+                    <button
+                      disabled={disabled}
+                      onClick={() => void connect('control', seat.id)}
+                    >
+                      <User size={16} aria-hidden />
+                      {connectingSeat === seat.id
+                        ? 'Connecting…'
+                        : own
+                          ? humanController
+                            ? 'Reconnect as human'
+                            : 'Play myself'
+                          : `Take seat ${index + 1}`}
+                    </button>
+                  ) : null}
+                  {viewer &&
+                  selectedAgent &&
+                  (!controlling || !agentController) &&
+                  (joinable || own) &&
+                  match.lobby?.allowedControllers.includes('agent') ? (
+                    <button
+                      disabled={disabled}
+                      onClick={() =>
+                        void connect('control', seat.id, selectedAgent)
+                      }
+                    >
+                      <Bot size={16} aria-hidden />
+                      {connectingSeat === seat.id
+                        ? 'Connecting…'
+                        : `Assign ${agents.find((agent) => agent.agentId === selectedAgent)?.name ?? 'agent'}`}
+                    </button>
+                  ) : null}
+                  {viewer &&
+                  !terminal &&
+                  (joinable || own) &&
+                  match.lobby?.allowedControllers.includes('agent') ? (
+                    <button
+                      className="secondary"
+                      disabled={disabled}
+                      onClick={() => {
+                        if (own && seat.controllerId?.startsWith('external-'))
+                          setExternalSetup({
+                            seatId: seat.id,
+                            controllerId: seat.controllerId,
+                          })
+                        else void reserveExternal(seat.id)
+                      }}
+                    >
+                      <Plug size={16} aria-hidden />
+                      Connect external agent
+                    </button>
+                  ) : null}
+                  {own && agent && !terminal && seat.controllerId ? (
+                    <div className="seat-coaching">
+                      <textarea
+                        aria-label={`Coach ${seat.label ?? `Player ${index + 1}`}`}
+                        placeholder="Tell your agent how to change its play…"
+                        maxLength={2000}
+                        value={coaching[seat.id] ?? ''}
+                        onChange={(event) =>
+                          setCoaching((v) => ({
+                            ...v,
+                            [seat.id]: event.target.value,
+                          }))
+                        }
+                      />
+                      <button
+                        disabled={
+                          coachingBusy[seat.id] || !coaching[seat.id]?.trim()
+                        }
+                        onClick={() => void coach(seat.id, seat.controllerId!)}
+                      >
+                        <MessageSquare size={16} aria-hidden />
+                        Coach agent
+                      </button>
+                      <p role="status">{coachingStatus[seat.id]}</p>
+                    </div>
+                  ) : null}
+                  {own && !terminal ? (
+                    <button
+                      className="secondary"
+                      disabled={connecting}
+                      onClick={() => void leaveSeat(seat.id)}
+                    >
+                      <LogOut size={16} aria-hidden />
+                      Leave seat
+                    </button>
+                  ) : null}
+                </div>
+              </details>
             )
           })}
         </div>
-        <button
-          className="secondary compact"
-          disabled={
-            terminal ||
-            connecting ||
-            (connection === 'connected' && !controlledSeat) ||
-            match?.lobby?.spectating === 'disabled'
-          }
-          onClick={() =>
-            controlledSeat
-              ? void leaveSeat(controlledSeat)
-              : void connect('spectate')
-          }
-        >
-          {terminal
-            ? 'Session ended'
-            : match?.lobby?.spectating === 'disabled'
-              ? 'Spectating disabled'
-              : connection === 'connected' && !controlledSeat
-                ? 'Watching live'
-                : controlledSeat
-                  ? 'Leave seat and watch'
-                  : 'Watch live'}
-        </button>
+        {/* Only the host may end the session; the backend enforces ownership. */}
+        <div className="match-panel-actions">
+          <button
+            className="secondary compact"
+            disabled={
+              terminal ||
+              connecting ||
+              (connection === 'connected' && !controlledSeat) ||
+              match?.lobby?.spectating === 'disabled'
+            }
+            onClick={() =>
+              controlledSeat
+                ? void leaveSeat(controlledSeat)
+                : void connect('spectate')
+            }
+          >
+            <Eye size={16} aria-hidden />
+            {terminal
+              ? 'Session ended'
+              : match?.lobby?.spectating === 'disabled'
+                ? 'Spectating disabled'
+                : connection === 'connected' && !controlledSeat
+                  ? 'Watching live'
+                  : controlledSeat
+                    ? 'Leave seat and watch'
+                    : 'Watch live'}
+          </button>
+          {!terminal && viewer && match?.ownerId === viewer.id ? (
+            <button className="danger compact" onClick={() => void abandon()}>
+              <Square size={16} aria-hidden />
+              End session
+            </button>
+          ) : null}
+        </div>
         {externalSetup && !terminal ? (
           <ExternalSeatAgent
             matchId={matchId}
@@ -1023,11 +1089,6 @@ export function PlayMatch({
             }
             onClose={() => setExternalSetup(undefined)}
           />
-        ) : null}
-        {!terminal ? (
-          <button className="secondary compact" onClick={() => void abandon()}>
-            End session
-          </button>
         ) : null}
         <p className="match-rule-note">
           {match?.lobby?.joinPolicy === 'invite-only'
@@ -1050,57 +1111,116 @@ export function PlayMatch({
             {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             {fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           </button>
-          <span>{match?.status ?? 'loading'}</span>
+          <span>
+            {terminal
+              ? ended
+                ? 'Session ended'
+                : 'Round complete'
+              : match?.status === 'running'
+                ? 'Live'
+                : match?.status === 'lobby'
+                  ? 'Waiting for players'
+                  : 'Loading'}
+          </span>
           <span>
             Round {match?.series?.currentRound ?? 1}/
-            {match?.series?.maximumRounds ?? 1} · {connection}
+            {match?.series?.maximumRounds ?? 1}
+            {!terminal && connection !== 'idle' ? ` · ${connection}` : ''}
           </span>
         </div>
-        {terminal ? (
-          <div className="session-ended" role="status" aria-live="assertive">
-            <span className="eyebrow">
-              {ended ? 'SESSION ENDED' : 'ROUND COMPLETE'}
-            </span>
-            <h2>
-              {ended ? 'This live session has ended' : 'This round is complete'}
-            </h2>
-            <p>
-              {match?.status === 'canceled'
-                ? 'The host ended this session.'
-                : match?.status === 'expired'
-                  ? 'This session expired.'
-                  : ['failed', 'invalidated'].includes(match?.status ?? '')
-                    ? 'The session stopped before it could finish.'
-                    : ended
-                      ? 'The final result is in. Play has stopped for everyone.'
-                      : 'Waiting for the next round. Play is paused for everyone.'}
+        <div className={`live-stage-view${terminal ? ' is-finished' : ''}`}>
+          {match?.releaseId ? (
+            <iframe
+              ref={presentationRef}
+              className="live-game-frame"
+              src={`/api/arcade/v1/studio/releases/${encodeURIComponent(match.releaseId)}/preview`}
+              title="Live authoritative game"
+              sandbox="allow-scripts"
+              onLoad={renderPresentation}
+            />
+          ) : (
+            <p role="status">
+              {error ? 'The game could not be loaded.' : 'Loading game…'}
             </p>
-            {match?.result !== undefined ? (
-              <div className="session-outcome">
-                <strong>Final result</strong>
-                <p>{resultLabel(match.result, match.seats)}</p>
+          )}
+          {terminal && match ? (
+            <section
+              className="live-result-card"
+              aria-label={ended ? 'Session result' : 'Round result'}
+            >
+              <div role="status" aria-live="polite">
+                <span className="eyebrow">
+                  {ended
+                    ? 'Session ended'
+                    : `Round ${match.series?.currentRound ?? 1} complete`}
+                </span>
+                <h2>
+                  {match.status === 'completed'
+                    ? seriesOutcome(match, ended)
+                    : match.status === 'canceled'
+                      ? 'Session closed by the host'
+                      : match.status === 'expired'
+                        ? 'Session expired'
+                        : 'Session interrupted'}
+                </h2>
+                <p>
+                  {ended
+                    ? match.status === 'completed'
+                      ? 'Thanks for playing.'
+                      : 'Play has stopped. Any completed rounds are recorded below.'
+                    : 'Take a moment. Your seats and agents are ready for the next round.'}
+                </p>
               </div>
-            ) : null}
-            <p>You are no longer sending game actions.</p>
-            <div className="session-next">
-              <a href="/live">Find another live session</a>
-              <a href="/">Browse games</a>
-            </div>
-          </div>
-        ) : match?.releaseId ? (
-          <iframe
-            ref={presentationRef}
-            className="live-game-frame"
-            src={`/api/arcade/v1/studio/releases/${encodeURIComponent(match.releaseId)}/preview`}
-            title="Live authoritative game"
-            sandbox="allow-scripts"
-            onLoad={renderPresentation}
-          />
-        ) : (
-          <p role="status">
-            {error ? 'The game could not be loaded.' : 'Loading game…'}
-          </p>
-        )}
+              <details className="live-result-details live-disclosure">
+                <summary>
+                  <span>Round results</span>
+                  <ChevronDown size={16} aria-hidden />
+                </summary>
+                <p>
+                  Round {match.series?.currentRound ?? 1} of{' '}
+                  {match.series?.maximumRounds ?? 1}
+                  {match.series?.status === 'complete' &&
+                  match.status === 'completed'
+                    ? ' · Complete'
+                    : ''}
+                </p>
+                <ul aria-label="Rounds won by each player">
+                  {match.seats.map((seat) => (
+                    <li key={seat.id}>
+                      <span>{seat.label}</span>
+                      <strong>{match.series?.scores[seat.id] ?? 0} wins</strong>
+                    </li>
+                  ))}
+                </ul>
+                {match.result !== undefined ? (
+                  <p>Latest round: {resultLabel(match.result, match.seats)}</p>
+                ) : null}
+              </details>
+              <div className="live-result-actions">
+                {!ended &&
+                (match.series?.restartPolicy === 'unanimous'
+                  ? seatedHere
+                  : match.ownerId === viewer?.id) ? (
+                  <button
+                    className="primary compact"
+                    onClick={() => void restart()}
+                  >
+                    <RotateCcw size={16} />
+                    {match.series?.restartPolicy === 'unanimous'
+                      ? 'Vote for next round'
+                      : 'Start next round'}
+                  </button>
+                ) : null}
+                {ended ? (
+                  <a href="/live">
+                    Find another session
+                    <ArrowRight size={16} aria-hidden />
+                  </a>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+        </div>
         {!terminal && observation && !activeAgent ? (
           <LiveControls
             inputMode={inputMode}
@@ -1131,22 +1251,14 @@ export function PlayMatch({
                 : 'Connect to watch or play'}
           </strong>
         ) : null}
-        {match?.series?.status === 'awaiting-restart' ? (
-          <button className="round-restart" onClick={() => void restart()}>
-            <RotateCcw size={13} />
-            {match.series.restartPolicy === 'unanimous'
-              ? 'Vote for next round'
-              : 'Start next round'}
-          </button>
-        ) : null}
-        {match?.series?.status === 'complete' ? (
-          <p className="series-complete">Series complete</p>
-        ) : null}
       </section>
 
       <aside className="match-panel inspector">
-        <details>
-          <summary>Session details</summary>
+        <details className="live-disclosure">
+          <summary>
+            <span>Session details</span>
+            <ChevronDown size={16} aria-hidden />
+          </summary>
           <dl>
             <dt>Match</dt>
             <dd>{matchId}</dd>
@@ -1171,6 +1283,7 @@ export function PlayMatch({
             className="secondary compact"
             onClick={() => void clientRef.current?.resume()}
           >
+            <RotateCcw size={16} aria-hidden />
             Resume session
           </button>
         ) : null}

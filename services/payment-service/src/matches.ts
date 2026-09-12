@@ -4,6 +4,7 @@ import type { StudioRelease, JsonValue } from '@common-arcade/protocol'
 import {
   resolveCreatorRevenue,
   type CreatorRevenue,
+  type SettlementAccounting,
 } from '@common-arcade/economy'
 import { AuthoritativeMatch } from '@common-arcade/match-runtime'
 import {
@@ -53,6 +54,8 @@ export interface TableRecord {
   fundingDeadline: number
   settlementDeadline: number
   stage: 'prepared' | 'funding' | 'playing' | 'settlement-pending' | 'settled'
+  result?: JsonValue
+  accounting?: SettlementAccounting
   replay?: Replay
   transactions: Hex[]
   actions: Record<string, string>
@@ -342,8 +345,10 @@ export class MatchHost {
         throw new Error(JSON.stringify(result))
       record.actions[body.actionId] = encoded
       record.replay = runtime.exportReplay()
-      if (runtime.getStatus() === 'completed')
+      if (runtime.getStatus() === 'completed') {
         record.stage = 'settlement-pending'
+        record.result = (await runtime.snapshot()).result
+      }
       await this.store.put(id, record)
       this.broadcast(record)
       // Result is durable before broadcasting a settlement transaction. Failure remains retryable.
@@ -359,7 +364,10 @@ export class MatchHost {
     })
   }
   private async settleRecord(record: TableRecord) {
-    if (record.stage === 'settled') return
+    if (record.stage === 'settled') {
+      await this.refreshAccounting(record)
+      return
+    }
     if (record.stage !== 'settlement-pending' || !record.replay)
       throw new Error('No authoritative completed result')
     const runtime = await this.runtime(record),
@@ -375,8 +383,23 @@ export class MatchHost {
       )
       if (hash) record.transactions.push(hash)
     }
+    record.result = snapshot.result
     record.stage = 'settled'
     await this.store.put(record.id, record)
+    await this.refreshAccounting(record)
+  }
+  private async refreshAccounting(record: TableRecord) {
+    if (record.stage !== 'settled' || record.accounting) return
+    try {
+      const accounting = await this.adapter(record)?.accounting?.(record.pool!)
+      if (accounting) {
+        record.accounting = accounting
+        await this.store.put(record.id, record)
+      }
+    } catch {
+      // A temporarily unavailable RPC must not turn a confirmed settlement into a failed game.
+      // A subsequent view or settlement retry can recover the accounting report.
+    }
   }
   async require(id: string) {
     const record = await this.store.get<TableRecord>(id)
@@ -396,7 +419,20 @@ export class MatchHost {
     )
   }
   async view(id: string) {
-    return this.viewRecord(await this.require(id))
+    const record = await this.require(id)
+    if (
+      record.stage !== 'settled' ||
+      record.accounting ||
+      !this.adapter(record)?.accounting
+    )
+      return this.viewRecord(record)
+    // Only report recovery writes to disk. Ordinary reads remain available while a
+    // submitted transaction waits for confirmation, including settlement-pending.
+    return this.exclusive(id, async () => {
+      const latest = await this.require(id)
+      await this.refreshAccounting(latest)
+      return this.viewRecord(latest)
+    })
   }
   private viewRecord(record: TableRecord) {
     const checkpoint = record.replay?.checkpoints.at(-1)
@@ -406,6 +442,8 @@ export class MatchHost {
       releaseId: record.release?.id ?? blackjackGame.releaseId,
       releaseDigest: record.releaseDigest,
       revenue: record.revenue,
+      result: record.result,
+      accounting: record.accounting,
       events:
         record.replay?.events.filter(
           (event) => event.visibility === 'public',

@@ -1,7 +1,14 @@
 'use client'
+import { AgentSelect, type SelectableAgent } from './agent-select'
 import { CreatorEconomySettings } from './creator-economy-settings'
 import { AccountMenu } from './account-menu'
-import { GeneralChat } from './general-chat'
+import { Brand } from './brand'
+import {
+  CopilotSessions,
+  CopilotSettings,
+  useProjectCopilot,
+} from './copilot-sessions'
+import { AgentComputerPanel } from './agent-computer-panel'
 import { ThumbnailField } from './thumbnail-field'
 import { StudioCodeEditor } from './studio-code-editor'
 
@@ -11,9 +18,13 @@ import { useRouter } from 'next/navigation'
 import { ArcadeComposer, useArcadeIdentity } from './studio-composer'
 import {
   ArrowLeft,
+  ArrowRight,
+  ArrowUpRight,
+  TrendingUp,
   ArrowUp,
   Bot,
   Check,
+  Circle,
   Code2,
   Download,
   FlaskConical,
@@ -36,10 +47,12 @@ import {
   RotateCcw,
   Save,
   Scan,
+  Settings,
   Settings2,
   Share2,
   SkipForward,
   Sparkles,
+  Square,
   Upload,
   Users,
   X,
@@ -81,7 +94,7 @@ import {
   type BrowserFeedback,
 } from '../lib/browser-policy-feedback'
 
-type Agent = { agentId: string; name: string }
+type Agent = SelectableAgent
 type BrowserController = {
   seatId: string
   label: string
@@ -210,6 +223,15 @@ type Log = {
 }
 export function GameStudio({ projectId }: { projectId: string }) {
   const router = useRouter()
+  const activeCopilotRun = useRef<AbortController | undefined>(undefined)
+  useEffect(
+    () => () => {
+      // The Commons job remains durable; only this workspace's polling and
+      // callbacks stop when its route changes or the component unmounts.
+      activeCopilotRun.current?.abort()
+    },
+    [projectId],
+  )
   const compiledRef = useRef<CompiledFrameHandle>(null)
   const previewStageRef = useRef<HTMLDivElement>(null)
   const annotationContext = useRef<Promise<unknown> | undefined>(undefined)
@@ -465,14 +487,45 @@ export function GameStudio({ projectId }: { projectId: string }) {
   const [source, setSource] = useState(
     JSON.stringify(emptyBrowserDocument, null, 2),
   )
+  const currentDraft = useRef({ document, source })
+  currentDraft.current = { document, source }
+  const approvalDraft = useRef(currentDraft.current)
   const [view, setView] = useState<'preview' | 'code' | 'test'>('preview')
-  const [right, setRight] = useState<'copilot' | 'chat' | 'notes' | 'history'>(
-    'copilot',
-  )
+  const [right, setRight] = useState<
+    'copilot' | 'notes' | 'history' | 'settings'
+  >('copilot')
   const [elapsed, setElapsed] = useState(0)
   const [pendingPrompt, setPendingPrompt] = useState('')
+  const pendingContext = useRef<{
+    agentId?: string
+    attachments?: { fileId: string }[]
+    model?: { provider: string; modelId: string }
+  }>({})
   const [leftOpen, setLeftOpen] = useState(true),
     [rightOpen, setRightOpen] = useState(true)
+  useEffect(() => {
+    const mobile = window.matchMedia('(max-width: 850px)')
+    const collapse = () => {
+      if (mobile.matches) {
+        setLeftOpen(false)
+        setRightOpen(false)
+      }
+    }
+    collapse()
+    mobile.addEventListener('change', collapse)
+    return () => mobile.removeEventListener('change', collapse)
+  }, [])
+  function showLeftPanel(open: boolean) {
+    setLeftOpen(open)
+    if (open && window.matchMedia('(max-width: 850px)').matches)
+      setRightOpen(false)
+  }
+  function showRightPanel(open: boolean) {
+    setRightOpen(open)
+    if (open && window.matchMedia('(max-width: 850px)').matches)
+      setLeftOpen(false)
+  }
+
   const [tool, setTool] = useState<'select' | 'point' | 'region'>('select')
   const [draft, setDraft] = useState<AnnotationGeometry>(),
     [note, setNote] = useState('')
@@ -488,6 +541,8 @@ export function GameStudio({ projectId }: { projectId: string }) {
       activities?: CopilotActivity[]
     }[]
   >([])
+  const copilot = useProjectCopilot(projectId, copilotId, setMessages)
+  const [computerOpen, setComputerOpen] = useState(false)
   const [copilotActivity, setCopilotActivity] = useState<CopilotActivity[]>([])
   const [busy, setBusy] = useState(''),
     [error, setError] = useState(''),
@@ -587,6 +642,8 @@ export function GameStudio({ projectId }: { projectId: string }) {
       setPlaying(false)
       setMessages([])
       setCopilotActivity([])
+      setBusy('')
+      setElapsed(0)
       setDraft(undefined)
       window.history.replaceState(null, '', `/studio/${p.id}`)
     },
@@ -618,7 +675,16 @@ export function GameStudio({ projectId }: { projectId: string }) {
           sessionStorage.removeItem(`arcade-prompt:${projectId}`)
           // The build was asked for on the home page; run it here so the
           // creator watches it happen in the workspace it belongs to.
-          setPendingPrompt(initial)
+          try {
+            const request = JSON.parse(initial)
+            if (typeof request.message === 'string') {
+              pendingContext.current = request
+              if (request.agentId) setCopilotId(request.agentId)
+              setPendingPrompt(request.message)
+            } else setPendingPrompt(initial)
+          } catch {
+            setPendingPrompt(initial)
+          }
         }
       })
       .catch((e) => {
@@ -630,24 +696,12 @@ export function GameStudio({ projectId }: { projectId: string }) {
   }, [load, projectId])
   useEffect(() => {
     setAgents(identity.agents)
-    if (identity.copilotId) setCopilotId(identity.copilotId)
+    if (identity.copilotId)
+      setCopilotId(
+        (current) =>
+          current || pendingContext.current.agentId || identity.copilotId,
+      )
   }, [identity.agents, identity.copilotId])
-  useEffect(() => {
-    if (!project || !copilotId) return
-    let active = true
-    void arcade<{
-      messages?: { role: 'user' | 'assistant'; text: string }[]
-    }>(
-      `projects/${project.id}/copilot-session?agentId=${encodeURIComponent(copilotId)}`,
-    )
-      .then((session) => {
-        if (active) setMessages(session.messages ?? [])
-      })
-      .catch(() => undefined)
-    return () => {
-      active = false
-    }
-  }, [project?.id, copilotId])
   useEffect(() => {
     const changed = () =>
       setFullscreen(globalThis.document.fullscreenElement !== null)
@@ -656,6 +710,37 @@ export function GameStudio({ projectId }: { projectId: string }) {
       globalThis.document.removeEventListener('fullscreenchange', changed)
   }, [])
   useEffect(() => {
+    if (
+      !project ||
+      !copilot.recoveredRevision ||
+      copilot.recoveredRevision <= project.revision
+    )
+      return
+    let alive = true
+    const before = currentDraft.current
+    void arcade<StudioProject>(`projects/${projectId}`)
+      .then((latest) => {
+        if (!alive) return
+        setProject(latest)
+        if (
+          !dirty &&
+          before.document === currentDraft.current.document &&
+          before.source === currentDraft.current.source
+        ) {
+          setDocument(latest.document)
+          setSource(JSON.stringify(latest.document, null, 2))
+          setPreviewKey((key) => key + 1)
+        }
+        setNotice(`Copilot completed revision ${latest.revision}.`)
+      })
+      .catch((error) => {
+        if (alive) setError(error.message)
+      })
+    return () => {
+      alive = false
+    }
+  }, [copilot.recoveredRevision, project?.revision, projectId])
+  useEffect(() => {
     if (!dirty) return
     const warn = (e: BeforeUnloadEvent) => {
       e.preventDefault()
@@ -663,24 +748,30 @@ export function GameStudio({ projectId }: { projectId: string }) {
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
   }, [dirty])
-  async function task(name: string, fn: () => Promise<void>) {
+  async function task(
+    name: string,
+    fn: () => Promise<void>,
+    isCurrent = () => true,
+  ) {
     setBusy(name)
     setError('')
     setNotice('')
     try {
       await fn()
     } catch (e) {
+      if (!isCurrent()) return
       setError(e instanceof Error ? e.message : String(e))
       setPlaying(false)
       setBrowserPlaying(false)
     } finally {
-      setBusy('')
+      if (isCurrent()) setBusy('')
     }
   }
   async function save(
     next = view === 'code' && !isBrowserGame(document)
       ? gameDocumentSchema.parse(JSON.parse(source))
       : document,
+    isCurrent = () => true,
   ) {
     gameDocumentSchema.parse(next)
     const p = project
@@ -688,6 +779,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
           'If-Match': String(project.revision),
         })
       : await arcade<StudioProject>('projects', { document: next })
+    if (!isCurrent()) return p
     setProject(p)
     setDocument(p.document)
     setSource(JSON.stringify(p.document, null, 2))
@@ -1039,49 +1131,128 @@ export function GameStudio({ projectId }: { projectId: string }) {
       message: string,
       attachments: { fileId: string }[] = [],
       model?: { provider: string; modelId: string },
-    ) =>
-      task('copilot', async () => {
-        const p = !project || dirty ? await save() : project
-        setMessages((m) => [...m, { role: 'user', text: message }])
-        setCopilotActivity([])
-        const result = await arcadeCopilot(
-          p.id,
-          { message, agentId: copilotId, attachments, model },
-          { onWait: setElapsed, onUpdate: setCopilotActivity },
-        )
-        setElapsed(0)
-        const latest = await arcade<StudioProject>(`projects/${p.id}`)
-        setProject(latest)
-        setDocument(latest.document)
-        setSource(JSON.stringify(latest.document, null, 2))
-        setProjects((all) => [latest, ...all.filter((x) => x.id !== latest.id)])
-        setMessages((m) => [
-          ...m,
-          {
-            role: 'assistant',
-            text: result.response,
-            sessionId: result.sessionId,
-            durationSeconds: result.durationSeconds,
-            activities: result.events,
-          },
-        ])
-        setCopilotActivity([])
-        setView('preview')
-        setPreviewKey((key) => key + 1)
-        setNotice(
-          latest.revision > p.revision
-            ? `Copilot saved revision ${latest.revision}.`
-            : 'Copilot finished without changing the project.',
-        )
-      }),
-    [project, dirty, copilotId],
+    ) => {
+      if (project && project.id !== projectId) return
+      activeCopilotRun.current?.abort()
+      const controller = new AbortController()
+      activeCopilotRun.current = controller
+      const isCurrent = () => !controller.signal.aborted
+      return task(
+        'copilot',
+        async () => {
+          const p =
+            !project || dirty ? await save(undefined, isCurrent) : project
+          if (!isCurrent()) return
+          setMessages((m) => [...m, { role: 'user', text: message }])
+          setCopilotActivity([])
+          const result = await arcadeCopilot(
+            p.id,
+            {
+              message,
+              agentId: copilotId,
+              attachments,
+              model,
+              sessionId: copilot.sessionId || undefined,
+              approvalMode: copilot.approvalMode,
+              computerEnabled: copilot.computerEnabled,
+            },
+            {
+              signal: controller.signal,
+              onWait: (seconds) => {
+                if (isCurrent()) setElapsed(seconds)
+              },
+              onUpdate: (events) => {
+                if (isCurrent()) setCopilotActivity(events)
+              },
+              onStarted: (sessionId) => {
+                if (isCurrent()) copilot.setSessionId(sessionId)
+              },
+            },
+          ).finally(() =>
+            isCurrent() ? copilot.refresh().catch(() => undefined) : undefined,
+          )
+          if (!isCurrent()) return
+          setElapsed(0)
+          if (result.sessionId) copilot.setSessionId(result.sessionId)
+          await copilot.refresh()
+          if (!isCurrent()) return
+          const latest = await arcade<StudioProject>(`projects/${p.id}`)
+          if (!isCurrent()) return
+          const changedLocally =
+            currentDraft.current.document !== document ||
+            currentDraft.current.source !== source
+          setProject(latest)
+          if (!changedLocally) {
+            setDocument(latest.document)
+            setSource(JSON.stringify(latest.document, null, 2))
+          }
+          setProjects((all) => [
+            latest,
+            ...all.filter((x) => x.id !== latest.id),
+          ])
+          setMessages((m) => [
+            ...m,
+            {
+              role: 'assistant',
+              text: result.response,
+              sessionId: result.sessionId,
+              durationSeconds: result.durationSeconds,
+              activities: result.events,
+            },
+          ])
+          setCopilotActivity([])
+          setView('preview')
+          setPreviewKey((key) => key + 1)
+          setNotice(
+            changedLocally
+              ? `Copilot saved revision ${latest.revision}. Your unsaved local edits have been kept; review them before saving.`
+              : latest.revision > p.revision
+                ? `Copilot saved revision ${latest.revision}.`
+                : 'Copilot finished without changing the project.',
+          )
+        },
+        isCurrent,
+      )
+    },
+    [
+      projectId,
+      project,
+      dirty,
+      document,
+      source,
+      copilotId,
+      copilot.sessionId,
+      copilot.approvalMode,
+      copilot.computerEnabled,
+    ],
   )
   useEffect(() => {
-    if (!pendingPrompt || !project || !copilotId || busy) return
+    if (
+      !pendingPrompt ||
+      !project ||
+      !copilotId ||
+      busy ||
+      copilot.loading ||
+      copilot.error
+    )
+      return
     const message = pendingPrompt
     setPendingPrompt('')
-    void runCopilot(message)
-  }, [pendingPrompt, project, copilotId, busy, runCopilot])
+    void runCopilot(
+      message,
+      pendingContext.current.attachments,
+      pendingContext.current.model,
+    )
+    pendingContext.current = {}
+  }, [
+    pendingPrompt,
+    project,
+    copilotId,
+    busy,
+    copilot.loading,
+    copilot.error,
+    runCopilot,
+  ])
   const title = project?.document.title ?? 'New game'
   const liveReadiness = useMemo(() => assessLiveReadiness(document), [document])
   const sourceSize = useMemo(() => {
@@ -1103,10 +1274,15 @@ export function GameStudio({ projectId }: { projectId: string }) {
     </CanvasToolButton>
   )
   return (
-    <div className="studio-workspace">
+    <main className="arcade studio-workspace" id="main">
       <nav className="studio-rail" aria-label="Studio sections">
-        <Link href="/studio" className="rail-brand" aria-label="All projects">
-          <Gamepad2 size={23} />
+        <Link
+          href="/studio"
+          className="rail-brand"
+          aria-label="All projects"
+          title="Back to Studio"
+        >
+          <Brand compact />
         </Link>
         {(
           [
@@ -1125,11 +1301,10 @@ export function GameStudio({ projectId }: { projectId: string }) {
             aria-pressed={leftOpen && workspaceGroup === id}
             onClick={() => {
               setWorkspaceGroup(id)
-              setLeftOpen(workspaceGroup === id ? !leftOpen : true)
+              showLeftPanel(workspaceGroup === id ? !leftOpen : true)
             }}
           >
-            <Icon size={19} />
-            <span>{label}</span>
+            <Icon size={16} strokeWidth={1.75} />
           </button>
         ))}
         <div className="rail-account">
@@ -1141,6 +1316,13 @@ export function GameStudio({ projectId }: { projectId: string }) {
           />
         </div>
       </nav>
+      {computerOpen && (
+        <AgentComputerPanel
+          agentId={copilotId}
+          active={busy === 'copilot'}
+          onClose={() => setComputerOpen(false)}
+        />
+      )}
       <CanvasShell
         className={logsExpanded && logsOpen ? 'studio-logs-expanded' : ''}
         toolbar={
@@ -1203,7 +1385,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                         void task('publish', async () => {
                           if (!document.thumbnail) {
                             setWorkspaceGroup('publishing')
-                            setLeftOpen(true)
+                            showLeftPanel(true)
                             throw new Error(
                               'Add a game thumbnail in Publishing before publishing.',
                             )
@@ -1239,7 +1421,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
               {icon(
                 <PanelRightClose size={16} />,
                 'Toggle assistant panel',
-                () => setRightOpen(!rightOpen),
+                () => showRightPanel(!rightOpen),
                 rightOpen,
               )}
             </div>
@@ -1256,7 +1438,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 {icon(
                   <PanelLeftClose size={14} />,
                   'Collapse project panel',
-                  () => setLeftOpen(false),
+                  () => showLeftPanel(false),
                 )}
               </div>
               <div hidden={workspaceGroup !== 'payments'}>
@@ -1661,23 +1843,20 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       {[0, 1].map((i) => (
                         <label key={i}>
                           Seat {i + 1}
-                          <select
-                            value={selectedAgents[i]}
-                            onChange={(e) =>
+                          <AgentSelect
+                            agents={agents}
+                            value={selectedAgents[i] ?? ''}
+                            allowNone
+                            noneLabel="Create a Commons agent"
+                            ariaLabel={`Seat ${i + 1} agent`}
+                            onChange={(id) =>
                               setSelectedAgents((ids) => {
                                 const next: [string, string] = [...ids]
-                                next[i] = e.target.value
+                                next[i] = id
                                 return next
                               })
                             }
-                          >
-                            <option value="">Create a Commons agent</option>
-                            {agents.map((a) => (
-                              <option key={a.agentId} value={a.agentId}>
-                                {a.name}
-                              </option>
-                            ))}
-                          </select>
+                          />
                         </label>
                       ))}
                       <label>
@@ -1753,7 +1932,11 @@ export function GameStudio({ projectId }: { projectId: string }) {
                           {controller.performance ? (
                             <div className="studio-learning-summary">
                               <span>
-                                {controller.performance.improving ? '↗' : '→'}{' '}
+                                {controller.performance.improving ? (
+                                  <TrendingUp size={14} aria-hidden />
+                                ) : (
+                                  <ArrowRight size={14} aria-hidden />
+                                )}{' '}
                                 {controller.performance.feedbackSamples}{' '}
                                 feedback samples
                               </span>
@@ -1802,34 +1985,26 @@ export function GameStudio({ projectId }: { projectId: string }) {
                           </select>
                           {controller.kind === 'agent' ? (
                             <>
-                              <select
-                                aria-label={`${controller.label} agent`}
+                              <AgentSelect
+                                agents={agents}
+                                ariaLabel={`${controller.label} agent`}
                                 value={controller.agentId ?? ''}
                                 disabled={!!browserRun}
-                                onChange={(event) =>
+                                allowNone
+                                noneLabel="Create a player agent"
+                                onChange={(id) =>
                                   setBrowserControllers((current) =>
                                     current.map((candidate, candidateIndex) =>
                                       candidateIndex === index
                                         ? {
                                             ...candidate,
-                                            agentId:
-                                              event.target.value || undefined,
+                                            agentId: id || undefined,
                                           }
                                         : candidate,
                                     ),
                                   )
                                 }
-                              >
-                                <option value="">Create a player agent</option>
-                                {agents.map((agent) => (
-                                  <option
-                                    value={agent.agentId}
-                                    key={agent.agentId}
-                                  >
-                                    {agent.name}
-                                  </option>
-                                ))}
-                              </select>
+                              />
                               <textarea
                                 rows={2}
                                 aria-label={`${controller.label} coaching`}
@@ -2095,7 +2270,9 @@ export function GameStudio({ projectId }: { projectId: string }) {
                   }}
                 />
                 <p className="studio-help">
-                  <Link href="/docs">Authoring contract ↗</Link>
+                  <Link href="/docs">
+                    Authoring contract <ArrowUpRight size={14} aria-hidden />
+                  </Link>
                 </p>
               </div>
             </>
@@ -2110,13 +2287,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                   className={right === 'copilot' ? 'is-active' : ''}
                 >
                   <Sparkles size={13} />
-                  Build
-                </button>
-                <button
-                  onClick={() => setRight('chat')}
-                  className={right === 'chat' ? 'is-active' : ''}
-                >
-                  <MessageSquare size={13} /> Chat
+                  Copilot
                 </button>
                 <button
                   onClick={() => setRight('notes')}
@@ -2145,11 +2316,56 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 >
                   <History size={14} />
                 </button>
+                <button
+                  aria-label="Copilot settings"
+                  title="Copilot settings"
+                  className={`copilot-settings-toggle ${right === 'settings' ? 'is-active' : ''}`}
+                  onClick={() => setRight('settings')}
+                >
+                  <Settings size={14} />
+                </button>
               </div>
-              {right === 'chat' ? (
-                <GeneralChat identity={{ ...identity, copilotId }} />
+              {right === 'settings' ? (
+                <CopilotSettings
+                  copilot={copilot}
+                  busy={!!busy}
+                  onComputer={() => setComputerOpen(true)}
+                  onBack={() => setRight('copilot')}
+                />
               ) : right === 'copilot' ? (
                 <div className="studio-copilot">
+                  <CopilotSessions
+                    copilot={copilot}
+                    agentId={copilotId}
+                    projectId={projectId}
+                    busy={!!busy}
+                    dirty={dirty}
+                    onReviewing={(reviewing) => {
+                      if (reviewing)
+                        approvalDraft.current = currentDraft.current
+                      setBusy(reviewing ? 'approval' : '')
+                    }}
+                    onApplied={async () => {
+                      const latest = await arcade<StudioProject>(
+                        `projects/${projectId}`,
+                      )
+                      setProject(latest)
+                      if (
+                        currentDraft.current.document ===
+                          approvalDraft.current.document &&
+                        currentDraft.current.source ===
+                          approvalDraft.current.source
+                      ) {
+                        setDocument(latest.document)
+                        setSource(JSON.stringify(latest.document, null, 2))
+                        setPreviewKey((key) => key + 1)
+                        setNotice(`Saved revision ${latest.revision}.`)
+                      } else
+                        setNotice(
+                          `Revision ${latest.revision} was saved. Your unsaved local edits have been kept; review them before saving.`,
+                        )
+                    }}
+                  />
                   <div className="studio-conversation">
                     {messages.length === 0 && (
                       <div className="studio-copilot-welcome">
@@ -2204,7 +2420,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                         <p>{m.text}</p>
                         {m.role === 'assistant' && m.sessionId ? (
                           <a
-                            href={`https://www.agentcommons.io/studio/agents/${copilotId}`}
+                            href={`https://agentcommons.io/sessions/${encodeURIComponent(m.sessionId)}`}
                             target="_blank"
                             rel="noreferrer"
                             className="studio-session-link"
@@ -2243,14 +2459,21 @@ export function GameStudio({ projectId }: { projectId: string }) {
                     onChange={setPrompt}
                     identity={{ ...identity, agents, copilotId }}
                     onAgentChange={setCopilotId}
-                    busy={!!busy}
+                    busy={!!busy || copilot.loading}
                     context={
                       project
                         ? `Revision ${project.revision} · ${visibleNotes.length} notes attached`
                         : 'Project context'
                     }
                     onSubmit={(attachments, model) => {
-                      if (!user || !prompt.trim() || !copilotId) return
+                      if (
+                        !user ||
+                        !prompt.trim() ||
+                        !copilotId ||
+                        copilot.loading ||
+                        copilot.error
+                      )
+                        return
                       const message = prompt
                       setPrompt('')
                       void runCopilot(message, attachments, model)
@@ -2557,12 +2780,12 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 target="_blank"
                 rel="noreferrer"
               >
-                Manage Commons credits ↗
+                Manage Commons credits <ArrowUpRight size={14} aria-hidden />
               </a>
             )}
             {notice.startsWith('Published.') && project?.releaseId && (
               <Link href={`/games/${project.id.replace('prj_', 'gam_')}`}>
-                Open game ↗
+                Open game <ArrowUpRight size={14} aria-hidden />
               </Link>
             )}
             <button
@@ -2609,7 +2832,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
               : null}
             {!leftOpen &&
               icon(<Folder size={15} />, 'Open project panel', () =>
-                setLeftOpen(true),
+                showLeftPanel(true),
               )}
             {view === 'test' ? (
               <>
@@ -2652,7 +2875,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                   () => {
                     setTool('point')
                     setRight('notes')
-                    setRightOpen(true)
+                    showRightPanel(true)
                   },
                   tool === 'point',
                 )}
@@ -2662,7 +2885,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                   () => {
                     setTool('region')
                     setRight('notes')
-                    setRightOpen(true)
+                    showRightPanel(true)
                   },
                   tool === 'region',
                 )}
@@ -2739,7 +2962,11 @@ export function GameStudio({ projectId }: { projectId: string }) {
             </div>
           )
         ) : (
-          <div className="studio-preview-stage" ref={previewStageRef}>
+          <div
+            className="studio-preview-stage"
+            ref={previewStageRef}
+            style={{ backgroundSize: `${24 * zoom}px ${24 * zoom}px` }}
+          >
             {fullscreen ? (
               <button
                 className="studio-fullscreen-exit"
@@ -2787,6 +3014,19 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 its animation clocks run. The sibling shield blocks unlogged
                 pointer input without enabling the frame's freeze mode. */}
               <CompiledArtifactFrame
+                recordingLabels={{
+                  start: (
+                    <>
+                      <Circle size={12} aria-hidden="true" /> Record interaction
+                    </>
+                  ),
+                  stop: (
+                    <>
+                      <Square size={12} aria-hidden="true" /> Stop recording
+                    </>
+                  ),
+                  dismissError: <X size={14} aria-hidden="true" />,
+                }}
                 key={previewKey}
                 ref={compiledRef}
                 onRecording={(recording) =>
@@ -2855,11 +3095,11 @@ export function GameStudio({ projectId }: { projectId: string }) {
                     : undefined
                   setDraft(g)
                   setRight('notes')
-                  setRightOpen(true)
+                  showRightPanel(true)
                 }}
                 onSelect={(a) => {
                   setRight('notes')
-                  setRightOpen(true)
+                  showRightPanel(true)
                   setNotice(a.body)
                 }}
               />
@@ -2888,7 +3128,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
           </div>
         )}
       </CanvasShell>
-    </div>
+    </main>
   )
 }
 
