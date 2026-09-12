@@ -12,8 +12,8 @@
  *     Page titles use plain type instead of highlighted backgrounds.
  *   - Three radii, three shadows, three durations. Nothing else.
  *
- * The dark palette supports the provider/system preference without adding a
- * theme selector to Arcade navigation.
+ * Arcade defaults to light independently of the device preference. The dark
+ * palette remains available for explicit future theme controls.
  */
 
 :root {

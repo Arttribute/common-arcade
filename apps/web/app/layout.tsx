@@ -46,7 +46,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <a className="skip-link" href="#main">
           Skip to content
         </a>
-        <RootProvider>{children}</RootProvider>
+        <RootProvider
+          theme={{
+            defaultTheme: 'light',
+            enableSystem: false,
+            storageKey: 'arcade-theme',
+            hotKey: false,
+          }}
+        >
+          {children}
+        </RootProvider>
       </body>
     </html>
   )
