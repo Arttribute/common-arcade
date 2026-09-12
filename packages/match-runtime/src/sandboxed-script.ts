@@ -1,9 +1,9 @@
 import { jsonValueSchema, type JsonValue } from '@common-arcade/protocol'
 import {
-  RELEASE_SYNC,
   newQuickJSWASMModule,
   type QuickJSWASMModule,
 } from 'quickjs-emscripten'
+import bundledQuickJSVariant from '@jitl/quickjs-singlefile-cjs-release-sync'
 import type {
   GameActionContext,
   GameDefinition,
@@ -31,14 +31,22 @@ const rejectionCodes = new Set([
 ])
 let quickjsModule: Promise<QuickJSWASMModule> | undefined
 
+function bounded(value: unknown, label: string): void {
+  if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 192 * 1024)
+    throw new RangeError(
+      `${label} exceeds the 192 KiB serialized runtime limit.`,
+    )
+}
 function json(value: unknown, label: string): JsonValue {
   const parsed = jsonValueSchema.safeParse(value)
   if (!parsed.success)
     throw new TypeError(`${label} must be JSON-serializable.`)
+  bounded(parsed.data, label)
   return parsed.data
 }
 
 function transition(value: unknown): GameTransition<JsonValue> {
+  bounded(value, 'Runtime transition')
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new TypeError('Runtime transitions must return { state, events }.')
   const record = value as Record<string, unknown>
@@ -71,6 +79,7 @@ function transition(value: unknown): GameTransition<JsonValue> {
 }
 
 function projection(value: unknown) {
+  bounded(value, 'Seat observation')
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new TypeError(
       'Runtime observe() must return visibleState and legalActions.',
@@ -109,6 +118,7 @@ function invocationSource(
   method: string,
   args: readonly unknown[],
   requireTick: boolean,
+  prepared: JsonValue,
 ): string {
   return `(function(){
     'use strict';
@@ -125,10 +135,16 @@ function invocationSource(
       configurable: false
     });
     Object.freeze(Math);
+    const freeze = function(value) {
+      if(value && typeof value === 'object') { Object.keys(value).forEach(key=>freeze(value[key])); Object.freeze(value); }
+      return value;
+    };
+    Object.defineProperty(globalThis, 'arcadePrepared', { value: freeze(${safeArgs([prepared])}[0]), writable: false });
     ${source}
     return (function(game, values, name){
       if (!game || typeof game !== 'object')
         throw new TypeError('Runtime must assign globalThis.arcadeGame.');
+      if (name === '__prepare__') return typeof game.prepare === 'function' ? game.prepare(values[0]) : null;
       if (name === '__validate__') {
         const required = ['initialize','validateAction','applyAction','observe','result'];
         if (${JSON.stringify(requireTick)}) required.push('tick');
@@ -154,8 +170,26 @@ export async function createSandboxedScriptGame(
 ): Promise<GameDefinition<JsonValue, JsonValue>> {
   if (rules.source.length > 120_000)
     throw new RangeError('Managed runtime source exceeds 120 KB.')
-  const quickjs = await (quickjsModule ??= newQuickJSWASMModule(RELEASE_SYNC))
+  // The single-file variant embeds the WebAssembly bytes. This is required for
+  // bundled hosts such as Lambda, where a CommonJS build has no import.meta.url
+  // from which the default wasm-file variant can resolve its companion file.
+  const quickjs = await (quickjsModule ??= newQuickJSWASMModule(
+    bundledQuickJSVariant.default,
+  ))
+  let prepared: JsonValue = null
   const evaluate = (method: string, args: readonly unknown[]): unknown => {
+    // Replay must not depend on the worker's wall clock, even through a context field.
+    args = args.map((value) =>
+      value &&
+      typeof value === 'object' &&
+      'authoritativeTime' in value &&
+      'elapsedMs' in value
+        ? {
+            ...value,
+            authoritativeTime: new Date(Number(value.elapsedMs)).toISOString(),
+          }
+        : value,
+    )
     let interruptCycles = 0
     const maximumInterruptCycles = rules.timeoutMs * 64
     const hardDeadline = Date.now() + Math.max(250, rules.timeoutMs * 10)
@@ -166,6 +200,7 @@ export async function createSandboxedScriptGame(
           method,
           args,
           rules.mode === 'realtime' || rules.mode === 'hybrid',
+          prepared,
         ),
         {
           // Instruction-cycle fuel is stable under a busy host. The generous
@@ -189,6 +224,11 @@ export async function createSandboxedScriptGame(
     releaseDigest: rules.releaseDigest,
     mode: rules.mode,
     initialize(context: GameInitializationContext) {
+      prepared = null
+      prepared = json(
+        evaluate('__prepare__', [context]),
+        'Prepared runtime data',
+      )
       return json(evaluate('initialize', [context]), 'Initial state')
     },
     parseAction(payload: JsonValue) {
@@ -227,6 +267,9 @@ export async function createSandboxedScriptGame(
           },
         }
       : {}),
+    restoreState(state) {
+      return json(state, 'Restored state')
+    },
     serializeState(state) {
       return json(state, 'Runtime state')
     },

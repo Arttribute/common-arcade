@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { AuthoritativeMatch, verifyReplay } from '@common-arcade/match-runtime'
+import { compileGame } from './runtime.js'
 import {
   assessLiveReadiness,
-  compileGame,
   compilePresentation,
   documentDigest,
   gameDocumentSchema,
@@ -13,6 +13,37 @@ import {
   releaseManifest,
 } from './index.js'
 describe('bounded game authoring', () => {
+  it('keeps incomplete payment drafts editable while blocking publication', async () => {
+    for (const payouts of [{}, { 'base-sepolia': '0xD930' }]) {
+      const document = {
+        ...starterDocument,
+        monetization: {
+          mode: 'revenue-share' as const,
+          allowedModes: ['staked' as const],
+          feeBps: 250 as const,
+          creatorShareBps: 7000,
+          payouts,
+          spectatorBets: false,
+        },
+      }
+      const report = assessLiveReadiness(document)
+      expect(report.liveReady).toBe(false)
+      expect(report.blockers.join(' ')).toContain('monetization.payouts')
+      expect(() => compilePresentation(document)).toThrow()
+      await expect(documentDigest(document)).rejects.toThrow()
+      expect(
+        assessLiveReadiness({
+          ...document,
+          monetization: {
+            ...document.monetization,
+            payouts: {
+              'base-sepolia': '0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab',
+            },
+          },
+        }).liveReady,
+      ).toBe(true)
+    }
+  })
   const realtimeDuel = gameDocumentSchema.parse({
     kind: 'browser',
     title: 'Pulse duel',
@@ -38,7 +69,7 @@ describe('bounded game authoring', () => {
       {
         path: 'main.js',
         content:
-          "window.arcade={seats:()=>[],observe:()=>({}),actions:()=>[],step:()=>false,render:(state)=>{document.querySelector('#arena').textContent=JSON.stringify(state)},submit:()=>false};",
+          "window.arcade={render:(state)=>{document.querySelector('#arena').textContent=JSON.stringify(state)}};document.querySelector('#arena').onclick=()=>window.arcade.submit({type:'shoot'});",
       },
       {
         path: 'server.js',
@@ -158,6 +189,7 @@ describe('bounded game authoring', () => {
     expect(
       assessLiveReadiness({
         ...emptyBrowserDocument,
+        kind: 'browser',
         capabilities: {
           genres: [],
           world: {

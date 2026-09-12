@@ -8,9 +8,14 @@ import {
   Radio,
   Users,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { arcade, browserControlClient } from '../../lib/api'
+import { Dialog } from './ui/dialog'
+import { Play } from 'lucide-react'
+import { HostPaymentSettings } from './host-payment-settings'
+import { economyConfigSchema, type EconomyConfig } from '@common-arcade/economy'
+import type { GameMonetization } from '@common-arcade/protocol'
 
 export function MatchLauncher({
   releaseId,
@@ -18,12 +23,16 @@ export function MatchLauncher({
   browserGame = false,
   remixing,
   license,
+  paymentTerms,
+  paidMatchSupported = false,
 }: {
   releaseId: string
   gameId: string
   browserGame?: boolean
   remixing?: 'disabled' | 'allowed'
   license?: string
+  paymentTerms?: GameMonetization
+  paidMatchSupported?: boolean
 }) {
   const router = useRouter()
   const [signedIn, setSignedIn] = useState(false)
@@ -32,7 +41,7 @@ export function MatchLauncher({
   const [mode, setMode] = useState<'commons' | 'external'>('commons')
   const [visibility, setVisibility] = useState<
     'public' | 'unlisted' | 'private'
-  >('unlisted')
+  >('public')
   const [joinPolicy, setJoinPolicy] = useState<'open' | 'invite-only'>('open')
   const [invites, setInvites] = useState('')
   const [allowHumans, setAllowHumans] = useState(true)
@@ -45,21 +54,39 @@ export function MatchLauncher({
     'automatic' | 'owner' | 'unanimous'
   >('owner')
   const [copied, setCopied] = useState(false)
+  const [economy, setEconomy] = useState<EconomyConfig>({ mode: 'free' })
+  const setup = useRef<HTMLDivElement>(null)
   useEffect(() => {
     void fetch('/api/auth/session')
       .then((response) => response.json())
       .then((session) => setSignedIn(Boolean(session.user)))
   }, [])
-  async function create() {
+  async function openStudio() {
     setBusy(true)
     setError('')
     try {
-      if (browserGame) {
-        const project = await arcade<{ id: string }>(
-          `studio/releases/${releaseId}/fork`,
-          {},
+      const project = await arcade<{ id: string }>(
+        `studio/releases/${releaseId}/fork`,
+        {},
+      )
+      router.push(`/studio/${project.id}`)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+      setBusy(false)
+    }
+  }
+  async function create() {
+    for (const input of setup.current?.querySelectorAll('input') ?? []) {
+      if (!input.reportValidity()) return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      if (economy.mode === 'escrow') {
+        const selection = economyConfigSchema.parse(economy)
+        router.push(
+          `/play/paid/${encodeURIComponent(releaseId)}?economy=${encodeURIComponent(JSON.stringify(selection))}`,
         )
-        router.push(`/studio/${project.id}`)
         return
       }
       const match = await browserControlClient().createMatch({
@@ -108,266 +135,255 @@ export function MatchLauncher({
   const manifestUrl = `/api/arcade/v1/games/${gameId}`
   if (browserGame)
     return (
-      <div className="launch-card preview-hosting-card">
-        <div className="agent-launcher-title">
-          <AlertTriangle size={18} />
-          <div>
-            <span className="preview-hosting-status">Preview only</span>
-            <strong>This release cannot host a live session yet</strong>
-            <p>
-              Its rules, clock, state, validation, and result run independently
-              in each viewer&apos;s browser. A lobby would create diverging
-              copies, not one fair shared match.
-            </p>
-          </div>
-        </div>
-        <div className="preview-hosting-path">
-          <strong>
-            <Radio size={13} /> To enable live hosting
-          </strong>
-          <ol>
-            <li>Open the game in Studio.</li>
-            <li>
-              Move its rules and state into an Arcade-managed runtime module, or
-              connect a conformant external host.
-            </li>
-            <li>
-              Publish a release that passes the live-readiness test. The lobby
-              controls will then appear here automatically.
-            </li>
-          </ol>
-          <p>
-            Studio&apos;s managed runtime supports turn-based, simultaneous, and
-            fixed-tick realtime rules. Ask the copilot to add a sandboxed server
-            module while keeping this presentation.
-          </p>
-        </div>
-        {signedIn ? (
-          <button className="primary" disabled={busy} onClick={create}>
-            {busy ? 'Opening Studio…' : 'Open this project in Studio'}
-          </button>
-        ) : (
-          <a
-            className="primary"
-            href={`/api/auth/login?next=/games/${encodeURIComponent(gameId)}`}
-          >
-            Sign in to open Studio
-          </a>
-        )}
-        <a className="agent-doc-link" href="/docs/creator-quickstart">
-          Read the live-hosting requirements <ExternalLink size={12} />
+      <div className="preview-game-actions">
+        <a className="primary game-play-button" href="#game-preview">
+          <Play size={17} /> Play preview
         </a>
-        <small>
-          You can still play and record this local preview below. Published
-          source is immutable; owners return to their workspace, while other
-          creators receive an attributed copy only when remixes are enabled.{' '}
-          {license ?? 'all-rights-reserved'} ·{' '}
-          {remixing === 'allowed' ? 'remixes enabled' : 'remixes restricted'}.
-        </small>
-        {error ? <p className="error-text">{error}</p> : null}
+        <Dialog
+          title="About this preview"
+          description="Play locally, or continue creating in Studio."
+          trigger={
+            <button className="preview-info-link">About this release</button>
+          }
+        >
+          <p>
+            This game is playable in your browser. A live-ready release is
+            needed to host a shared session.
+          </p>
+          {signedIn ? (
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => void openStudio()}
+            >
+              {busy ? 'Opening Studio…' : 'Open in Studio'}
+            </button>
+          ) : (
+            <a
+              className="primary"
+              href={`/api/auth/login?next=/games/${encodeURIComponent(gameId)}`}
+            >
+              Sign in to open Studio
+            </a>
+          )}
+          <p className="match-rule-note">
+            {license ?? 'all-rights-reserved'} ·{' '}
+            {remixing === 'allowed' ? 'Remixes enabled' : 'Remixes restricted'}
+          </p>
+          {error && (
+            <p className="error-text" role="alert">
+              {error}
+            </p>
+          )}
+        </Dialog>
       </div>
     )
   return (
-    <div className="launch-card agent-launcher">
-      <div className="agent-launcher-title">
-        <Bot size={17} />
-        <div>
-          <strong>Bring agents into the game</strong>
-          <p>
-            {browserGame
-              ? 'Open a private room, assign Commons agents or connect your own controller, and inspect every decision.'
-              : 'Create a lobby for humans, agents, or spectators using the same authoritative match.'}
-          </p>
-        </div>
-      </div>
-      <div className="agent-launcher-tabs" role="tablist">
-        <button
-          role="tab"
-          aria-selected={mode === 'commons'}
-          onClick={() => setMode('commons')}
-        >
-          <Users size={13} /> Agent Commons
+    <Dialog
+      title="Start playing"
+      description="Join a game or set up a live session for your friends and agents."
+      trigger={
+        <button className="primary game-play-button">
+          <Play size={17} fill="currentColor" /> Play
         </button>
-        <button
-          role="tab"
-          aria-selected={mode === 'external'}
-          onClick={() => setMode('external')}
-        >
-          <Code2 size={13} /> Any agent
-        </button>
-      </div>
-      {mode === 'commons' ? (
-        <div className="agent-launcher-copy">
-          <ol>
-            <li>
-              {browserGame
-                ? 'Open a private test room.'
-                : 'Choose the lobby visibility and create the match.'}
-            </li>
-            <li>
-              Join yourself, or give the session link and release contract to
-              your Commons or external agent.
-            </li>
-            <li>
-              Every controller claims one authoritative seat; spectators use the
-              same live state stream.
-            </li>
-          </ol>
-          {!browserGame ? (
-            <div className="match-setup-grid">
-              <label>
-                Discoverability
-                <select
-                  value={visibility}
-                  onChange={(event) =>
-                    setVisibility(
-                      event.target.value as 'public' | 'unlisted' | 'private',
-                    )
-                  }
-                >
-                  <option value="public">Public · listed in Live</option>
-                  <option value="unlisted">Unlisted · link only</option>
-                  <option value="private">Private · owner only</option>
-                </select>
-              </label>
-              <label>
-                Joining
-                <select
-                  value={joinPolicy}
-                  onChange={(event) =>
-                    setJoinPolicy(event.target.value as typeof joinPolicy)
-                  }
-                >
-                  <option value="open">Open lobby</option>
-                  <option value="invite-only">Invite only</option>
-                </select>
-              </label>
-              {joinPolicy === 'invite-only' ? (
-                <label className="match-setup-wide">
-                  Invited Commons IDs
-                  <input
-                    value={invites}
-                    onChange={(event) => setInvites(event.target.value)}
-                    placeholder="user_one, agent_owner_two"
-                  />
-                </label>
-              ) : null}
-              <label>
-                Rounds
-                <select
-                  value={maximumRounds}
-                  onChange={(event) =>
-                    setMaximumRounds(Number(event.target.value))
-                  }
-                >
-                  {[1, 3, 5, 7, 9].map((rounds) => (
-                    <option key={rounds} value={rounds}>
-                      {rounds}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Between rounds
-                <select
-                  value={restartPolicy}
-                  onChange={(event) =>
-                    setRestartPolicy(event.target.value as typeof restartPolicy)
-                  }
-                >
-                  <option value="owner">Host starts next round</option>
-                  <option value="unanimous">Every player agrees</option>
-                  <option value="automatic">Automatic</option>
-                </select>
-              </label>
-              <label>
-                Watching
-                <select
-                  value={spectating}
-                  onChange={(event) =>
-                    setSpectating(event.target.value as typeof spectating)
-                  }
-                >
-                  <option value="enabled">Live spectators</option>
-                  <option value="disabled">Players only</option>
-                </select>
-              </label>
-              <fieldset className="controller-options">
-                <legend>Who can play?</legend>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={allowHumans}
-                    onChange={(event) => setAllowHumans(event.target.checked)}
-                  />
-                  Humans
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={allowAgents}
-                    onChange={(event) => setAllowAgents(event.target.checked)}
-                  />
-                  Agents
-                </label>
-              </fieldset>
-            </div>
-          ) : null}
-          {signedIn ? (
-            <div className="match-launch-actions">
-              <button
-                className="primary"
-                disabled={
-                  busy || (!browserGame && !allowHumans && !allowAgents)
-                }
-                onClick={create}
-              >
-                {busy
-                  ? 'Preparing room…'
-                  : browserGame
-                    ? 'Open creator workspace or remix'
-                    : 'Host a live session'}
-              </button>
-              {!browserGame ? (
-                <button
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() => void findOpenGame()}
-                >
-                  Find an open game
-                </button>
-              ) : null}
-            </div>
-          ) : (
-            <a className="primary" href="/api/auth/login?next=/discover">
-              Sign in with Commons
-            </a>
-          )}
-        </div>
-      ) : (
-        <div className="agent-launcher-copy">
-          <p>
-            Read the immutable release contract, then use an Arcade access key
-            and the SDK or realtime runner. Realtime games must use a persistent
-            policy runner—not one model request per frame.
-          </p>
+      }
+    >
+      <div className="launch-card agent-launcher" ref={setup}>
+        <div className="agent-launcher-tabs" role="tablist">
           <button
-            className="copy-contract"
-            onClick={() => {
-              void navigator.clipboard.writeText(manifestUrl)
-              setCopied(true)
-              setTimeout(() => setCopied(false), 1400)
-            }}
+            role="tab"
+            aria-selected={mode === 'commons'}
+            onClick={() => setMode('commons')}
           >
-            <code>GET {manifestUrl}</code>
-            <Copy size={13} /> {copied ? 'Copied' : 'Copy'}
+            <Users size={13} /> Play together
           </button>
-          <a className="agent-doc-link" href="/docs/creator-quickstart">
-            Agent connection guide <ExternalLink size={12} />
-          </a>
+          <button
+            role="tab"
+            aria-selected={mode === 'external'}
+            onClick={() => setMode('external')}
+          >
+            <Code2 size={13} /> Connect an agent
+          </button>
         </div>
-      )}
-      {error ? <p className="error-text">{error}</p> : null}
-    </div>
+        {mode === 'commons' ? (
+          <div className="agent-launcher-copy">
+            <HostPaymentSettings
+              value={economy}
+              onChange={setEconomy}
+              terms={paymentTerms}
+              supported={paidMatchSupported}
+            />
+            {!browserGame && economy.mode === 'free' ? (
+              <div className="match-setup-grid">
+                <label>
+                  Discoverability
+                  <select
+                    value={visibility}
+                    onChange={(event) =>
+                      setVisibility(
+                        event.target.value as 'public' | 'unlisted' | 'private',
+                      )
+                    }
+                  >
+                    <option value="public">Public · listed in Live</option>
+                    <option value="unlisted">Unlisted · link only</option>
+                    <option value="private">Private · owner only</option>
+                  </select>
+                </label>
+                <p className="match-setup-wide match-rule-note">
+                  {visibility === 'public'
+                    ? 'This session will appear on the Live page.'
+                    : visibility === 'unlisted'
+                      ? 'Link only. Find it in Your sessions; it will not appear in the public feed.'
+                      : 'Only you can access this session. Find it in Your sessions.'}
+                </p>
+                <label>
+                  Joining
+                  <select
+                    value={joinPolicy}
+                    onChange={(event) =>
+                      setJoinPolicy(event.target.value as typeof joinPolicy)
+                    }
+                  >
+                    <option value="open">Open lobby</option>
+                    <option value="invite-only">Invite only</option>
+                  </select>
+                </label>
+                {joinPolicy === 'invite-only' ? (
+                  <label className="match-setup-wide">
+                    Invited Commons IDs
+                    <input
+                      value={invites}
+                      onChange={(event) => setInvites(event.target.value)}
+                      placeholder="user_one, agent_owner_two"
+                    />
+                  </label>
+                ) : null}
+                <label>
+                  Rounds
+                  <select
+                    value={maximumRounds}
+                    onChange={(event) =>
+                      setMaximumRounds(Number(event.target.value))
+                    }
+                  >
+                    {[1, 3, 5, 7, 9].map((rounds) => (
+                      <option key={rounds} value={rounds}>
+                        {rounds}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Between rounds
+                  <select
+                    value={restartPolicy}
+                    onChange={(event) =>
+                      setRestartPolicy(
+                        event.target.value as typeof restartPolicy,
+                      )
+                    }
+                  >
+                    <option value="owner">Host starts next round</option>
+                    <option value="unanimous">Every player agrees</option>
+                    <option value="automatic">Automatic</option>
+                  </select>
+                </label>
+                <label>
+                  Watching
+                  <select
+                    value={spectating}
+                    onChange={(event) =>
+                      setSpectating(event.target.value as typeof spectating)
+                    }
+                  >
+                    <option value="enabled">Live spectators</option>
+                    <option value="disabled">Players only</option>
+                  </select>
+                </label>
+                <fieldset className="controller-options">
+                  <legend>Who can play?</legend>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={allowHumans}
+                      onChange={(event) => setAllowHumans(event.target.checked)}
+                    />
+                    Humans
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={allowAgents}
+                      onChange={(event) => setAllowAgents(event.target.checked)}
+                    />
+                    Agents
+                  </label>
+                </fieldset>
+              </div>
+            ) : null}
+            {signedIn ? (
+              <div className="match-launch-actions">
+                <button
+                  className="primary"
+                  disabled={
+                    busy ||
+                    (economy.mode === 'free' &&
+                      !browserGame &&
+                      !allowHumans &&
+                      !allowAgents)
+                  }
+                  onClick={create}
+                >
+                  {busy
+                    ? 'Preparing room…'
+                    : browserGame
+                      ? 'Open creator workspace or remix'
+                      : economy.mode === 'escrow'
+                        ? 'Continue to paid lobby'
+                        : 'Host a live session'}
+                </button>
+                {!browserGame && economy.mode === 'free' ? (
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => void findOpenGame()}
+                  >
+                    Find an open game
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <a className="primary" href="/api/auth/login?next=/discover">
+                Sign in with Commons
+              </a>
+            )}
+          </div>
+        ) : (
+          <div className="agent-launcher-copy">
+            <p>
+              Read the immutable release contract, then use an Arcade access key
+              and the SDK or realtime runner. Realtime games must use a
+              persistent policy runner—not one model request per frame.
+            </p>
+            <button
+              className="copy-contract"
+              onClick={() => {
+                void navigator.clipboard.writeText(manifestUrl)
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1400)
+              }}
+            >
+              <code>GET {manifestUrl}</code>
+              <Copy size={13} /> {copied ? 'Copied' : 'Copy'}
+            </button>
+            <a className="agent-doc-link" href="/docs/creator-quickstart">
+              Agent connection guide <ExternalLink size={12} />
+            </a>
+          </div>
+        )}
+        {error ? <p className="error-text">{error}</p> : null}
+      </div>
+    </Dialog>
   )
 }

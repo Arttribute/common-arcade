@@ -4,6 +4,7 @@ import { deploymentConfig } from './config.js'
 import { ControlPlaneStack } from './stacks/control-plane-stack.js'
 import { FoundationStack } from './stacks/foundation-stack.js'
 import { RealtimePilotStack } from './stacks/realtime-pilot-stack.js'
+import { PaymentStack } from './stacks/payment-stack.js'
 
 const app = new App()
 const config = deploymentConfig(app.node.tryGetContext('stage'))
@@ -13,6 +14,20 @@ const corsOrigins =
 const environment = {
   account: process.env.CDK_DEFAULT_ACCOUNT,
   region: process.env.CDK_DEFAULT_REGION ?? 'us-east-1',
+}
+
+// Payment infrastructure is opt-in and deployed independently of game workers.
+if (app.node.tryGetContext('payments') === 'true') {
+  new PaymentStack(app, `CommonArcade-${config.stage}-Payments`, {
+    env: environment,
+    stage: config.stage,
+    corsOrigins,
+    vpcName: app.node.tryGetContext('paymentVpcName'),
+    registryUrl:
+      app.node.tryGetContext('paymentRegistryUrl') ??
+      'https://arcade.agentcommons.io/api/arcade',
+    terminationProtection: true,
+  })
 }
 
 const foundation = new FoundationStack(

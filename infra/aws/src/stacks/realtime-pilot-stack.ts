@@ -72,10 +72,11 @@ export class RealtimePilotStack extends Stack {
         assignPublicIp: true,
         circuitBreaker: { rollback: true },
         cluster,
-        cpu: 512,
+        // Concurrent sandboxed games saturated the former half-vCPU worker.
+        cpu: 2048,
         desiredCount: 1,
         healthCheckGracePeriod: Duration.seconds(30),
-        memoryLimitMiB: 1024,
+        memoryLimitMiB: 4096,
         minHealthyPercent: 0,
         maxHealthyPercent: 100,
         publicLoadBalancer: true,
@@ -108,6 +109,11 @@ export class RealtimePilotStack extends Stack {
       path: '/healthz',
       timeout: Duration.seconds(5),
     })
+    // With one authoritative owner, a five-minute drain only extends downtime.
+    service.targetGroup.setAttribute(
+      'deregistration_delay.timeout_seconds',
+      '30',
+    )
     service.loadBalancer.setAttribute('idle_timeout.timeout_seconds', '300')
 
     const distribution = new cloudfront.Distribution(

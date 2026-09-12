@@ -1,9 +1,11 @@
+import { planCoaching } from './coaching.js'
 import { createBrowserTestApi } from './browser-tests.js'
 import { createRecordingApi } from './recordings.js'
 import { createEconomyApi } from './economy.js'
 import { bodyLimit } from 'hono/body-limit'
 import {
   CommonsServiceError,
+  commonsRequest,
   createStudioApi,
   type CopilotJobInvocation,
 } from './studio.js'
@@ -192,9 +194,11 @@ function problem(
         status: error.status,
         detail: error.message,
         code:
-          error.status === 402
-            ? 'COMMONS_CREDITS_REQUIRED'
-            : 'COMMONS_AGENT_UNAVAILABLE',
+          error.status === 401
+            ? 'COMMONS_AUTH_REQUIRED'
+            : error.status === 402
+              ? 'COMMONS_CREDITS_REQUIRED'
+              : 'COMMONS_AGENT_UNAVAILABLE',
         requestId: requestIdValue,
         retryable: error.status === 429 || error.status === 502,
       },
@@ -220,7 +224,14 @@ function problem(
       },
     }
   }
-  if (error instanceof ZodError) {
+  if (
+    error instanceof ZodError ||
+    (error &&
+      typeof error === 'object' &&
+      (error as { name?: string }).name === 'ZodError' &&
+      Array.isArray((error as { issues?: unknown }).issues))
+  ) {
+    const validation = error as ZodError
     return {
       status: 422,
       body: {
@@ -231,7 +242,7 @@ function problem(
         code: 'INVALID_REQUEST',
         requestId: requestIdValue,
         retryable: false,
-        violations: error.issues.map((issue) => ({
+        violations: validation.issues.map((issue) => ({
           field: issue.path.join('.') || 'body',
           code: issue.code,
           message: issue.message,
@@ -253,7 +264,10 @@ function problem(
         detail: error.message,
         code: error.code,
         requestId: requestIdValue,
-        retryable: error instanceof ApiError ? error.retryable : false,
+        retryable:
+          error instanceof ApiError
+            ? error.retryable
+            : error.status === 429 || error.status >= 500,
       },
     }
   }
@@ -308,6 +322,16 @@ export function createApp(options: ControlApiOptions = {}) {
       : undefined
 
   app.use('*', requestId())
+  // Some bundled validation errors do not inherit the host realm's Error.
+  // Hono rethrows those; normalize them before they escape the Lambda adapter.
+  app.use('*', async (context, next) => {
+    try {
+      await next()
+    } catch (error) {
+      const response = problem(error, context.get('requestId'))
+      return context.json(response.body, response.status)
+    }
+  })
   app.use('*', bodyLimit({ maxSize: 256 * 1024 }))
   if (options.logRequests !== false) app.use('*', logger())
   app.use(
@@ -325,6 +349,15 @@ export function createApp(options: ControlApiOptions = {}) {
     }),
   )
 
+  app.on(
+    'GET',
+    ['/v1/schemas/game-document', '/v1/schemas/v0alpha1/game-document'],
+    (c) =>
+      c.json({
+        ...z.toJSONSchema(gameDocumentSchema),
+        $id: 'https://arcade.agentcommons.io/api/arcade/v1/schemas/v0alpha1/game-document',
+      }),
+  )
   app.use('/v1/matches*', async (c, next) => {
     if (options.platform || !process.env.ARCADE_REALTIME_CONTROL_URL)
       return next()
@@ -346,6 +379,18 @@ export function createApp(options: ControlApiOptions = {}) {
       redirect: 'error',
       signal: AbortSignal.timeout(20000),
     })
+    if (!response.ok && !response.headers.get('content-type')?.includes('json'))
+      return c.json(
+        {
+          type: 'https://arcade.agentcommons.io/problems/service-unavailable',
+          title: 'Match service unavailable',
+          status: response.status,
+          detail: 'The match service is temporarily unavailable. Please retry.',
+          code: 'SERVICE_UNAVAILABLE',
+          retryable: true,
+        },
+        response.status as ContentfulStatusCode,
+      )
     return new Response(response.body, {
       status: response.status,
       headers: {
@@ -375,6 +420,18 @@ export function createApp(options: ControlApiOptions = {}) {
       redirect: 'error',
       signal: AbortSignal.timeout(20000),
     })
+    if (!response.ok && !response.headers.get('content-type')?.includes('json'))
+      return c.json(
+        {
+          type: 'https://arcade.agentcommons.io/problems/service-unavailable',
+          title: 'Match service unavailable',
+          status: response.status,
+          detail: 'The match service is temporarily unavailable. Please retry.',
+          code: 'SERVICE_UNAVAILABLE',
+          retryable: true,
+        },
+        response.status as ContentfulStatusCode,
+      )
     return new Response(response.body, {
       status: response.status,
       headers: {
@@ -395,7 +452,9 @@ export function createApp(options: ControlApiOptions = {}) {
   app.route('/', createBrowserTestApi(store, authenticate))
   app.route(
     '/',
-    createEconomyApi(store, authenticate, { workerSecret: options.workerSecret }),
+    createEconomyApi(store, authenticate, {
+      workerSecret: options.workerSecret,
+    }),
   )
 
   app.get('/healthz', (context) =>
@@ -471,7 +530,6 @@ export function createApp(options: ControlApiOptions = {}) {
   app.get('/v1/games', async (context) =>
     context.json({
       games: [
-        await getTicTacToeManifest(),
         ...(
           await store.list<{ version: number; release: StudioRelease }>(
             'releases',
@@ -571,9 +629,24 @@ export function createApp(options: ControlApiOptions = {}) {
     return context.json(match, 201)
   })
 
-  app.get('/v1/matches', async (context) =>
-    context.json({ matches: await requirePlatform().listPublicMatches() }),
-  )
+  app.get('/v1/matches', async (context) => {
+    const scope = z
+      .enum(['public', 'mine'])
+      .parse(context.req.query('scope') ?? 'public')
+    const actorId =
+      scope === 'mine'
+        ? (
+            await authenticate(
+              context.req.header('Authorization'),
+              'matches:play',
+            )
+          ).id
+        : undefined
+    context.header('Cache-Control', 'private, no-store')
+    return context.json({
+      matches: await requirePlatform().listPublicMatches(actorId),
+    })
+  })
 
   app.post('/v1/matchmaking', async (context) => {
     const identity = await authenticate(
@@ -599,6 +672,18 @@ export function createApp(options: ControlApiOptions = {}) {
     )
   })
 
+  app.delete('/v1/matches/:matchId', async (context) => {
+    const actor = await authenticate(
+      context.req.header('Authorization'),
+      'matches:play',
+    )
+    return context.json(
+      await requirePlatform().abandonMatch(
+        context.req.param('matchId'),
+        actor.id,
+      ),
+    )
+  })
   app.get('/v1/matches/:matchId', async (context) =>
     context.json(
       await requirePlatform().getMatch(
@@ -618,6 +703,93 @@ export function createApp(options: ControlApiOptions = {}) {
     ),
   )
 
+  app.post('/v1/matches/:matchId/seats/:seatId/autoplay', async (context) => {
+    const p = await authenticate(
+      context.req.header('Authorization'),
+      'matches:play',
+    )
+    const body = z
+      .object({ controllerId: z.string().min(1).max(200) })
+      .strict()
+      .parse(await context.req.json())
+    const platform = requirePlatform()
+    const matchId = context.req.param('matchId'),
+      seatId = context.req.param('seatId')
+    const prepared = platform.beginCoaching(matchId, seatId, p.id)
+    if (prepared.controllerId !== body.controllerId)
+      throw new IdentityError(403, 'This controller no longer owns the seat.')
+    const applied = await platform.applyCoaching(
+      matchId,
+      seatId,
+      p.id,
+      prepared.requestId,
+      prepared.controllerId,
+      {
+        strategy:
+          'Play to win legally. Adapt to visible objectives, opponents and threats.',
+        reason: 'Arcade realtime policy started on the match worker.',
+        executableStrategy: { actionWeights: {}, avoidActions: [], rules: [] },
+      },
+    )
+    return context.json({ ...applied, source: 'arcade-realtime-policy' })
+  })
+
+  app.post('/v1/matches/:matchId/seats/:seatId/coach', async (context) => {
+    const p = await authenticate(
+      context.req.header('Authorization'),
+      'matches:play',
+    )
+    const body = z
+      .object({
+        prompt: z.string().trim().min(1).max(2000),
+        agentId: z.string().min(1).max(200),
+      })
+      .strict()
+      .parse(await context.req.json())
+    const platform = requirePlatform()
+    const matchId = context.req.param('matchId'),
+      seatId = context.req.param('seatId')
+    const prepared = platform.beginCoaching(matchId, seatId, p.id, body.agentId)
+    // The Commons service checks access to the requested agent under this owner's token.
+    await commonsRequest(p, `/v1/agents/${encodeURIComponent(body.agentId)}`)
+    if (
+      prepared.controllerId !== body.agentId &&
+      prepared.controllerId !== `agent:${body.agentId}` &&
+      prepared.controllerId !== `commons-agent-${body.agentId}`
+    )
+      throw new IdentityError(
+        403,
+        'The selected agent does not control this seat.',
+      )
+    const planned = await planCoaching(
+      p,
+      { agentId: body.agentId, strategy: prepared.strategy },
+      body.prompt,
+      prepared.observation,
+    )
+    const applied = await platform.applyCoaching(
+      matchId,
+      seatId,
+      p.id,
+      prepared.requestId,
+      prepared.controllerId,
+      planned,
+    )
+    await store.put(
+      `match-strategy-events:${matchId}`,
+      `${seatId}:${applied.requestId}`,
+      {
+        version: 1,
+        ...applied,
+        prompt: body.prompt,
+        source: 'agent-coaching',
+        type: 'policy.strategy.changed',
+        createdAt: new Date().toISOString(),
+      },
+    )
+    return context.json(applied)
+  })
+
   app.post('/v1/matches/:matchId/seats/:seatId/claim', async (context) => {
     const actorId = (
       await authenticate(context.req.header('Authorization'), 'matches:play')
@@ -633,6 +805,44 @@ export function createApp(options: ControlApiOptions = {}) {
       }),
     )
   })
+
+  for (const operation of ['release', 'controller'] as const) {
+    app.post(
+      `/v1/matches/:matchId/seats/:seatId/${operation}`,
+      async (context) => {
+        const actor = await authenticate(
+          context.req.header('Authorization'),
+          'matches:play',
+        )
+        const binding = z.object({
+          expectedControllerId: z.string().min(1).max(200),
+        })
+        const raw = await context.req.json()
+        const request = {
+          matchId: context.req.param('matchId'),
+          seatId: context.req.param('seatId'),
+          actorId: actor.id,
+        }
+        if (operation === 'release')
+          return context.json(
+            await requirePlatform().releaseSeat({
+              ...request,
+              ...binding.strict().parse(raw),
+            }),
+          )
+        const body = binding
+          .extend({
+            controllerId: z.string().min(1).max(200),
+            controllerKind: z.enum(['human', 'agent']),
+          })
+          .strict()
+          .parse(raw)
+        return context.json(
+          await requirePlatform().changeSeatController({ ...request, ...body }),
+        )
+      },
+    )
+  }
 
   app.post('/v1/matches/:matchId/join', async (context) => {
     const actorId = (
@@ -868,7 +1078,9 @@ function openApiDocument(serverUrl: string) {
         post: { summary: 'Publish the If-Match revision' },
       },
       '/v1/projects/{id}/runs': {
-        post: { summary: 'Create a pinned two-player test run' },
+        post: {
+          summary: 'Run a bounded authoritative determinism and timing test',
+        },
       },
       '/v1/projects/{id}/copilot': {
         post: { summary: 'Request a validated proposal from a Commons agent' },
@@ -913,9 +1125,26 @@ function openApiDocument(serverUrl: string) {
           summary: 'Choose a legal action for the expected browser test step',
         },
       },
+      '/v1/studio/browser-runs/{id}/controllers/{seatId}/coach': {
+        post: {
+          summary:
+            'Have the owner’s agent prepare and replace its playtest strategy',
+        },
+      },
+      '/v1/matches/{matchId}/seats/{seatId}/coach': {
+        post: {
+          summary: 'Coach an owned agent seat and replace its live controller',
+        },
+      },
       '/v1/studio/browser-runs/{id}/controllers/{seatId}/strategy': {
         post: {
-          summary: 'Schedule a human-authored agent strategy update',
+          summary: 'Replace an agent strategy',
+        },
+      },
+      '/v1/studio/browser-runs/{id}/telemetry/{batchId}': {
+        post: {
+          summary:
+            'Save an idempotent batch of sampled client-observed realtime diagnostics',
         },
       },
       '/v1/projects/{id}/recordings': {
@@ -950,7 +1179,22 @@ function openApiDocument(serverUrl: string) {
         get: { summary: 'List public live and lobby matches' },
         post: { summary: 'Create an idempotent match' },
       },
-      '/v1/matches/{matchId}': { get: { summary: 'Inspect a match' } },
+      '/v1/matches/{matchId}': {
+        get: { summary: 'Inspect a match' },
+        delete: { summary: 'End a match owned by the caller' },
+      },
+      '/v1/matches/{matchId}/seats/{seatId}/release': {
+        post: {
+          summary:
+            'Release your seat, cancel held input and revoke its control sessions',
+        },
+      },
+      '/v1/matches/{matchId}/seats/{seatId}/controller': {
+        post: {
+          summary:
+            'Atomically switch your seat between human and agent controllers',
+        },
+      },
       '/v1/matches/{matchId}/seats/{seatId}/claim': {
         post: { summary: 'Claim a seat for the authenticated actor' },
       },

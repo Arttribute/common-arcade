@@ -1,12 +1,26 @@
+export { livePolicyObservation } from './live-policy.js'
+export {
+  executableStrategySchema,
+  coachedStrategySchema,
+  type ExecutableStrategy,
+} from './coached-strategy.js'
+import { publishGameEconomy } from './economy.js'
+export {
+  inheritedRemixEconomy,
+  unresolvedRemixRoyalty,
+  publishGameEconomy,
+} from './economy.js'
 import { compileBrowserPresentation } from './browser.js'
-import {
-  createGridPlacementGame,
-  createSandboxedScriptGame,
-  type GameDefinition,
-  type GridPlacementRuleSet,
-} from '@common-arcade/match-runtime'
+export { createBrowserPolicy } from './browser-policy.js'
+import type { GridPlacementRuleSet } from '@common-arcade/match-runtime'
 import { computeManifestDigest } from '@common-arcade/manifest'
-import { ARCADE_API_VERSION, type GameManifest } from '@common-arcade/protocol'
+import {
+  ARCADE_API_VERSION,
+  GAME_ECONOMY_EXTENSION,
+  GAME_REMIX_EXTENSION,
+  gameManifestSchema,
+  type GameManifest,
+} from '@common-arcade/protocol'
 
 export {
   gameDocumentSchema,
@@ -49,7 +63,21 @@ export interface LiveReadinessReport {
 export function assessLiveReadiness(
   document: GameDocument,
 ): LiveReadinessReport {
-  const parsed = gameDocumentSchema.parse(document)
+  // Editor drafts can be temporarily incomplete (for example while typing a
+  // payout address). Report blockers without throwing through React render.
+  // Save, compilation and publication still validate the complete document.
+  const result = gameDocumentSchema.safeParse(document)
+  if (!result.success)
+    return {
+      liveReady: false,
+      classification: 'preview-only',
+      runtimeModule: 'browser-presentation',
+      checks: [],
+      blockers: result.error.issues.map(
+        (issue) => `${issue.path.join('.') || 'Document'}: ${issue.message}`,
+      ),
+    }
+  const parsed = result.data
   if (isManagedBrowserGame(parsed))
     return {
       liveReady: true,
@@ -137,32 +165,6 @@ export function rulesFor(
     objective: `Place ${d.winLength} marks in a row.`,
   }
 }
-export async function compileGame(
-  document: GameDocument,
-  releaseId: string,
-  digest: string,
-): Promise<GameDefinition<any, any>> {
-  const parsed = gameDocumentSchema.parse(document)
-  if (isManagedBrowserGame(parsed)) {
-    const source = parsed.files.find(
-      (file) => file.path === parsed.runtime.entryFile,
-    )?.content
-    if (!source) throw new Error('Managed runtime source file is missing.')
-    return createSandboxedScriptGame({
-      releaseId,
-      releaseDigest: digest,
-      mode: parsed.play?.mode ?? 'turn-based',
-      source,
-      memoryMiB: parsed.runtime.memoryMiB,
-      timeoutMs: parsed.runtime.timeoutMs,
-    })
-  }
-  if (isBrowserGame(parsed))
-    throw new Error(
-      'Browser projects need a sandboxed authoritative runtime before they can host live matches.',
-    )
-  return createGridPlacementGame(rulesFor(parsed, releaseId, digest))
-}
 export async function documentDigest(document: GameDocument): Promise<string> {
   const data = new TextEncoder().encode(
     JSON.stringify(gameDocumentSchema.parse(document)),
@@ -174,6 +176,7 @@ export async function releaseManifest(
   project: StudioProject,
   releaseId: string,
 ): Promise<GameManifest> {
+  project = { ...project, document: gameDocumentSchema.parse(project.document) }
   const capabilities = isBrowserGame(project.document)
     ? project.document.capabilities
     : undefined
@@ -190,7 +193,7 @@ export async function releaseManifest(
           : undefined,
       ].filter((tag): tag is string => Boolean(tag))
     : []
-  const extensions = capabilities
+  const extensions: GameManifest['spec']['extensions'] = capabilities
     ? [
         {
           id: 'https://arcade.agentcommons.io/extensions/world/v1',
@@ -222,23 +225,68 @@ export async function releaseManifest(
           : []),
       ]
     : []
+  if (project.forkedFrom)
+    extensions.push({
+      id: GAME_REMIX_EXTENSION,
+      required: false,
+      config: {
+        sourceReleaseId: project.forkedFrom.releaseId,
+        sourceDigest: project.forkedFrom.digest,
+        ...(project.unresolvedRemixRoyalty
+          ? { unresolvedRemixRoyalty: true }
+          : {}),
+        ...(project.inheritedEconomy
+          ? { inheritedEconomy: project.inheritedEconomy }
+          : {}),
+      },
+    })
+  if (
+    project.unresolvedRemixRoyalty &&
+    project.document.monetization?.mode === 'revenue-share'
+  )
+    throw new Error(
+      'Source royalty recipients are unresolved; free remix publication remains available',
+    )
+  const earnings = publishGameEconomy(
+    project.document.monetization,
+    project.inheritedEconomy,
+  )
+  if (earnings.mode === 'revenue-share')
+    extensions.push({
+      id: GAME_ECONOMY_EXTENSION,
+      required: false,
+      config: earnings,
+    })
   const m: GameManifest = {
     apiVersion: ARCADE_API_VERSION,
     kind: 'Game',
     metadata: {
       id: project.id.replace(/^prj_/, 'gam_'),
       namespace: 'io.agentcommons.arcade.creators',
-      slug: project.id,
+      slug: project.id.replaceAll('_', '-').toLowerCase(),
       version: `0.1.${project.revision}`,
       digest: `sha256:${'0'.repeat(64)}`,
       title: project.document.title,
-      summary: project.document.description,
+      ...(project.document.thumbnail
+        ? { thumbnail: project.document.thumbnail }
+        : {}),
+      summary: project.document.description.trim() || project.document.title,
       publisher: {
         id: `pub_${project.ownerId.replace(/[^a-zA-Z0-9_]/g, '_')}`,
         name: 'Arcade creator',
       },
       tags: isBrowserGame(project.document)
-        ? [...new Set(['browser', 'interactive', 'agents', ...capabilityTags])]
+        ? [
+            ...new Set([
+              'browser',
+              'interactive',
+              'agents',
+              ...(project.document.monetization?.mode === 'revenue-share'
+                ? ['creator-earnings']
+                : []),
+              ...capabilityTags,
+            ]),
+          ]
         : ['grid', 'turn-based', 'agents'],
     },
     spec: {
@@ -279,7 +327,9 @@ export async function releaseManifest(
         max: isBrowserGame(project.document)
           ? (project.document.play?.seats.max ?? 2)
           : 2,
-        roles: [
+        roles: (isBrowserGame(project.document)
+          ? project.document.play?.roles
+          : undefined) ?? [
           {
             id: 'player',
             title: 'Player',
@@ -288,8 +338,12 @@ export async function releaseManifest(
               : 2,
           },
         ],
-        spectators: true,
-        lateJoin: false,
+        spectators: isBrowserGame(project.document)
+          ? (project.document.play?.spectators ?? true)
+          : true,
+        lateJoin: isBrowserGame(project.document)
+          ? (project.document.play?.lateJoin ?? false)
+          : false,
       },
       clock: {
         ...(isManagedBrowserGame(project.document) &&
@@ -299,7 +353,9 @@ export async function releaseManifest(
               networkHz: Math.min(20, project.document.runtime.tickRate),
             }
           : {}),
-        maxDurationSeconds: 600,
+        maxDurationSeconds: isBrowserGame(project.document)
+          ? (project.document.play?.maxDurationSeconds ?? 600)
+          : 600,
       },
       schemas: Object.fromEntries(
         [
@@ -333,8 +389,9 @@ export async function releaseManifest(
       },
     },
   }
-  m.metadata.digest = await computeManifestDigest(m)
-  return m
+  const validated = gameManifestSchema.parse(m)
+  validated.metadata.digest = await computeManifestDigest(validated)
+  return validated
 }
 const escapeHtml = (s: string) =>
   s.replace(
@@ -349,9 +406,11 @@ export function compilePresentation(
   document: GameDocument,
   state?: { board?: readonly (string | null)[] },
   interactive = true,
+  options: { managedPreview?: boolean } = {},
 ): string {
   const d = gameDocumentSchema.parse(document)
-  if (isBrowserGame(d)) return compileBrowserPresentation(d)
+  if (isBrowserGame(d))
+    return compileBrowserPresentation(d, options.managedPreview)
   const rules = rulesFor(d, 'rel_preview', `sha256:${'0'.repeat(64)}`)
   const board =
     state?.board ?? Array<string | null>(d.boardSize ** 2).fill(null)

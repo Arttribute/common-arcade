@@ -1,5 +1,6 @@
 'use client'
-import { AccountMenu } from './account-menu'
+import { Header } from './header'
+import { GameArtwork } from './game-artwork'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -61,17 +62,7 @@ export function StudioHome() {
   }
   return (
     <main className="studio-home">
-      <header>
-        <Link href="/discover">
-          <ArrowLeft size={16} />
-          Common Arcade
-        </Link>
-        <nav>
-          <Link href="/agents">My agents</Link>
-          <Link href="/docs">Documentation</Link>
-          <AccountMenu user={identity.user} />
-        </nav>
-      </header>
+      <Header />
       <section className="studio-home-create">
         <span className="studio-home-eyebrow">
           <Gamepad2 size={17} />
@@ -81,8 +72,7 @@ export function StudioHome() {
         <p>
           Create a game or simulation with your Commons agents.
           <br />
-          Every new game starts as a blank project. Copilot builds from your
-          idea.
+          Imagine it. Build it. Make it yours.
         </p>
         <ArcadeComposer
           value={prompt}
@@ -138,7 +128,10 @@ export function StudioHome() {
             <div className="studio-project-grid">
               {projects.map((p) => (
                 <Link href={`/studio/${p.id}`} key={p.id}>
-                  <Gamepad2 size={22} />
+                  <GameArtwork
+                    title={p.document.title}
+                    src={p.document.thumbnail}
+                  />
                   <h3>{p.document.title}</h3>
                   <p>{p.document.description || 'Ready for your next idea.'}</p>
                   <small>

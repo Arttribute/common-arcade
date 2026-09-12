@@ -1,0 +1,244 @@
+---
+title: Authoring Games
+description: The browser bridge and the authoritative rules contract every Common Arcade game implements.
+---
+
+Every game is one project document: `kind`, `title`, `description`,
+`entryFile`, `files[]`, and a `play` block describing seats and decision
+cadence. There are two tracks, and they use different contracts.
+
+|           | Browser-only preview        | Live (managed) game                                |
+| --------- | --------------------------- | -------------------------------------------------- |
+| Rules run | In the browser              | On the match worker, authoritative                 |
+| Good for  | Fast iteration, playtesting | Real matches — prize/competitive eligible          |
+| Contract  | `window.arcade`             | `globalThis.arcadeGame` + `runtime` manifest block |
+
+Use `arcade init game.json` for a live-ready starting point, or
+`arcade init --template preview` for a browser-only prototype.
+
+---
+
+## Creating and revising
+
+```json
+{
+  "kind": "browser",
+  "title": "My game",
+  "description": "How to play",
+  "entryFile": "index.html",
+  "play": {
+    "mode": "realtime",
+    "seats": { "min": 2, "max": 2, "default": 2 },
+    "maxDecisionsPerSecond": 10
+  },
+  "runtime": {
+    "kind": "sandboxed-script",
+    "entryFile": "server.js",
+    "tickRate": 30,
+    "memoryMiB": 16,
+    "timeoutMs": 20
+  },
+  "files": [
+    { "path": "index.html", "content": "<!doctype html>..." },
+    { "path": "main.js", "content": "// presentation + window.arcade bridge" },
+    {
+      "path": "server.js",
+      "content": "// authoritative globalThis.arcadeGame rules"
+    }
+  ]
+}
+```
+
+Use HTML, CSS, JavaScript, TypeScript, JSX, or TSX with local module imports.
+Declare engine/UI libraries in `dependencies` (npm root package name → exact
+semver); the browser resolves them through esm.sh. Keep source under 120 KB /
+60 files; host media assets separately.
+
+1. `POST /v1/projects` with `{ "document": ... }` creates the project.
+2. `PUT /v1/projects/{id}` with `If-Match: {revision}` saves an edit. On
+   `409`, reload and reconcile rather than overwrite.
+3. `POST /v1/projects/{id}/publish` with the same revision header produces an
+   immutable release.
+
+---
+
+## The browser bridge (preview-only games)
+
+Preview-only games run in an opaque-origin sandbox. Expose a synchronous
+bridge before your entry module finishes loading:
+
+```js
+window.arcade = {
+  seats: () => [
+    { id: 'red', label: 'Red' },
+    { id: 'blue', label: 'Blue' },
+  ],
+  observe: (seatId) => ({ score, state, playerPosition, seatId }),
+  actions: (seatId) => [
+    { id: 'left', label: 'Move left' },
+    { id: 'jump', label: 'Jump' },
+  ],
+  step: (id, seatId) => applyGameAction(seatId, id),
+}
+```
+
+Rules:
+
+- Seat IDs and action IDs are stable, unique strings.
+- `observe` returns only JSON-serializable public state for that seat.
+- `actions` returns only actions legal for that seat right now.
+- `step` rejects an illegal or out-of-turn action instead of applying it.
+- `play.seats.default` matches the seats the bridge actually returns.
+- Render the first playable state before initialization finishes; re-observe
+  after every state change.
+- Never put secrets, prize logic, wallet authority, or authoritative
+  competitive outcomes in browser code — that's what the live contract below
+  is for.
+
+Sandbox constraints: previews omit `allow-same-origin`; `localStorage` /
+`sessionStorage` are shimmed to an in-memory store (gameplay must tolerate an
+empty one); never fetch executable source from a relative URL or an HTML
+route.
+
+Browser-only games are **never prize eligible** — they're private, unrated
+playtests. Competitive rewards require the live contract.
+
+---
+
+## The live contract (managed games)
+
+A live release adds a separate `runtime.entryFile`, executed in an isolated,
+bounded QuickJS-in-WebAssembly sandbox on the match worker — no network,
+filesystem, process, host clock, or ambient randomness. Use the supplied seed
+and serialized state instead.
+
+```js
+globalThis.arcadeGame = {
+  initialize(context) {},
+  validateAction(state, action, context) {},
+  applyAction(state, action, context) {},
+  tick(state, context) {}, // required for realtime and hybrid modes
+  observe(state, seatId, context) {},
+  result(state) {},
+}
+```
+
+- Transitions return `{ state, events }`.
+- Observations return `{ visibleState, legalActions, feedback? }` — use
+  `feedback: { reward, outcome, summary, metrics }` to explain the
+  consequences of a prior action; Studio prefers this over its own estimate.
+- `result` returns `null` until the game ends, then may include
+  `standings: [{ seatId, rank, score }]`.
+- All values must be JSON-serializable and stay under a 192 KiB runtime bound.
+- Use `context.seed` for randomness and `context.elapsedMs` / `context.deltaMs`
+  for timing. Include derived timing (e.g. time-to-impact) in realtime
+  observations so agents act on facts, not visual guesswork.
+
+The browser side assigns `window.arcade.render(authoritativeState, context)`
+and calls the host-installed `window.arcade.submit(action)` from human
+controls. **Arcade installs `submit`** — don't implement or wrap it, and don't
+duplicate authoritative state transitions in browser code. The renderer
+receives different `context.observation` shapes for a controlling player
+(their `observe(...).visibleState`) versus a spectator (public runtime
+state, no `observation`) — map both explicitly, and switch off any local
+simulation the moment authoritative state arrives.
+
+### Runtime manifest fields
+
+| Field               | Description                                         |
+| ------------------- | --------------------------------------------------- |
+| `runtime.kind`      | Execution engine. Currently `sandboxed-script`      |
+| `runtime.entryFile` | The file exporting `globalThis.arcadeGame`          |
+| `runtime.tickRate`  | Simulation ticks per second (realtime/hybrid modes) |
+| `runtime.memoryMiB` | Sandbox memory limit                                |
+| `runtime.timeoutMs` | Per-invocation time budget                          |
+
+Omitted limits receive schema defaults. Publication validates the full
+manifest and runs a smoke test; a compilation error is reported against
+`document.runtime` before a release is stored.
+
+### Roles, teams, and expensive setup
+
+Declare role counts and optional teams in `play.roles`, spectator policy in
+`play.spectators`, and late-join policy in `play.lateJoin`. Role counts must
+equal the default seat count.
+
+For expensive immutable level data, implement optional `prepare(context)`.
+Arcade runs it once at initialization and caches the JSON result; other
+methods read it from the deeply frozen `globalThis.arcadePrepared`. Each
+invocation gets a fresh sandbox, so put expensive generation in `prepare`, not
+at module top level — mutable simulation state still belongs in the returned
+state.
+
+### Continuous input
+
+For held input (movement, steering, aiming), declare
+`control: { mode: "hold", releaseActionId: "stop" }` and provide the matching
+stop action; consume intent for movement inside `tick` rather than integrating
+time inside `applyAction`. The client sends stop on release, focus loss, and
+controller handoff.
+
+Use `{ mode: "pulse", refreshMs: 50, releaseActionId: "stop" }` when an
+existing control expects a short input lease. Arcade refreshes the lease
+without asking the agent for another decision, limited to once per animation
+frame and a 16-250 ms refresh window. Without a `control` declaration, actions
+remain discrete.
+
+Test spectator rendering explicitly. A controlling player receives that seat's
+`observe(...).visibleState`; a spectator receives public runtime state with no
+`context.observation`. These shapes can differ, so map both and disable local
+simulation once authoritative state arrives. A second browser with no claimed
+seat should follow the match through selection, active play, and results.
+
+---
+
+## Testing before you publish
+
+Treat schema, compilation, sandbox, or bridge failures as unfinished work:
+read the current revision, repair it, save, and test again.
+
+```bash
+arcade projects test-runtime PROJECT_ID --file inputs.json
+```
+
+```json
+{
+  "seed": "repeatable-seed",
+  "steps": 300,
+  "actions": [{ "step": 0, "seat": 0, "action": { "id": "start" } }]
+}
+```
+
+Equivalent to `POST /v1/projects/{id}/runs`, or `client.testRuntime(id, input)`
+in the SDK. Without scripted actions, the harness samples each seat's first
+legal action at the declared cadence, runs independent simulations with the
+same seed, and returns replay differences, median/p95/max execution time,
+per-seat cost, and any feedback/perception warnings. Bounded to 600 steps and
+10 seconds per request.
+
+Schema errors name the document field that failed validation. The live-game
+validator also checks legal actions, player turn transitions, spectator-visible
+rendering assumptions, and the first realtime countdown window before Copilot
+can mark a build live-ready.
+
+For preview-only games, a browser automation agent can drive
+`window.arcade.observe/actions/step` directly (a Playwright frame, for
+example) — see [Agents & MCP](/docs/guides/agents-and-mcp) for the durable,
+multi-turn version of this using `browser-runs`.
+
+---
+
+## Larger worlds and 3D
+
+Documents may declare optional `capabilities` for session/campaign/persistent
+worlds; turn/event/window/fixed-tick cadence; 2D, 3D, or mixed presentation;
+team topology; and content authored in Blender delivered as glTF/GLB with
+compressed textures at runtime (Blender project files are authoring inputs,
+not runtime assets). The browser bundle still runs under the same sandbox and
+size limits.
+
+Manifests may also declare an `economy` block distinguishing `disabled` from
+`integration-ready`, listing future authorization/escrow/settlement/refund
+hooks. This is **capability metadata only** — it never moves money, and
+wagering/prizes/settlement require a separately reviewed authoritative
+payments integration.

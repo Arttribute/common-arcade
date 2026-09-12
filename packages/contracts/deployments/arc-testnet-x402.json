@@ -1,0 +1,19 @@
+{
+  "network": "arc-testnet",
+  "chainId": 5042002,
+  "asset": "0x3600000000000000000000000000000000000000",
+  "payer": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+  "payTo": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+  "amount": "480",
+  "transaction": "0x6bdb793793f4a094e04b74128f35f61385d33bc0faf9c7bb61194048d528b3a2",
+  "blockNumber": "61380327",
+  "verifiedAt": "2026-09-10T10:01:22.077Z",
+  "checks": [
+    "unpaid response 402",
+    "official x402 client authorization",
+    "canonical USDC EIP-3009 transfer",
+    "analysis delivered after settlement",
+    "replay rejected"
+  ],
+  "transport": "in-process real payment-service and EVM facilitator handlers; public testnet RPC"
+}

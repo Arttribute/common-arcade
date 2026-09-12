@@ -1,4 +1,13 @@
 import { ControlClient } from '@common-arcade/control-client'
+export class ArcadeApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+    this.name = 'ArcadeApiError'
+  }
+}
 export async function arcade<T>(
   path: string,
   body?: unknown,
@@ -12,10 +21,21 @@ export async function arcade<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   })
-  const result = await response.json()
-  if (!response.ok)
+  const text = await response.text()
+  let result
+  try {
+    result = JSON.parse(text)
+  } catch {
     throw new Error(
+      response.ok
+        ? 'Arcade returned an invalid response. Please retry.'
+        : `Arcade is temporarily unavailable (HTTP ${response.status}). Please retry.`,
+    )
+  }
+  if (!response.ok)
+    throw new ArcadeApiError(
       result.detail ?? result.error ?? 'Request failed. Please retry.',
+      response.status,
     )
   return result as T
 }

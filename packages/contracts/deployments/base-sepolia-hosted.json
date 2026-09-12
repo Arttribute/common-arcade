@@ -1,0 +1,33 @@
+{
+  "network": "base-sepolia",
+  "endpoint": "https://d2scptqzm55h6p.cloudfront.net",
+  "startedAt": "2026-09-10T11:01:28.095Z",
+  "transactions": [
+    "0x9a07dd502a515a3552fd8dd8632e13e0684a594ea9b2df8934b5bac32750d564",
+    "0xb91b7a0b0ef30e357d54c8b377f4b4a97bcc82c05c961868dc8abdf799cbec3e",
+    "0xc7388cca8f5adcfa859a6633991d24c5c879e6d51bddb1d9f342825a8393463b",
+    "0xc2f3f662c4298164134754c7830effb84a3f6ffed8049186f92f84600c47ba94",
+    "0x0fa413a35ad46a085e37f63f573077413fa9142aadd9d530c7de72fda2f165b2",
+    "0xa6de14f7eb4abc4e4be57bf85fd63e82edbb097e391f879126b9bd7c6af2fcb4",
+    "0x3b82bb5b7109984bc4f9bcc518df10f00426cbb570904dc7f79abe31170704a8"
+  ],
+  "checks": [
+    "three configured testnets",
+    "live WebSocket match snapshot",
+    "signed public match creation",
+    "canonical USDC sponsor deposit",
+    "two distinct signed players",
+    "authoritative game settlement",
+    "withdrawal or draw refund",
+    "allowance and claim cleanup",
+    "HTTPS x402 402 challenge",
+    "480 atomic USDC settled by dedicated facilitator",
+    "paid analysis delivered",
+    "payment replay rejected"
+  ],
+  "matchId": "mat_0da4e195-a9a0-4ffb-baf2-f9f2cc078098",
+  "pool": "0x1bf9b9a8c351f94146763f7fcbda32a6e60578999bbfb80fc77b9c87184c9316",
+  "contract": "0x45699ed8ccda0d7b29008e7af90e287a79de08de",
+  "x402Transaction": "0x9a1aa4c7ffde0a3cff7f99794de1de06a68679c8f178c6be01d0956649edd0fe",
+  "completedAt": "2026-09-10T11:02:20.983Z"
+}

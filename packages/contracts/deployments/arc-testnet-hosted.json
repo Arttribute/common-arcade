@@ -1,0 +1,32 @@
+{
+  "network": "arc-testnet",
+  "endpoint": "https://d2scptqzm55h6p.cloudfront.net",
+  "startedAt": "2026-09-10T11:02:27.837Z",
+  "transactions": [
+    "0xc016afc3a01a16d344686fe1982325d3cbcdc03aa2a63bef1a0a5707e7407311",
+    "0x33de79890f17a559b7fecb6add7c1a4e59d16b25a17ff89431e930d1ab903fad",
+    "0x2aabb13c407b82f1113c4559601b3281f25a8e457893051419c18371f6912495",
+    "0xd26913cae4bef0ec7a9c77cbabae6fe9b070146af05e49446145931295669938",
+    "0x289e91f364f675c5a5d1e95213f27636540fc8d702a57cc4253cb2c1b6ccff26",
+    "0xe68449bc011fc60b7b14372eea0d1b8be9b83b2a51435de6d10499c2def9fc76"
+  ],
+  "checks": [
+    "three configured testnets",
+    "live WebSocket match snapshot",
+    "signed public match creation",
+    "canonical USDC sponsor deposit",
+    "two distinct signed players",
+    "authoritative game settlement",
+    "withdrawal or draw refund",
+    "allowance and claim cleanup",
+    "HTTPS x402 402 challenge",
+    "480 atomic USDC settled by dedicated facilitator",
+    "paid analysis delivered",
+    "payment replay rejected"
+  ],
+  "matchId": "mat_b0018dc5-6c0b-4978-a914-305de6f20090",
+  "pool": "0xa68148eeffd1ce8b89532a56774793c4c8e19559164719119ff18cbfd35709fc",
+  "contract": "0xbe529edf75ebeb609dcf7ab26783dc558b735851",
+  "x402Transaction": "0x3f77782dfe6ae401f662ed557e295cc4d59ada00950351cc2f85c484d7dd094d",
+  "completedAt": "2026-09-10T11:03:16.829Z"
+}

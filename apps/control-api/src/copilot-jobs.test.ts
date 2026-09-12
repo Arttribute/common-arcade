@@ -38,7 +38,7 @@ const liveGame = {
     {
       path: 'main.js',
       content:
-        "window.arcade={seats:()=>[],observe:()=>({}),actions:()=>[],step:()=>false,render:(state)=>{document.querySelector('#game').textContent=JSON.stringify(state)},submit:(action)=>window.arcade.submit(action)};",
+        "window.arcade={render:(state)=>{document.querySelector('#game').textContent=JSON.stringify(state)}};document.querySelector('#game').onclick=()=>window.arcade.submit({type:'place',cell:0});",
     },
     {
       path: 'server.js',
@@ -46,6 +46,35 @@ const liveGame = {
         "globalThis.arcadeGame={initialize:c=>({roster:c.roster,turn:0,moves:[]}),validateAction:(s,a,c)=>s.roster[s.turn%2].seatId===c.seatId&&a&&a.type==='place'?null:'Not your turn',applyAction:(s,a)=>({state:{...s,turn:s.turn+1,moves:s.moves.concat([a.cell])},events:[{type:'game.move',visibility:'public',payload:a}]}),observe:(s,id)=>({visibleState:s,legalActions:s.roster[s.turn%2].seatId===id?[{type:'place',cell:0}]:[]}),result:s=>s.turn>=4?{winnerSeatId:s.roster[0].seatId}:null};",
     },
   ],
+}
+const realtimeLiveGame = {
+  ...liveGame,
+  title: 'Live Duel',
+  description: 'Two players shoot and dodge on an authoritative clock.',
+  play: { ...liveGame.play, mode: 'realtime' as const },
+  files: liveGame.files.map((file) =>
+    file.path === 'server.js'
+      ? {
+          ...file,
+          content:
+            "globalThis.arcadeGame={initialize:c=>({roster:c.roster,hits:0}),validateAction:(s,a,c)=>s.roster.some(x=>x.seatId===c.seatId)&&a&&a.type==='shoot'?null:'Cannot shoot',applyAction:(s,a,c)=>({state:s,events:[{type:'duel.shot',visibility:'public',payload:{seatId:c.seatId}}]}),tick:s=>({state:{...s,hits:s.hits+1},events:[]}),observe:(s,id,c)=>({visibleState:s,legalActions:[{type:'shoot'}],feedback:{elapsedMs:c.elapsedMs}}),result:()=>null};",
+        }
+      : file,
+  ),
+}
+const blackjackLiveGame = {
+  ...liveGame,
+  title: 'Blackjack Table',
+  description: 'A turn-based card table with server-owned hands and totals.',
+  files: liveGame.files.map((file) =>
+    file.path === 'server.js'
+      ? {
+          ...file,
+          content:
+            "globalThis.arcadeGame={initialize:c=>({roster:c.roster,turn:0,totals:c.roster.map(()=>12)}),validateAction:(s,a,c)=>s.roster[s.turn%s.roster.length].seatId===c.seatId&&a&&['hit','stand'].includes(a.type)?null:'Not your turn',applyAction:(s,a)=>({state:{...s,turn:s.turn+1,totals:s.totals.map((n,i)=>a.type==='hit'&&i===s.turn%s.roster.length?n+1:n)},events:[{type:'cards.action',visibility:'public',payload:{type:a.type}}]}),observe:(s,id)=>({visibleState:{turn:s.turn,totals:s.totals,seatId:id},legalActions:s.roster[s.turn%s.roster.length].seatId===id?[{type:'hit'},{type:'stand'}]:[]}),result:()=>null};",
+        }
+      : file,
+  ),
 }
 
 function sse(events: unknown[]) {
@@ -55,7 +84,9 @@ function sse(events: unknown[]) {
   )
 }
 
-function stubCommons(options: { outage?: boolean } = {}) {
+function stubCommons(
+  options: { outage?: boolean; game?: Record<string, unknown> } = {},
+) {
   const calls: Call[] = []
   vi.stubGlobal('fetch', async (input: any, init: any = {}) => {
     const url = String(input)
@@ -87,7 +118,7 @@ function stubCommons(options: { outage?: boolean } = {}) {
           type: 'cli_tool_request',
           requestId: 'req_write',
           tool: 'arcade_write_live_game',
-          args: liveGame,
+          args: options.game ?? liveGame,
         },
         {
           type: 'cli_tool_request',
@@ -111,12 +142,13 @@ function stubCommons(options: { outage?: boolean } = {}) {
 }
 
 async function poll(app: any, jobId: string) {
-  for (let attempt = 0; attempt < 80; attempt++) {
+  const deadline = Date.now() + 4000
+  while (Date.now() < deadline) {
     const job = await (
       await app.request(`/v1/studio/copilot-jobs/${jobId}`, { headers })
     ).json()
     if (job.status !== 'running') return job
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    await new Promise((resolve) => setTimeout(resolve, 25))
   }
   throw new Error('job never settled')
 }
@@ -163,12 +195,12 @@ describe('building a game in a native Commons agent session', () => {
     ])
     const run = calls.find((call) => call.url.endsWith('/v1/agents/run/stream'))
     expect(run?.body.messages).toEqual([{ role: 'user', content: rawPrompt }])
-    expect(run?.body.computerRequest).toEqual({ enabled: true })
+    expect(run?.body.computerRequest).toEqual({ enabled: false })
     expect(run?.body.sessionId).toBe('ses_arcade_project')
     expect(run?.body.cliTools.map((tool: any) => tool.name)).toEqual([
       'arcade_read_project',
       'arcade_write_live_game',
-      'arcade_write_preview_game',
+      'arcade_configure_earnings',
       'arcade_test_game',
       'arcade_publish_game',
     ])
@@ -182,6 +214,65 @@ describe('building a game in a native Commons agent session', () => {
     ).json()
     expect(saved.document.title).toBe('Live Lines')
     expect(saved.revision).toBe(2)
+  })
+
+  it('only exposes preview writing when the creator explicitly requests it', async () => {
+    const calls = stubCommons()
+    const { app } = setup()
+    const { jobId } = await start(
+      app,
+      'Create a local preview-only prototype for this experiment.',
+    )
+
+    await poll(app, jobId)
+    const run = calls.find((call) => call.url.endsWith('/v1/agents/run/stream'))
+    expect(run?.body.cliTools.map((tool: any) => tool.name)).toContain(
+      'arcade_write_preview_game',
+    )
+  })
+
+  it('writes and smoke-tests a realtime live game through the Copilot tool boundary', async () => {
+    stubCommons({ game: realtimeLiveGame })
+    const { app } = setup()
+    const { project, jobId } = await start(
+      app,
+      'Create a live duel where two players shoot and dodge.',
+    )
+
+    expect(await poll(app, jobId)).toMatchObject({
+      status: 'ready',
+      projectRevision: 2,
+    })
+    const saved = await (
+      await app.request(`/v1/projects/${project.id}`, { headers })
+    ).json()
+    expect(saved.document).toMatchObject({
+      title: 'Live Duel',
+      play: { mode: 'realtime' },
+      runtime: { kind: 'sandboxed-script', entryFile: 'server.js' },
+    })
+  })
+
+  it('writes and smoke-tests a card game through the same live tool boundary', async () => {
+    stubCommons({ game: blackjackLiveGame })
+    const { app } = setup()
+    const { project, jobId } = await start(
+      app,
+      'Create a live blackjack game without payments.',
+    )
+
+    expect(await poll(app, jobId)).toMatchObject({
+      status: 'ready',
+      projectRevision: 2,
+    })
+    const saved = await (
+      await app.request(`/v1/projects/${project.id}`, { headers })
+    ).json()
+    expect(saved.document).toMatchObject({
+      title: 'Blackjack Table',
+      play: { mode: 'turn-based' },
+      runtime: { kind: 'sandboxed-script', entryFile: 'server.js' },
+    })
   })
 
   it('continues later raw turns in the same durable Commons session', async () => {

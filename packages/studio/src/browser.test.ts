@@ -5,7 +5,97 @@ import {
   isBrowserGame,
 } from '@common-arcade/protocol'
 import { compilePresentation } from './index.js'
+import { runInNewContext } from 'node:vm'
 describe('browser game projects', () => {
+  it('executes the embedded controller in the compiled sandbox with local action IDs and cancellation', async () => {
+    const html = compilePresentation({
+      ...emptyBrowserDocument,
+      play: {
+        mode: 'realtime' as const,
+        seats: { min: 1, max: 1, default: 1 },
+        maxDecisionsPerSecond: 10,
+      },
+      files: [
+        {
+          path: 'index.html',
+          content: '<body><script src="main.js"></script></body>',
+        },
+        {
+          path: 'main.js',
+          content: `
+          window.applied=[];
+          window.arcade={
+            seats:()=>[{id:'one',label:'One'}],
+            observe:()=>({phase:'active',arcadeDecisionContext:{actionScores:{focusBeam:40,releaseBeam:0}}}),
+            actions:()=>[
+              {id:'focusBeam',label:'Focus beam',control:{mode:'hold',releaseActionId:'releaseBeam'}},
+              {id:'releaseBeam',label:'Release beam'}
+            ],
+            step:(id,seat)=>{window.applied.push({id,seat});return true}
+          };
+        `,
+        },
+      ],
+    })
+    let now = 0
+    let nextId = 0
+    const frames = new Map<number, (time: number) => void>()
+    const handlers = new Map<string, ((event: any) => void)[]>()
+    const messages: any[] = []
+    const parent = { postMessage: (message: any) => messages.push(message) }
+    const context: any = {
+      console,
+      Map,
+      URL,
+      Response,
+      location: { origin: 'null' },
+      performance: { now: () => now },
+      parent,
+      fetch: async () => new Response(''),
+      document: {
+        addEventListener: () => {},
+        body: { append: () => {} },
+        querySelectorAll: () => [],
+      },
+      requestAnimationFrame: (callback: (time: number) => void) => {
+        frames.set(++nextId, callback)
+        return nextId
+      },
+      cancelAnimationFrame: (id: number) => frames.delete(id),
+      addEventListener: (type: string, callback: (event: any) => void) =>
+        handlers.set(type, [...(handlers.get(type) ?? []), callback]),
+    }
+    context.window = context
+    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    expect(scripts).toHaveLength(1)
+    await runInNewContext(scripts[0]![1]!, context)
+    const send = (data: unknown) =>
+      handlers
+        .get('message')
+        ?.forEach((callback) => callback({ source: parent, data }))
+    send({
+      type: 'arcade.preview-policy.start',
+      runId: 'run',
+      epoch: 'epoch',
+      decisionsPerSecond: 10,
+      controllers: [
+        { seatId: 'one-1', label: 'One', kind: 'agent', strategy: 'Win' },
+      ],
+    })
+    for (let i = 0; i < 60; i++) {
+      now += 16
+      const batch = [...frames.values()]
+      frames.clear()
+      batch.forEach((callback) => callback(now))
+    }
+    expect(context.applied).toEqual([{ id: 'focusBeam', seat: 'one' }])
+    expect(
+      messages.some((m) => m.type === 'arcade.preview-policy.sample'),
+    ).toBe(true)
+    send({ type: 'arcade.preview-policy.stop' })
+    expect(context.applied.at(-1)).toEqual({ id: 'releaseBeam', seat: 'one' })
+    expect(frames.size).toBe(0)
+  })
   it('compiles local TypeScript modules without executing user source in the host', () => {
     const html = compilePresentation({
       ...emptyBrowserDocument,

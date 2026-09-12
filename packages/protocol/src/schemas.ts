@@ -116,6 +116,7 @@ export const gameManifestSchema = z
       digest: digestSchema,
       title: z.string().min(1).max(120),
       summary: z.string().min(1).max(500),
+      thumbnail: z.string().max(90000).optional(),
       publisher: z.object({
         id: z.string().min(1).max(200),
         name: z.string().min(1).max(120),
@@ -279,6 +280,9 @@ export const matchDescriptorSchema = z
         status: z.enum(['open', 'claimed', 'connected', 'disconnected']),
         actorId: z.string().min(1).optional(),
         controllerKind: z.enum(['human', 'agent']).optional(),
+        controllerId: z.string().min(1).optional(),
+        label: z.string().min(1).optional(),
+        joinable: z.boolean().optional(),
       }),
     ),
     result: jsonValueSchema.optional(),

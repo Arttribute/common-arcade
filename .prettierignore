@@ -7,7 +7,7 @@ dist
 node_modules
 pnpm-lock.yaml
 apps/web/next-env.d.ts
-
-artifacts
-cache
-typechain-types
+packages/contracts/lib
+packages/contracts/out
+packages/contracts/cache
+packages/contracts/broadcast
