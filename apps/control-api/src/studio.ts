@@ -1,3 +1,4 @@
+import { publicationRecord, setPublication } from './publication.js'
 import { smokeTestRuntime } from './runtime-validation.js'
 import {
   inheritedRemixEconomy,
@@ -110,6 +111,7 @@ const mutatingCopilotTools = new Set([
   'arcade_write_preview_game',
   'arcade_configure_earnings',
   'arcade_publish_game',
+  'arcade_unpublish_game',
 ])
 type StudioConversationMessage = {
   role: 'user' | 'assistant'
@@ -433,6 +435,12 @@ const ARCADE_COPILOT_TOOLS = [
       'Publish the current validated game as an immutable Common Arcade release. Use only when the user asks to publish or make the game live.',
     parameters: { type: 'object', properties: {}, required: [] },
   },
+  {
+    name: 'arcade_unpublish_game',
+    description:
+      'Unpublish this game only when its owner asks. Removes all its releases from discovery and prevents new sessions. Existing sessions, immutable releases, and project history remain available. Publishing restores availability.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
 ] as const
 const PREVIEW_ONLY_REQUEST =
   /\b(?:preview[- ]only|browser preview|local prototype|non[- ]live prototype)\b/i
@@ -674,6 +682,33 @@ export function createStudioApi(
       }),
     )
   })
+  app.get('/v1/projects/:id/publication', async (c) => {
+    const p = await authenticate(c.req.header('Authorization'), 'projects:read')
+    const { project } = await owned(p.id, c.req.param('id'), 'view')
+    const availability = await publicationRecord(store, project.id)
+    return c.json({
+      projectId: project.id,
+      isPublished:
+        Boolean(project.releaseId) && availability?.isPublished !== false,
+    })
+  })
+  app.post('/v1/projects/:id/unpublish', async (c) => {
+    const p = await authenticate(
+      c.req.header('Authorization'),
+      'releases:publish',
+    )
+    const { project } = await owned(p.id, c.req.param('id'))
+    if (project.ownerId !== p.id)
+      throw new IdentityError(
+        403,
+        'Only the project owner can unpublish this game.',
+      )
+    if (expected.parse(c.req.header('If-Match')) !== project.revision)
+      throw new StoreConflict()
+    const availability = await publicationRecord(store, project.id)
+    await setPublication(store, project.id, false, availability)
+    return c.json({ projectId: project.id, isPublished: false })
+  })
   app.post('/v1/projects/:id/publish', async (c) => {
     const p = await authenticate(
         c.req.header('Authorization'),
@@ -688,6 +723,7 @@ export function createStudioApi(
       )
     if (expected.parse(c.req.header('If-Match')) !== project.revision)
       throw new StoreConflict()
+    const availability = await publicationRecord(store, project.id)
     const liveReadiness = assessLiveReadiness(project.document)
     if (!liveReadiness.liveReady)
       return c.json(
@@ -706,7 +742,10 @@ export function createStudioApi(
     await smokeTestRuntime(project.document, project.digest)
     const releaseId = `rel_${project.id.slice(4)}_${project.revision}_${project.digest.slice(7, 19)}`
     const existing = await store.get<ReleaseRecord>('releases', releaseId)
-    if (existing) return c.json(existing.release)
+    if (existing) {
+      await setPublication(store, project.id, true, availability)
+      return c.json(existing.release)
+    }
     if (!project.document.thumbnail)
       return c.json(
         {
@@ -746,6 +785,7 @@ export function createStudioApi(
     }
     await store.put('releases', releaseId, { version: 1, release })
     await save(record, { ...project, releaseId })
+    await setPublication(store, project.id, true, availability)
     return c.json(release, 201)
   })
   app.get('/v1/studio/releases/:id', async (c) => {
@@ -2172,6 +2212,7 @@ export function createStudioApi(
             'The project changed before approval could be applied. Prepare a new proposal.',
           )
         const project = record.project
+        const availability = await publicationRecord(store, project.id)
         if (project.ownerId !== p.id)
           throw new IdentityError(
             403,
@@ -2217,10 +2258,37 @@ export function createStudioApi(
           await store.put('releases', releaseId, { version: 1, release })
           await save(record, { ...project, releaseId })
         }
+        await setPublication(store, project.id, true, availability)
         return JSON.stringify({
           ok: true,
           releaseId,
           previewPath: `/play/${releaseId}`,
+        })
+      }
+      if (tool === 'arcade_unpublish_game') {
+        if (!p.scopes.includes('releases:publish'))
+          throw new IdentityError(403, 'This account cannot unpublish games.')
+        const { project } = await owned(p.id, projectId)
+        if (project.ownerId !== p.id)
+          throw new IdentityError(
+            403,
+            'Only the project owner can unpublish this game.',
+          )
+        if (
+          expectedRevision !== undefined &&
+          project.revision !== expectedRevision
+        )
+          throw new Error(
+            'The project changed before approval could be applied. Prepare a new proposal.',
+          )
+        const availability = await publicationRecord(store, project.id)
+        await setPublication(store, project.id, false, availability)
+        return JSON.stringify({
+          ok: true,
+          projectId,
+          isPublished: false,
+          message:
+            'Unpublished. Existing sessions and project history remain available.',
         })
       }
       return JSON.stringify({ error: `Unknown Arcade tool: ${tool}` })
@@ -2788,6 +2856,7 @@ function copilotToolLabel(tool: string) {
     arcade_configure_earnings: 'Configure earnings and remix royalties',
     arcade_test_game: 'Test Arcade game',
     arcade_publish_game: 'Publish Arcade game',
+    arcade_unpublish_game: 'Unpublish Arcade game',
     invoke_skill: 'Loaded game-building skill',
     startAgentComputer: 'Started Agent Computer',
     runComputerCommand: 'Ran computer command',

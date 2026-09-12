@@ -203,6 +203,7 @@ describe('building a game in a native Commons agent session', () => {
       'arcade_configure_earnings',
       'arcade_test_game',
       'arcade_publish_game',
+      'arcade_unpublish_game',
     ])
     expect(
       calls

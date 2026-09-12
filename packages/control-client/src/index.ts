@@ -521,6 +521,23 @@ export class ControlClient {
       headers: { 'If-Match': String(revision) },
     }) as Promise<StudioProject>
   }
+  async getProjectPublication(
+    id: string,
+  ): Promise<{ projectId: string; isPublished: boolean }> {
+    return this.request(
+      `/v1/projects/${encodeURIComponent(id)}/publication`,
+    ) as Promise<{ projectId: string; isPublished: boolean }>
+  }
+  async unpublishProject(
+    id: string,
+    revision: number,
+  ): Promise<{ projectId: string; isPublished: boolean }> {
+    return this.request(`/v1/projects/${encodeURIComponent(id)}/unpublish`, {
+      method: 'POST',
+      body: {},
+      headers: { 'If-Match': String(revision) },
+    }) as Promise<{ projectId: string; isPublished: boolean }>
+  }
   async publishProject(id: string, revision: number): Promise<StudioRelease> {
     return this.request(`/v1/projects/${encodeURIComponent(id)}/publish`, {
       method: 'POST',

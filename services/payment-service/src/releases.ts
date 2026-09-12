@@ -14,6 +14,20 @@ export function releaseLoader(registry: string) {
   return async (id: string): Promise<StudioRelease> => {
     if (!/^rel_[A-Za-z0-9_-]{1,190}$/.test(id))
       throw new Error('Invalid release ID')
+    // Only new tables use this loader. Existing tables retain their pinned
+    // release payload and continue after a creator unpublishes the game.
+    const availability = await fetch(`${base}/v1/releases/${id}`, {
+      redirect: 'error',
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!availability.ok)
+      throw new Error('Published release unavailable for new tables')
+    const descriptor = (await availability.json()) as {
+      id?: string
+      status?: string
+    }
+    if (descriptor.id !== id || descriptor.status !== 'published')
+      throw new Error('Published release unavailable for new tables')
     const response = await fetch(`${base}/v1/studio/releases/${id}`, {
       redirect: 'error',
       signal: AbortSignal.timeout(15000),

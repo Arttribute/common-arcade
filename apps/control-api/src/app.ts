@@ -1,3 +1,8 @@
+import {
+  publishedReleases,
+  releaseIsPublished,
+  type GamePublicationRecord,
+} from './publication.js'
 import { planCoaching } from './coaching.js'
 import { catalogMetadata } from './catalog.js'
 import { createBrowserTestApi } from './browser-tests.js'
@@ -527,10 +532,7 @@ export function createApp(options: ControlApiOptions = {}) {
   )
 
   app.get('/v1/games', async (context) => {
-    const releases = await store.list<{
-      version: number
-      release: StudioRelease
-    }>('releases')
+    const releases = await publishedReleases(store)
     const games = releases
       .map(({ release }) => release.manifest)
       .filter(
@@ -551,11 +553,7 @@ export function createApp(options: ControlApiOptions = {}) {
 
   app.get('/v1/games/:gameId', async (context) =>
     context.json(
-      (
-        await store.list<{ version: number; release: StudioRelease }>(
-          'releases',
-        )
-      )
+      (await publishedReleases(store))
         .map((r) => r.release.manifest)
         .findLast((g) => g.metadata.id === context.req.param('gameId')) ??
         (context.req.param('gameId') === 'gam_tictactoe1'
@@ -577,11 +575,7 @@ export function createApp(options: ControlApiOptions = {}) {
         status: 'published' as const,
         profiles: builtin.spec.profiles,
       },
-      ...(
-        await store.list<{ version: number; release: StudioRelease }>(
-          'releases',
-        )
-      ).map(({ release: r }) => ({
+      ...(await publishedReleases(store)).map(({ release: r }) => ({
         id: r.id,
         gameId: r.manifest.metadata.id,
         version: r.manifest.metadata.version,
@@ -627,6 +621,13 @@ export function createApp(options: ControlApiOptions = {}) {
       )
     }
     const body = createMatchBody.parse(await context.req.json())
+    if (!(await releaseIsPublished(store, body.releaseId)))
+      throw new ApiError(
+        'GAME_UNPUBLISHED',
+        409,
+        false,
+        'This game is unavailable for new sessions. The creator can publish it again.',
+      )
     const match = await requirePlatform().createMatch({
       ...body,
       idempotencyKey,
@@ -649,8 +650,17 @@ export function createApp(options: ControlApiOptions = {}) {
           ).id
         : undefined
     context.header('Cache-Control', 'private, no-store')
+    const matches = await requirePlatform().listPublicMatches(actorId)
+    const hidden =
+      scope === 'public'
+        ? new Set(
+            (await store.list<GamePublicationRecord>('game-publications'))
+              .filter((record) => !record.isPublished)
+              .map((record) => record.projectId.replace(/^prj_/, 'gam_')),
+          )
+        : new Set<string>()
     return context.json({
-      matches: await requirePlatform().listPublicMatches(actorId),
+      matches: matches.filter((match) => !hidden.has(match.gameId)),
     })
   })
 
@@ -668,6 +678,13 @@ export function createApp(options: ControlApiOptions = {}) {
         'Idempotency-Key is required for matchmaking.',
       )
     const body = findMatchBody.parse(await context.req.json())
+    if (!(await releaseIsPublished(store, body.releaseId)))
+      throw new ApiError(
+        'GAME_UNPUBLISHED',
+        409,
+        false,
+        'This game is unavailable for new sessions. The creator can publish it again.',
+      )
     return context.json(
       await requirePlatform().findOrCreateMatch({
         ...body,
@@ -1079,6 +1096,15 @@ function openApiDocument(serverUrl: string) {
       },
       '/v1/projects/{id}/collaborators': {
         put: { summary: 'Set owner-managed edit, test, and comment grants' },
+      },
+      '/v1/projects/{id}/publication': {
+        get: { summary: 'Read project publication availability' },
+      },
+      '/v1/projects/{id}/unpublish': {
+        post: {
+          summary:
+            'Owner unpublishes all game releases; existing sessions and history remain available',
+        },
       },
       '/v1/projects/{id}/publish': {
         post: { summary: 'Publish the If-Match revision' },

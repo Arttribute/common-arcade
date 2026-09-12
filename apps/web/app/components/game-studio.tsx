@@ -27,6 +27,7 @@ import {
   Circle,
   Code2,
   Download,
+  EyeOff,
   FlaskConical,
   Folder,
   Wallet,
@@ -478,6 +479,13 @@ export function GameStudio({ projectId }: { projectId: string }) {
   const [zoom, setZoom] = useState(1)
   const [user, setUser] = useState<{ id: string; name: string } | null>(null)
   const [project, setProject] = useState<StudioProject>()
+  const [publication, setPublication] = useState<{
+    projectId: string
+    isPublished: boolean
+  }>()
+  const [publicationLoading, setPublicationLoading] = useState(false)
+  const [publicationError, setPublicationError] = useState('')
+  const [publicationRefresh, setPublicationRefresh] = useState(0)
   const [collaboratorId, setCollaboratorId] = useState('')
   const [collaboratorPermission, setCollaboratorPermission] = useState<
     'test' | 'comment' | 'edit'
@@ -542,6 +550,54 @@ export function GameStudio({ projectId }: { projectId: string }) {
     }[]
   >([])
   const copilot = useProjectCopilot(projectId, copilotId, setMessages)
+  const publicationProjectId = user ? project?.id : undefined
+  useEffect(() => {
+    let active = true
+    const controller = new AbortController()
+    setPublication(undefined)
+    setPublicationError('')
+    setPublicationLoading(Boolean(publicationProjectId))
+    if (publicationProjectId) {
+      void arcade<{ projectId: string; isPublished: boolean }>(
+        `projects/${publicationProjectId}/publication`,
+        undefined,
+        'GET',
+        {},
+        controller.signal,
+      )
+        .then((status) => {
+          if (!active) return
+          if (
+            status.projectId !== publicationProjectId ||
+            typeof status.isPublished !== 'boolean'
+          )
+            throw new Error('Could not verify publication status.')
+          setPublication(status)
+        })
+        .catch((cause) => {
+          if (active)
+            setPublicationError(
+              cause instanceof Error
+                ? cause.message
+                : 'Could not load publication status.',
+            )
+        })
+        .finally(() => {
+          if (active) setPublicationLoading(false)
+        })
+    }
+    return () => {
+      active = false
+      controller.abort()
+    }
+    // Publication can change without a new source revision, including when a
+    // recovered Copilot job finishes after the workspace has been reopened.
+  }, [
+    publicationProjectId,
+    publicationRefresh,
+    copilot.activeJobId,
+    copilot.recoveredRevision,
+  ])
   const [computerOpen, setComputerOpen] = useState(false)
   const [copilotActivity, setCopilotActivity] = useState<CopilotActivity[]>([])
   const [busy, setBusy] = useState(''),
@@ -1168,9 +1224,11 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 if (isCurrent()) copilot.setSessionId(sessionId)
               },
             },
-          ).finally(() =>
-            isCurrent() ? copilot.refresh().catch(() => undefined) : undefined,
-          )
+          ).finally(() => {
+            if (!isCurrent()) return
+            setPublicationRefresh((value) => value + 1)
+            return copilot.refresh().catch(() => undefined)
+          })
           if (!isCurrent()) return
           setElapsed(0)
           if (result.sessionId) copilot.setSessionId(result.sessionId)
@@ -1208,7 +1266,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
               ? `Copilot saved revision ${latest.revision}. Your unsaved local edits have been kept; review them before saving.`
               : latest.revision > p.revision
                 ? `Copilot saved revision ${latest.revision}.`
-                : 'Copilot finished without changing the project.',
+                : 'Copilot finished.',
           )
         },
         isCurrent,
@@ -1398,6 +1456,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                             { 'If-Match': String(p.revision) },
                           )
                           setProject({ ...p, releaseId: release.id })
+                          setPublicationRefresh((value) => value + 1)
                           setNotice(
                             'Published. Your game is now in the Arcade.',
                           )
@@ -1476,6 +1535,89 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 )}
               </div>
               <div hidden={workspaceGroup !== 'publishing'}>
+                {project && (
+                  <div className="studio-section">
+                    <div className="studio-section-label">
+                      <Upload size={13} /> Publication
+                    </div>
+                    <p className="studio-help" role="status">
+                      <strong>
+                        {publicationLoading
+                          ? 'Checking publication…'
+                          : publication?.projectId === project.id
+                            ? publication.isPublished
+                              ? 'Published'
+                              : 'Unpublished'
+                            : 'Publication status unavailable'}
+                      </strong>
+                    </p>
+                    {publicationError ? (
+                      <>
+                        <p className="studio-help" role="alert">
+                          {publicationError}
+                        </p>
+                        <Button
+                          disabled={!!busy || publicationLoading}
+                          onClick={() =>
+                            setPublicationRefresh((value) => value + 1)
+                          }
+                        >
+                          <RotateCcw size={14} /> Retry status
+                        </Button>
+                      </>
+                    ) : publication?.projectId === project.id ? (
+                      <>
+                        <p className="studio-help">
+                          {publication.isPublished
+                            ? 'Visible in Discover and available for new sessions.'
+                            : 'Publish to make this game visible in Discover and available for new sessions.'}
+                        </p>
+                        {isOwner && publication.isPublished && (
+                          <>
+                            <Button
+                              disabled={!!busy || publicationLoading}
+                              onClick={() =>
+                                void task('unpublish', async () => {
+                                  try {
+                                    await arcade<{
+                                      projectId: string
+                                      isPublished: boolean
+                                    }>(
+                                      `projects/${project.id}/unpublish`,
+                                      {},
+                                      'POST',
+                                      { 'If-Match': String(project.revision) },
+                                    )
+                                    setNotice(
+                                      'Unpublished. Existing games continue; you can publish again at any time.',
+                                    )
+                                  } finally {
+                                    setPublicationRefresh((value) => value + 1)
+                                  }
+                                })
+                              }
+                            >
+                              <EyeOff size={14} />{' '}
+                              {busy === 'unpublish'
+                                ? 'Unpublishing…'
+                                : 'Unpublish'}
+                            </Button>
+                            <p className="studio-help">
+                              Removes this game from discovery and prevents new
+                              sessions. Existing games continue. You can publish
+                              again.
+                            </p>
+                          </>
+                        )}
+                        {!isOwner && (
+                          <p className="studio-help">
+                            Only the owner can publish or unpublish this game.
+                          </p>
+                        )}
+                      </>
+                    ) : null}
+                  </div>
+                )}
                 <ThumbnailField
                   value={document.thumbnail}
                   onChange={(thumbnail) => update({ thumbnail })}
@@ -2346,6 +2488,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       setBusy(reviewing ? 'approval' : '')
                     }}
                     onApplied={async () => {
+                      setPublicationRefresh((value) => value + 1)
                       const latest = await arcade<StudioProject>(
                         `projects/${projectId}`,
                       )
