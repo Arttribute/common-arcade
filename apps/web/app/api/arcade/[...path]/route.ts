@@ -5,6 +5,7 @@ import {
   readSession,
   sessionCookie,
 } from '../../../../lib/session'
+import { devAccessToken } from '../../../../lib/dev-access-token'
 export const maxDuration = 120
 async function proxy(
   request: NextRequest,
@@ -50,6 +51,17 @@ async function proxy(
     headers.set('Authorization', request.headers.get('authorization')!)
   else if (session)
     headers.set('Authorization', `Bearer ${session.accessToken}`)
+  else {
+    // Local development only (lib/dev-access-token). Unlike a cookie, the key
+    // isn't bound to this site, so changes must come from this page itself.
+    const dev = devAccessToken()
+    if (
+      dev &&
+      (['GET', 'HEAD'].includes(request.method) ||
+        request.headers.get('origin') === request.nextUrl.origin)
+    )
+      headers.set('Authorization', `Bearer ${dev}`)
+  }
   for (const name of ['If-Match', 'Idempotency-Key']) {
     const value = request.headers.get(name)
     if (value) headers.set(name, value)
