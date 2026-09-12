@@ -4,10 +4,15 @@ import {
   readSession,
   sessionCookie,
 } from '../../../../lib/session'
+import { devAccessTokenUser } from '../../../../lib/dev-access-token'
 export async function GET() {
   const session = await readSession()
+  // Without a Commons session, local development may sign in with a dev key.
+  const user = session
+    ? { id: session.id, name: session.name }
+    : await devAccessTokenUser()
   const response = NextResponse.json(
-    session ? { user: { id: session.id, name: session.name } } : { user: null },
+    { user },
     { headers: { 'Cache-Control': 'no-store' } },
   )
   if (!session)
