@@ -18,3 +18,8 @@ cdk.context.json
 tmp/
 .payment-data/
 .vercel
+
+# Hardhat outputs
+packages/economy-hedera/artifacts/
+packages/economy-hedera/cache/
+packages/economy-hedera/typechain-types/

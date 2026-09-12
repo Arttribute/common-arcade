@@ -11,3 +11,6 @@ packages/contracts/lib
 packages/contracts/out
 packages/contracts/cache
 packages/contracts/broadcast
+packages/economy-hedera/artifacts
+packages/economy-hedera/cache
+packages/economy-hedera/typechain-types
