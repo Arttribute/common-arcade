@@ -1,0 +1,226 @@
+/* Common Arcade design tokens.
+ *
+ * One source of truth for colour, radius and spacing, loaded after every other
+ * stylesheet. The neutrals follow Agent Commons' stone palette so Arcade reads
+ * as part of the same product; indigo is Arcade's accent (placeholder until
+ * the final palette is chosen). Light is the default; `.dark` on <html> is set
+ * by the theme provider (system preference or the sidebar toggle).
+ */
+:root {
+  color-scheme: light;
+
+  --arc-bg: #ffffff;
+  --arc-surface: #ffffff;
+  --arc-surface-2: #fafaf9;
+  --arc-surface-3: #f5f5f4;
+  --arc-surface-glass: rgb(255 255 255 / 0.95);
+  --arc-text: #1c1917;
+  --arc-text-2: #57534e;
+  --arc-muted: #78716c;
+  --arc-subtle: #a8a29e;
+  --arc-border: #e7e5e4;
+  --arc-border-strong: #d6d3d1;
+
+  --arc-accent: #4f46e5;
+  --arc-accent-hover: #4338ca;
+  --arc-accent-soft: #eef0ff;
+  --arc-accent-border: #c7d2fe;
+  --arc-accent-text: #4338ca;
+  --arc-on-accent: #ffffff;
+
+  --arc-success: #166534;
+  --arc-success-soft: #f0fdf4;
+  --arc-success-border: #bbf7d0;
+  --arc-warning: #9a3412;
+  --arc-warning-soft: #fff7ed;
+  --arc-warning-border: #fed7aa;
+  --arc-danger: #b91c1c;
+  --arc-danger-soft: #fff1f2;
+
+  --arc-inverse-bg: #1c1917;
+  --arc-inverse-text: #fafaf9;
+  --arc-overlay: rgb(28 25 23 / 0.45);
+  --arc-shadow: 0 1px 2px rgb(28 25 23 / 0.06), 0 1px 3px rgb(28 25 23 / 0.08);
+  --arc-shadow-lg: 0 12px 32px rgb(28 25 23 / 0.12);
+  --arc-focus: #6366f1;
+
+  /* Less rounding than before: small controls, controls, then surfaces. */
+  --arc-radius-sm: 4px;
+  --arc-radius: 6px;
+  --arc-radius-lg: 8px;
+
+  /* 4px spacing scale for padding, gaps and section rhythm. */
+  --arc-space-1: 4px;
+  --arc-space-2: 8px;
+  --arc-space-3: 12px;
+  --arc-space-4: 16px;
+  --arc-space-5: 20px;
+  --arc-space-6: 24px;
+  --arc-space-8: 32px;
+  --arc-space-10: 40px;
+
+  /* Legacy Arcade tokens now follow the theme. */
+  --ink: var(--arc-text);
+  --paper: var(--arc-bg);
+  --line: var(--arc-border);
+  --violet: var(--arc-accent);
+  --acid: var(--arc-accent-soft);
+  --orange: var(--arc-warning);
+  --arcade-muted: var(--arc-muted);
+  --arcade-radius: var(--arc-radius-lg);
+
+  /* Agent Commons UI package tokens, so shared components match. */
+  --ac-surface: var(--arc-surface);
+  --ac-canvas: var(--arc-surface-2);
+  --ac-text: var(--arc-text);
+  --ac-muted: var(--arc-muted);
+  --ac-line: var(--arc-border);
+  --ac-accent: var(--arc-accent);
+  --ac-radius: var(--arc-radius-lg);
+}
+
+:root.dark {
+  color-scheme: dark;
+
+  --arc-bg: #0c0a09;
+  --arc-surface: #1c1917;
+  --arc-surface-2: #151210;
+  --arc-surface-3: #292524;
+  --arc-surface-glass: rgb(28 25 23 / 0.94);
+  --arc-text: #fafaf9;
+  --arc-text-2: #d6d3d1;
+  --arc-muted: #a8a29e;
+  --arc-subtle: #78716c;
+  --arc-border: #292524;
+  --arc-border-strong: #44403c;
+
+  --arc-accent: #6366f1;
+  --arc-accent-hover: #818cf8;
+  --arc-accent-soft: rgb(99 102 241 / 0.16);
+  --arc-accent-border: rgb(129 140 248 / 0.4);
+  --arc-accent-text: #a5b4fc;
+  --arc-on-accent: #ffffff;
+
+  --arc-success: #4ade80;
+  --arc-success-soft: rgb(34 197 94 / 0.14);
+  --arc-success-border: rgb(74 222 128 / 0.35);
+  --arc-warning: #fdba74;
+  --arc-warning-soft: rgb(249 115 22 / 0.14);
+  --arc-warning-border: rgb(249 115 22 / 0.35);
+  --arc-danger: #f87171;
+  --arc-danger-soft: rgb(239 68 68 / 0.14);
+
+  --arc-inverse-bg: #fafaf9;
+  --arc-inverse-text: #1c1917;
+  --arc-overlay: rgb(0 0 0 / 0.6);
+  --arc-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  --arc-shadow-lg: 0 12px 32px rgb(0 0 0 / 0.5);
+  --arc-focus: #818cf8;
+}
+
+body {
+  background: var(--arc-bg);
+  color: var(--arc-text);
+  font-family:
+    var(--font-sans),
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--arc-focus);
+  outline-offset: 2px;
+}
+
+.sidebar-footer {
+  display: grid;
+  gap: var(--arc-space-2);
+}
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--arc-space-2);
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--arc-border);
+  border-radius: var(--arc-radius);
+  background: var(--arc-surface);
+  color: var(--arc-text-2);
+  font-size: 13px;
+}
+.theme-toggle:hover {
+  background: var(--arc-surface-3);
+  color: var(--arc-text);
+}
+
+/* Agent Commons UI package: its stylesheet hard-codes light greys, so point
+   the parts Arcade renders at the tokens. `.ac-window-dark` rules are more
+   specific and keep their intentionally dark look. The game preview iframe
+   stays white on purpose — games assume a white page. */
+.ac-button:focus-visible,
+.ac-tool-button:focus-visible,
+.ac-note:focus-visible {
+  outline-color: var(--arc-focus);
+}
+.ac-composer {
+  border-color: var(--arc-border-strong);
+  background: var(--arc-surface);
+}
+.ac-composer:focus-within {
+  border-color: var(--arc-subtle);
+}
+.ac-composer-dragging {
+  border-color: var(--arc-accent);
+  background: var(--arc-accent-soft);
+}
+.ac-composer-input::placeholder {
+  color: var(--arc-subtle);
+}
+.ac-composer-pill:hover:not(:disabled),
+.ac-composer-popover button:hover {
+  background: var(--arc-surface-3);
+}
+.ac-attachment {
+  background: var(--arc-surface-2);
+}
+.ac-attachment-error .ac-attachment-status,
+.ac-context-error,
+.ac-recording-controls span,
+.ac-recording-error {
+  color: var(--arc-danger);
+}
+.ac-recording-error {
+  background: var(--arc-warning-soft);
+}
+.ac-tool-active,
+.ac-window-tabs,
+.ac-source-tree .ac-source-selected {
+  background: var(--arc-surface-3);
+}
+.ac-window-bar,
+.ac-source-tree {
+  background: var(--arc-surface-2);
+}
+.ac-source-browser,
+.ac-source-editor textarea {
+  background: var(--arc-surface);
+}
+.ac-source-editor textarea {
+  color: var(--arc-text-2);
+}
+.ac-recording-controls,
+.ac-recording-timeline {
+  border-color: var(--arc-border);
+  background: var(--arc-surface-2);
+  color: var(--arc-muted);
+}
+.ac-recording-timeline button {
+  border-color: var(--arc-border);
+}

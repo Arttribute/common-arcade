@@ -1,6 +1,9 @@
 'use client'
 import { CreatorEconomySettings } from './creator-economy-settings'
 import { AccountMenu } from './account-menu'
+import { ThemeToggle } from './theme-toggle'
+import { SelectMenu } from './ui/select-menu'
+import { MessageText, PagedMessages } from './ui/conversation'
 import { GeneralChat } from './general-chat'
 import { ThumbnailField } from './thumbnail-field'
 import { StudioCodeEditor } from './studio-code-editor'
@@ -1133,6 +1136,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
           </button>
         ))}
         <div className="rail-account">
+          <ThemeToggle compact />
           <AccountMenu
             user={user}
             beforeSignOut={async () => {
@@ -1306,17 +1310,38 @@ export function GameStudio({ projectId }: { projectId: string }) {
                   </div>
                   <label>
                     License
-                    <select
+                    <SelectMenu
                       value={
                         document.distribution?.license ??
                         defaultGameDistribution.license
                       }
-                      onChange={(event) =>
+                      options={[
+                        {
+                          value: 'all-rights-reserved',
+                          label: 'All rights reserved',
+                        },
+                        {
+                          value: 'cc-by-4.0',
+                          label: 'CC BY 4.0',
+                          description: 'Reuse with attribution',
+                        },
+                        {
+                          value: 'cc-by-sa-4.0',
+                          label: 'CC BY-SA 4.0',
+                          description: 'Reuse with attribution; share alike',
+                        },
+                        {
+                          value: 'cc0-1.0',
+                          label: 'CC0 1.0',
+                          description: 'Public domain',
+                        },
+                      ]}
+                      onChange={(value) =>
                         update({
                           distribution: {
                             ...(document.distribution ??
                               defaultGameDistribution),
-                            license: event.target.value as
+                            license: value as
                               | 'all-rights-reserved'
                               | 'cc-by-4.0'
                               | 'cc-by-sa-4.0'
@@ -1324,40 +1349,36 @@ export function GameStudio({ projectId }: { projectId: string }) {
                           },
                         })
                       }
-                    >
-                      <option value="all-rights-reserved">
-                        All rights reserved
-                      </option>
-                      <option value="cc-by-4.0">CC BY 4.0</option>
-                      <option value="cc-by-sa-4.0">CC BY-SA 4.0</option>
-                      <option value="cc0-1.0">CC0 1.0</option>
-                    </select>
+                    />
                   </label>
-                  <label>
-                    Remixing
-                    <select
-                      value={
-                        document.distribution?.remixing ??
-                        defaultGameDistribution.remixing
+                  <label className="switch-row">
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      className="switch"
+                      checked={
+                        (document.distribution?.remixing ??
+                          defaultGameDistribution.remixing) === 'allowed'
                       }
                       onChange={(event) =>
                         update({
                           distribution: {
                             ...(document.distribution ??
                               defaultGameDistribution),
-                            remixing: event.target.value as
-                              'disabled' | 'allowed',
+                            remixing: event.target.checked
+                              ? 'allowed'
+                              : 'disabled',
                           },
                         })
                       }
-                    >
-                      <option value="disabled">Disabled</option>
-                      <option value="allowed">Allow attributed remixes</option>
-                    </select>
+                    />
+                    Allow attributed remixes
                   </label>
-                  <label>
+                  <label className="switch-row">
                     <input
                       type="checkbox"
+                      role="switch"
+                      className="switch"
                       checked={document.distribution?.commercialUse ?? false}
                       onChange={(event) =>
                         update({
@@ -1368,34 +1389,33 @@ export function GameStudio({ projectId }: { projectId: string }) {
                           },
                         })
                       }
-                    />{' '}
+                    />
                     Allow remixes to earn money
                   </label>
                   <label>
                     Royalty from new remixes
-                    <select
-                      value={
+                    <SelectMenu
+                      value={String(
                         document.distribution?.revenueShareBps ??
-                        defaultGameDistribution.revenueShareBps
-                      }
-                      onChange={(event) =>
+                          defaultGameDistribution.revenueShareBps,
+                      )}
+                      options={[0, 500, 1000, 2000, 3000, 5000].map((bps) => ({
+                        value: String(bps),
+                        label:
+                          bps === 0
+                            ? 'Free remixes · no new royalty'
+                            : `${bps / 100}% of remaining creator earnings`,
+                      }))}
+                      onChange={(value) =>
                         update({
                           distribution: {
                             ...(document.distribution ??
                               defaultGameDistribution),
-                            revenueShareBps: Number(event.target.value),
+                            revenueShareBps: Number(value),
                           },
                         })
                       }
-                    >
-                      {[0, 500, 1000, 2000, 3000, 5000].map((bps) => (
-                        <option key={bps} value={bps}>
-                          {bps === 0
-                            ? 'Free remixes · no new royalty'
-                            : `${bps / 100}% of remaining creator earnings`}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </label>
                   <p className="studio-help">
                     Remixes are isolated projects with immutable source
@@ -1424,18 +1444,19 @@ export function GameStudio({ projectId }: { projectId: string }) {
                     </label>
                     <label>
                       Permission
-                      <select
+                      <SelectMenu
                         value={collaboratorPermission}
-                        onChange={(event) =>
+                        options={[
+                          { value: 'test', label: 'Can test' },
+                          { value: 'comment', label: 'Can comment' },
+                          { value: 'edit', label: 'Can edit' },
+                        ]}
+                        onChange={(value) =>
                           setCollaboratorPermission(
-                            event.target.value as typeof collaboratorPermission,
+                            value as typeof collaboratorPermission,
                           )
                         }
-                      >
-                        <option value="test">Can test</option>
-                        <option value="comment">Can comment</option>
-                        <option value="edit">Can edit</option>
-                      </select>
+                      />
                     </label>
                     <button
                       className="studio-access-add"
@@ -1499,22 +1520,23 @@ export function GameStudio({ projectId }: { projectId: string }) {
               <div hidden={workspaceGroup !== 'project'}>
                 <div className="studio-project-switch">
                   <Folder size={14} />
-                  <select
-                    aria-label="Open project"
+                  <SelectMenu
+                    label="Open project"
                     value={project?.id ?? ''}
                     disabled={!!busy || dirty}
-                    onChange={(e) => {
-                      const p = projects.find((p) => p.id === e.target.value)
+                    searchPlaceholder="Find a project…"
+                    options={[
+                      { value: '', label: 'New game' },
+                      ...projects.map((p) => ({
+                        value: p.id,
+                        label: p.document.title,
+                      })),
+                    ]}
+                    onChange={(value) => {
+                      const p = projects.find((p) => p.id === value)
                       if (p) router.push(`/studio/${p.id}`)
                     }}
-                  >
-                    <option value="">New game</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.document.title}
-                      </option>
-                    ))}
-                  </select>
+                  />
                   <button
                     aria-label="Create new game"
                     disabled={!user || !!busy || dirty}
@@ -1553,10 +1575,14 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       <div className="studio-field-pair">
                         <label>
                           Board
-                          <select
-                            value={document.boardSize}
-                            onChange={(e) => {
-                              const n = Number(e.target.value)
+                          <SelectMenu
+                            value={String(document.boardSize)}
+                            options={[3, 4, 5, 6, 7, 8].map((n) => ({
+                              value: String(n),
+                              label: `${n} × ${n}`,
+                            }))}
+                            onChange={(value) => {
+                              const n = Number(value)
                               update({
                                 boardSize: n,
                                 winLength: Math.min(
@@ -1567,29 +1593,20 @@ export function GameStudio({ projectId }: { projectId: string }) {
                                 ),
                               })
                             }}
-                          >
-                            {[3, 4, 5, 6, 7, 8].map((n) => (
-                              <option key={n} value={n}>
-                                {n} × {n}
-                              </option>
-                            ))}
-                          </select>
+                          />
                         </label>
                         <label>
                           In a row
-                          <select
-                            value={document.winLength}
-                            onChange={(e) =>
-                              update({ winLength: Number(e.target.value) })
-                            }
-                          >
-                            {Array.from(
+                          <SelectMenu
+                            value={String(document.winLength)}
+                            options={Array.from(
                               { length: document.boardSize - 2 },
-                              (_, i) => i + 3,
-                            ).map((n) => (
-                              <option key={n}>{n}</option>
-                            ))}
-                          </select>
+                              (_, i) => String(i + 3),
+                            ).map((n) => ({ value: n, label: n }))}
+                            onChange={(value) =>
+                              update({ winLength: Number(value) })
+                            }
+                          />
                         </label>
                       </div>
                       <div className="studio-field-pair">
@@ -1661,23 +1678,29 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       {[0, 1].map((i) => (
                         <label key={i}>
                           Seat {i + 1}
-                          <select
-                            value={selectedAgents[i]}
-                            onChange={(e) =>
+                          <SelectMenu
+                            value={selectedAgents[i] ?? ''}
+                            searchPlaceholder="Find an agent…"
+                            options={[
+                              {
+                                value: '',
+                                label: 'Create a Commons agent',
+                                avatar: <Plus size={13} />,
+                              },
+                              ...agents.map((a) => ({
+                                value: a.agentId,
+                                label: a.name,
+                                avatar: true,
+                              })),
+                            ]}
+                            onChange={(value) =>
                               setSelectedAgents((ids) => {
                                 const next: [string, string] = [...ids]
-                                next[i] = e.target.value
+                                next[i] = value
                                 return next
                               })
                             }
-                          >
-                            <option value="">Create a Commons agent</option>
-                            {agents.map((a) => (
-                              <option key={a.agentId} value={a.agentId}>
-                                {a.name}
-                              </option>
-                            ))}
-                          </select>
+                          />
                         </label>
                       ))}
                       <label>
@@ -1703,11 +1726,25 @@ export function GameStudio({ projectId }: { projectId: string }) {
                     </div>
                     <label>
                       Players
-                      <select
-                        value={browserControllers.length}
+                      <SelectMenu
+                        value={String(browserControllers.length)}
                         disabled={!!browserRun}
-                        onChange={(event) => {
-                          const count = Number(event.target.value)
+                        options={Array.from(
+                          {
+                            length:
+                              (document.play?.seats.max ?? 8) -
+                              (document.play?.seats.min ?? 1) +
+                              1,
+                          },
+                          (_, index) => {
+                            const count = String(
+                              (document.play?.seats.min ?? 1) + index,
+                            )
+                            return { value: count, label: count }
+                          },
+                        )}
+                        onChange={(value) => {
+                          const count = Number(value)
                           setBrowserControllers((current) =>
                             Array.from(
                               { length: count },
@@ -1722,21 +1759,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                             ),
                           )
                         }}
-                      >
-                        {Array.from(
-                          {
-                            length:
-                              (document.play?.seats.max ?? 8) -
-                              (document.play?.seats.min ?? 1) +
-                              1,
-                          },
-                          (_, index) => (document.play?.seats.min ?? 1) + index,
-                        ).map((count) => (
-                          <option value={count} key={count}>
-                            {count}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </label>
                     <div className="studio-controller-list">
                       {browserControllers.map((controller, index) => (
@@ -1774,21 +1797,24 @@ export function GameStudio({ projectId }: { projectId: string }) {
                               {controller.policyMemory.preferredDefense}
                             </small>
                           ) : null}
-                          <select
-                            aria-label={`${controller.label} controller`}
+                          <SelectMenu
+                            label={`${controller.label} controller`}
                             value={controller.kind}
                             disabled={!!browserRun}
-                            onChange={(event) =>
+                            options={[
+                              { value: 'human', label: 'Human' },
+                              { value: 'agent', label: 'Agent' },
+                            ]}
+                            onChange={(value) =>
                               setBrowserControllers((current) =>
                                 current.map((candidate, candidateIndex) =>
                                   candidateIndex === index
                                     ? {
                                         ...candidate,
-                                        kind: event.target.value as
-                                          'human' | 'agent',
+                                        kind: value as 'human' | 'agent',
                                         agentId: undefined,
                                         strategy:
-                                          event.target.value === 'human'
+                                          value === 'human'
                                             ? 'Human controlled.'
                                             : 'Play to win, adapt to the opponent, and use only legal actions.',
                                       }
@@ -1796,40 +1822,39 @@ export function GameStudio({ projectId }: { projectId: string }) {
                                 ),
                               )
                             }
-                          >
-                            <option value="human">Human</option>
-                            <option value="agent">Agent</option>
-                          </select>
+                          />
                           {controller.kind === 'agent' ? (
                             <>
-                              <select
-                                aria-label={`${controller.label} agent`}
+                              <SelectMenu
+                                label={`${controller.label} agent`}
                                 value={controller.agentId ?? ''}
                                 disabled={!!browserRun}
-                                onChange={(event) =>
+                                searchPlaceholder="Find an agent…"
+                                options={[
+                                  {
+                                    value: '',
+                                    label: 'Create a player agent',
+                                    avatar: <Plus size={13} />,
+                                  },
+                                  ...agents.map((agent) => ({
+                                    value: agent.agentId,
+                                    label: agent.name,
+                                    avatar: true,
+                                  })),
+                                ]}
+                                onChange={(value) =>
                                   setBrowserControllers((current) =>
                                     current.map((candidate, candidateIndex) =>
                                       candidateIndex === index
                                         ? {
                                             ...candidate,
-                                            agentId:
-                                              event.target.value || undefined,
+                                            agentId: value || undefined,
                                           }
                                         : candidate,
                                     ),
                                   )
                                 }
-                              >
-                                <option value="">Create a player agent</option>
-                                {agents.map((agent) => (
-                                  <option
-                                    value={agent.agentId}
-                                    key={agent.agentId}
-                                  >
-                                    {agent.name}
-                                  </option>
-                                ))}
-                              </select>
+                              />
                               <textarea
                                 rows={2}
                                 aria-label={`${controller.label} coaching`}
@@ -1997,29 +2022,30 @@ export function GameStudio({ projectId }: { projectId: string }) {
                     {browserRuns.length ? (
                       <label>
                         Session history
-                        <select
+                        <SelectMenu
                           value={browserRun?.id ?? ''}
                           disabled={!!busy}
-                          onChange={(event) => {
+                          searchPlaceholder="Find a session…"
+                          options={[
+                            { value: '', label: 'Choose a prior session' },
+                            ...browserRuns.map((run) => ({
+                              value: run.id,
+                              label: new Date(run.createdAt).toLocaleString(),
+                              description: run.preview?.decisions
+                                ? `${run.preview.decisions} recorded decisions · ${run.preview.samples} samples`
+                                : `${run.step} moves`,
+                            })),
+                          ]}
+                          onChange={(value) => {
                             const selected = browserRuns.find(
-                              (run) => run.id === event.target.value,
+                              (run) => run.id === value,
                             )
                             if (selected)
                               void task('resume playtest', () =>
                                 resumeBrowserRun(selected),
                               )
                           }}
-                        >
-                          <option value="">Choose a prior session</option>
-                          {browserRuns.map((run) => (
-                            <option key={run.id} value={run.id}>
-                              {new Date(run.createdAt).toLocaleString()} ·{' '}
-                              {run.preview?.decisions
-                                ? `${run.preview.decisions} recorded decisions · ${run.preview.samples} samples`
-                                : `${run.step} moves`}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </label>
                     ) : null}
                   </div>
@@ -2177,43 +2203,47 @@ export function GameStudio({ projectId }: { projectId: string }) {
                         </button>
                       </div>
                     )}
-                    {messages.map((m, i) => (
-                      <div key={i} className={`studio-message ${m.role}`}>
-                        <small>
-                          {m.role === 'user' ? 'You' : 'Arcade Copilot'}
-                        </small>
-                        {m.activities?.length ? (
-                          <div className="studio-agent-activity">
-                            <span>
-                              {m.durationSeconds
-                                ? `Worked for ${m.durationSeconds}s`
-                                : `Used ${m.activities.length} ${m.activities.length === 1 ? 'tool' : 'tools'}`}
-                            </span>
-                            {m.activities.map((activity) => (
-                              <div key={activity.sequence}>
-                                {activity.status === 'running' ? (
-                                  <Loader2 size={12} className="spin" />
-                                ) : (
-                                  <Check size={12} />
-                                )}
-                                <span>{activity.label}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                        <p>{m.text}</p>
-                        {m.role === 'assistant' && m.sessionId ? (
-                          <a
-                            href={`https://www.agentcommons.io/studio/agents/${copilotId}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="studio-session-link"
-                          >
-                            View Commons session
-                          </a>
-                        ) : null}
-                      </div>
-                    ))}
+                    <PagedMessages
+                      items={messages}
+                      resetKey={projectId}
+                      render={(m, i) => (
+                        <div key={i} className={`studio-message ${m.role}`}>
+                          <small>
+                            {m.role === 'user' ? 'You' : 'Arcade Copilot'}
+                          </small>
+                          {m.activities?.length ? (
+                            <div className="studio-agent-activity">
+                              <span>
+                                {m.durationSeconds
+                                  ? `Worked for ${m.durationSeconds}s`
+                                  : `Used ${m.activities.length} ${m.activities.length === 1 ? 'tool' : 'tools'}`}
+                              </span>
+                              {m.activities.map((activity) => (
+                                <div key={activity.sequence}>
+                                  {activity.status === 'running' ? (
+                                    <Loader2 size={12} className="spin" />
+                                  ) : (
+                                    <Check size={12} />
+                                  )}
+                                  <span>{activity.label}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                          <MessageText text={m.text} />
+                          {m.role === 'assistant' && m.sessionId ? (
+                            <a
+                              href={`https://www.agentcommons.io/studio/agents/${copilotId}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="studio-session-link"
+                            >
+                              View Commons session
+                            </a>
+                          ) : null}
+                        </div>
+                      )}
+                    />
                     {busy === 'copilot' && (
                       <div role="status">
                         <div className="studio-thinking">
@@ -2458,15 +2488,17 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       ? `${run.steps} decisions · ${run.status}`
                       : 'No run started'}
                   </span>
-                  <select
-                    aria-label="Filter diagnostics"
+                  <SelectMenu
+                    compact
+                    label="Filter diagnostics"
                     value={logFilter}
-                    onChange={(e) => setLogFilter(e.target.value)}
-                  >
-                    <option value="all">All events</option>
-                    <option value="policy">Observations & decisions</option>
-                    <option value="runtime">Actions & state</option>
-                  </select>
+                    options={[
+                      { value: 'all', label: 'All events' },
+                      { value: 'policy', label: 'Observations & decisions' },
+                      { value: 'runtime', label: 'Actions & state' },
+                    ]}
+                    onChange={(value) => setLogFilter(value)}
+                  />
                   <button
                     aria-label={
                       logsExpanded ? 'Restore preview' : 'Expand test logs'

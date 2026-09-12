@@ -7,6 +7,7 @@ import {
   usdcUnits,
   type PaymentNetwork,
 } from '@common-arcade/economy'
+import { SelectMenu } from './ui/select-menu'
 export interface AgentTableContext {
   id: string
   stage?: string
@@ -441,39 +442,36 @@ export function AgentWalletPanel({
         <>
           <label>
             Agent{' '}
-            <select
+            <SelectMenu
               value={agentId}
-              onChange={(e) => setAgentId(e.target.value)}
               disabled={busy}
-            >
-              {agents.map((a) => (
-                <option key={a.agentId} value={a.agentId}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
+              placeholder="Choose an agent"
+              searchPlaceholder="Find an agent…"
+              options={agents.map((a) => ({
+                value: a.agentId,
+                label: a.name,
+                avatar: true,
+              }))}
+              onChange={(value) => setAgentId(value)}
+            />
           </label>
           {!agents.length && (
             <p>Create an agent in Commons to use its wallet here.</p>
           )}
           <label>
             Wallet{' '}
-            <select
+            <SelectMenu
               value={walletId}
-              onChange={(e) => setWalletId(e.target.value)}
               disabled={busy}
-            >
-              {wallets.map((w) => (
-                <option
-                  key={w.id}
-                  value={w.id}
-                  disabled={!w.isActive || w.walletType !== 'eoa'}
-                >
-                  {w.address.slice(0, 10)}… · {w.walletType}
-                  {!w.isActive ? ' (inactive)' : ''}
-                </option>
-              ))}
-            </select>
+              placeholder="Choose a wallet"
+              options={wallets.map((w) => ({
+                value: w.id,
+                label: `${w.address.slice(0, 10)}…`,
+                description: `${w.walletType}${w.isActive ? '' : ' · inactive'}`,
+                disabled: !w.isActive || w.walletType !== 'eoa',
+              }))}
+              onChange={(value) => setWalletId(value)}
+            />
           </label>
           {wallet && (
             <div>
@@ -500,31 +498,29 @@ export function AgentWalletPanel({
           >
             <label>
               Purpose{' '}
-              <select
+              <SelectMenu
                 value={kind}
-                onChange={(e) => setKind(e.target.value as typeof kind)}
-              >
-                <option value="x402">Pay for x402 services</option>
-                <option value="arcade" disabled={!table?.pool}>
-                  Fund this match
-                </option>
-              </select>
+                options={[
+                  { value: 'x402', label: 'Pay for x402 services' },
+                  {
+                    value: 'arcade',
+                    label: 'Fund this match',
+                    disabled: !table?.pool,
+                  },
+                ]}
+                onChange={(value) => setKind(value as typeof kind)}
+              />
             </label>
             <label>
               Network{' '}
-              <select
+              <SelectMenu
                 value={network}
-                onChange={(e) => setNetwork(e.target.value as PaymentNetwork)}
                 disabled={kind === 'arcade'}
-              >
-                {Object.values(NETWORKS)
+                options={Object.values(NETWORKS)
                   .filter((n) => n.testnet)
-                  .map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.chain.name}
-                    </option>
-                  ))}
-              </select>
+                  .map((n) => ({ value: n.id, label: n.chain.name }))}
+                onChange={(value) => setNetwork(value as PaymentNetwork)}
+              />
             </label>
             <label>
               Runtime session ID{' '}
@@ -606,13 +602,14 @@ export function AgentWalletPanel({
               <>
                 <label>
                   Seat{' '}
-                  <select
+                  <SelectMenu
                     value={seat}
-                    onChange={(e) => setSeat(e.target.value)}
-                  >
-                    <option value="sea_player_1">Player 1</option>
-                    <option value="sea_player_2">Player 2</option>
-                  </select>
+                    options={[
+                      { value: 'sea_player_1', label: 'Player 1' },
+                      { value: 'sea_player_2', label: 'Player 2' },
+                    ]}
+                    onChange={(value) => setSeat(value)}
+                  />
                 </label>
                 <div>
                   {(['stake', 'bounty', 'bet'] as const).map((op) => (

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import type { GameMonetization } from '@common-arcade/protocol'
 import { NETWORKS, usdcUnits, type EconomyConfig } from '@common-arcade/economy'
 import { formatUnits } from 'viem'
+import { SelectMenu } from './ui/select-menu'
 
 export function HostPaymentSettings({
   value,
@@ -63,10 +64,33 @@ export function HostPaymentSettings({
       </p>
       <label>
         Payment format{' '}
-        <select
+        <SelectMenu
           value={mode}
-          onChange={(event) => {
-            const selected = event.target.value
+          options={[
+            {
+              value: 'free',
+              label: 'Free entry',
+              description: 'No prize pool',
+            },
+            {
+              value: 'staked',
+              label: 'Player stakes',
+              disabled:
+                !enabled ||
+                terms?.mode !== 'revenue-share' ||
+                !terms.allowedModes.includes('staked'),
+            },
+            {
+              value: 'sponsored',
+              label: 'Sponsored prize pool',
+              description: 'Free entry',
+              disabled:
+                !enabled ||
+                terms?.mode !== 'revenue-share' ||
+                !terms.allowedModes.includes('sponsored'),
+            },
+          ]}
+          onChange={(selected) => {
             if (selected === 'free') {
               onChange({ mode: 'free' })
               return
@@ -85,29 +109,7 @@ export function HostPaymentSettings({
               settlementSeconds: 3600,
             })
           }}
-        >
-          <option value="free">Free entry · no prize pool</option>
-          <option
-            value="staked"
-            disabled={
-              !enabled ||
-              terms?.mode !== 'revenue-share' ||
-              !terms.allowedModes.includes('staked')
-            }
-          >
-            Player stakes
-          </option>
-          <option
-            value="sponsored"
-            disabled={
-              !enabled ||
-              terms?.mode !== 'revenue-share' ||
-              !terms.allowedModes.includes('sponsored')
-            }
-          >
-            Sponsored prize pool · free entry
-          </option>
-        </select>
+        />
       </label>
       {!enabled && (
         <p className="studio-help">
@@ -124,21 +126,20 @@ export function HostPaymentSettings({
         <div className="match-setup-grid">
           <label>
             Payment network{' '}
-            <select
+            <SelectMenu
               value={value.network}
-              onChange={(event) =>
+              options={available.map((network) => ({
+                value: network,
+                label: NETWORKS[network].chain.name,
+                description: 'Test USDC',
+              }))}
+              onChange={(network) =>
                 onChange({
                   ...value,
-                  network: event.target.value as typeof value.network,
+                  network: network as typeof value.network,
                 })
               }
-            >
-              {available.map((network) => (
-                <option key={network} value={network}>
-                  {NETWORKS[network].chain.name} · test USDC
-                </option>
-              ))}
-            </select>
+            />
           </label>
           {mode === 'staked' && (
             <label>
@@ -198,9 +199,11 @@ export function HostPaymentSettings({
               }
             />
           </label>
-          <label>
+          <label className="switch-row">
             <input
               type="checkbox"
+              role="switch"
+              className="switch"
               checked={value.bounties}
               disabled={mode === 'sponsored'}
               onChange={(event) =>
@@ -209,9 +212,11 @@ export function HostPaymentSettings({
             />{' '}
             Allow sponsored bounties
           </label>
-          <label>
+          <label className="switch-row">
             <input
               type="checkbox"
+              role="switch"
+              className="switch"
               checked={value.spectatorBets}
               disabled={terms?.mode !== 'revenue-share' || !terms.spectatorBets}
               onChange={(event) =>

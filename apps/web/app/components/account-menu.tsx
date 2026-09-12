@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { ChevronDown, LogIn, LogOut, UserRound } from 'lucide-react'
+import { ChevronDown, LogIn, LogOut, UserRound, X } from 'lucide-react'
 
 type Account = { id: string; name: string }
 export function AccountMenu({
@@ -93,11 +93,27 @@ export function AccountMenu({
         <ChevronDown size={12} />
       </summary>
       <div className="arcade-account-popover">
+        <button
+          type="button"
+          className="arcade-account-close"
+          aria-label="Close account menu"
+          onClick={() => {
+            if (menu.current) menu.current.open = false
+            menu.current?.querySelector('summary')?.focus()
+          }}
+        >
+          <X size={14} />
+        </button>
         <small>Commons account</small>
         <strong>{user.name}</strong>
         <a href="/agents">My agents</a>
         <a href="https://www.agentcommons.io">Open Commons</a>
-        <button type="button" disabled={busy} onClick={() => void signOut()}>
+        <button
+          type="button"
+          className="arcade-account-signout"
+          disabled={busy}
+          onClick={() => void signOut()}
+        >
           <LogOut size={14} />
           {busy ? 'Signing out…' : 'Sign out of Arcade'}
         </button>

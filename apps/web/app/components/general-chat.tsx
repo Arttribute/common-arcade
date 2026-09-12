@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChatComposer } from '@agent-commons/ui'
 import { MessageSquare, Plus } from 'lucide-react'
+import { SelectMenu } from './ui/select-menu'
+import { MessageText, PagedMessages } from './ui/conversation'
 import type { useArcadeIdentity } from './studio-composer'
 
 type Session = {
@@ -110,21 +112,22 @@ export function GeneralChat({
   return (
     <div className="general-chat">
       <div className="chat-session-toolbar">
-        <select
-          aria-label="Chat history"
+        <SelectMenu
+          label="Chat history"
           value={current?.sessionId ?? ''}
           disabled={busy || loading}
-          onChange={(e) =>
-            e.target.value ? void choose(e.target.value) : setCurrent(undefined)
+          searchPlaceholder="Find a conversation…"
+          options={[
+            { value: '', label: 'New conversation' },
+            ...sessions.map((s) => ({
+              value: s.sessionId,
+              label: s.title || 'Untitled conversation',
+            })),
+          ]}
+          onChange={(value) =>
+            value ? void choose(value) : setCurrent(undefined)
           }
-        >
-          <option value="">New conversation</option>
-          {sessions.map((s) => (
-            <option key={s.sessionId} value={s.sessionId}>
-              {s.title || 'Untitled conversation'}
-            </option>
-          ))}
-        </select>
+        />
         <button
           disabled={busy || loading}
           onClick={() => {
@@ -147,17 +150,19 @@ export function GeneralChat({
             </p>
           </div>
         )}
-        {current?.history
-          ?.filter(
+        <PagedMessages
+          items={(current?.history ?? []).filter(
             (m) =>
               ['user', 'assistant'].includes(m.role) && messageText(m.content),
-          )
-          .map((m, i) => (
+          )}
+          resetKey={current?.sessionId}
+          render={(m, i) => (
             <div key={i} className={`studio-message ${m.role}`}>
               <small>{m.role === 'user' ? 'You' : 'Assistant'}</small>
-              <p>{messageText(m.content)}</p>
+              <MessageText text={messageText(m.content)} />
             </div>
-          ))}
+          )}
+        />
         {(busy || loading) && (
           <p role="status">{busy ? 'Thinking…' : 'Loading conversation…'}</p>
         )}

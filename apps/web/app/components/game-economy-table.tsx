@@ -23,6 +23,7 @@ import {
 } from '@common-arcade/economy'
 import { AgentWalletPanel } from './agent-wallet-panel'
 import { EconomySettings } from './economy-settings'
+import { SelectMenu } from './ui/select-menu'
 const service =
   process.env.NEXT_PUBLIC_ARCADE_PAYMENTS_URL ??
   (process.env.NODE_ENV === 'development' ? 'http://localhost:4021' : '')
@@ -633,13 +634,14 @@ export function GameEconomyTable({
                 </label>
                 <label>
                   Back player{' '}
-                  <select
+                  <SelectMenu
                     value={backSeat}
-                    onChange={(e) => setBackSeat(e.target.value)}
-                  >
-                    <option value="sea_player_1">Player 1</option>
-                    <option value="sea_player_2">Player 2</option>
-                  </select>
+                    options={[
+                      { value: 'sea_player_1', label: 'Player 1' },
+                      { value: 'sea_player_2', label: 'Player 2' },
+                    ]}
+                    onChange={(value) => setBackSeat(value)}
+                  />
                 </label>
                 <div className="actions">
                   {table.economy.bounties && (

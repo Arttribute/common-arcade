@@ -1,7 +1,10 @@
 import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const root = new URL('../', import.meta.url)
+// A file URL's .pathname is "/C:/..." on Windows; fileURLToPath gives a real path.
+const rootPath = fileURLToPath(root)
 
 async function childPackageDirectories(relativeDirectory) {
   const directory = new URL(`${relativeDirectory}/`, root)
@@ -25,7 +28,7 @@ firstLevel.push(...(await childPackageDirectories('packages/adapters')))
 
 const names = new Map()
 for (const relativeDirectory of firstLevel) {
-  const path = join(root.pathname, relativeDirectory, 'package.json')
+  const path = join(rootPath, relativeDirectory, 'package.json')
   const manifest = JSON.parse(await readFile(path, 'utf8'))
 
   if (!manifest.name)
