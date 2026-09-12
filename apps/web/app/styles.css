@@ -17,12 +17,23 @@ body {
 body {
   background: var(--paper);
   color: var(--ink);
-  font:
-    14px/1.6 system-ui,
+  font-size: 14px;
+  line-height: 1.6;
+  font-family:
+    var(--font-space-grotesk),
+    system-ui,
     -apple-system,
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
+}
+/* The docs section (fumadocs) ships its own light/dark toggle, which sets
+   `class="dark"` on <html> globally. The rest of the app has no dark theme
+   of its own, so confine the effect to routes rendering the docs shell —
+   everywhere else keeps the regular light styling regardless of the toggle. */
+html.dark body:has(.docs-shell) {
+  background: var(--color-fd-background);
+  color: var(--color-fd-foreground);
 }
 a {
   color: inherit;
@@ -340,11 +351,7 @@ h3 {
   border-radius: 10px;
 }
 .game-detail {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 50px;
-  align-items: center;
-  padding: 65px 0 45px;
+  display: block;
 }
 .launch-card {
   display: grid;
@@ -549,25 +556,6 @@ h3 {
   font-size: 10px;
   font-weight: 550;
 }
-.live-empty {
-  grid-column: 1 / -1;
-  display: grid;
-  justify-items: start;
-  gap: 10px;
-  min-height: 250px;
-  padding: 38px;
-  border: 1px dashed #d6d3d1;
-  border-radius: 13px;
-  background: #fff;
-}
-.live-empty h2,
-.live-empty p {
-  margin: 0;
-}
-.live-empty p {
-  max-width: 470px;
-  color: #78716c;
-}
 .agent-launcher-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -763,12 +751,44 @@ h3 {
 .match-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 30px 0 20px;
+  gap: 14px;
+  padding: 26px 0 20px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
 }
 .match-head h1 {
-  font-size: 30px;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
   margin: 0;
+}
+.match-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius-control, 8px);
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.match-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #dc2626;
+}
+.match-id {
+  margin-left: auto;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  color: var(--arcade-muted, #a8a29e);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .match-shell {
   display: grid;
@@ -1618,15 +1638,11 @@ h3 {
   }
   .capabilities,
   .game-grid,
-  .game-detail,
   .contract-grid,
   .capability-contract,
   .live-grid,
   .match-shell {
     grid-template-columns: 1fr;
-  }
-  .game-detail {
-    gap: 25px;
   }
   .studio-project-title {
     max-width: 120px;
@@ -1701,7 +1717,7 @@ h3 {
   text-align: left;
   background: #fff;
   box-shadow: 0 8px 36px #29252405;
-  border-radius: 20px;
+  border-radius: var(--arcade-radius);
 }
 .studio-home .ac-composer-input {
   min-height: 130px;
@@ -1710,6 +1726,11 @@ h3 {
 }
 .studio-home .ac-composer-controls {
   padding: 0 16px 14px;
+}
+.studio-home-create > .ac-button-primary {
+  margin-top: 28px;
+  padding: 12px 24px;
+  font-size: 13px;
 }
 .studio-home-suggestions {
   display: flex;
@@ -1723,7 +1744,7 @@ h3 {
   align-items: center;
   gap: 8px;
   border: 1px solid #e7e5e4;
-  border-radius: 20px;
+  border-radius: var(--radius-control);
   padding: 8px 12px;
   font-size: 11px;
   background: transparent;
@@ -1751,7 +1772,7 @@ h3 {
 .studio-project-grid > a {
   border: 1px solid #e7e5e4;
   background: #fff;
-  border-radius: 16px;
+  border-radius: var(--arcade-radius);
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -2283,6 +2304,22 @@ h3 {
   background: #fff;
   box-shadow: 0 8px 30px #29252412;
   text-align: left;
+  animation: arcade-popover-in 0.12s ease-out;
+}
+@keyframes arcade-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .arcade-account-popover {
+    animation: none;
+  }
 }
 .arcade-account-popover small {
   padding: 7px 10px 0;
@@ -2360,22 +2397,31 @@ h3 {
 .roster-summary {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 18px 0 10px;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 16px 0 12px;
 }
 .roster-summary span {
-  font-size: 11px;
+  padding: 4px 9px;
+  border-radius: var(--radius-control, 8px);
+  background: #f5f5f4;
   color: #57534e;
+  font-size: 10px;
+  font-weight: 550;
 }
 .seat-list .roster-seat {
-  padding: 14px;
-  border: 1px solid #e7e5e4;
-  border-radius: 10px;
-  background: #fff;
+  margin: 0;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
 }
 .seat-list .roster-seat.is-yours {
-  border-color: #4f46e5;
   background: #f5f3ff;
+  margin: 0 -22px;
+  padding: 14px 22px;
+  border-radius: 10px;
+  border-top-color: transparent;
 }
 .roster-seat-heading {
   display: flex;
@@ -2405,19 +2451,54 @@ h3 {
 .seat-occupant {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   font-size: 12px;
+  margin-top: 8px;
+}
+.seat-avatar {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #f5f5f4;
+  color: #57534e;
 }
 .seat-connection {
-  color: #57534e;
+  display: block;
+  margin-top: 4px;
+  color: #a8a29e;
+  font-size: 11px;
   line-height: 1.5;
 }
 .seat-identity {
-  font-size: 10px;
+  margin-top: 6px;
+  font-size: 11px;
   color: #78716c;
 }
 .seat-identity summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  list-style: none;
   cursor: pointer;
+  color: #78716c;
+}
+.seat-identity summary::-webkit-details-marker {
+  display: none;
+}
+.seat-identity summary::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 3.5px 0 3.5px 5px;
+  border-color: transparent transparent transparent #a8a29e;
+  transition: transform 0.15s ease;
+}
+.seat-identity[open] summary::before {
+  transform: rotate(90deg);
 }
 .seat-identity dd {
   margin: 3px 0 8px;
@@ -2621,20 +2702,49 @@ h3 {
 }
 
 .live-payment-card {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 14px;
-  margin-top: 16px;
-}
-.live-payment-card > div {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  padding: 12px 0;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
-.live-payment-card > p {
+.live-payment-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--acid, #eef0ff);
+  color: var(--violet, #4f46e5);
+}
+.live-payment-card-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.live-payment-card-copy strong {
   font-size: 12px;
-  line-height: 1.5;
-  color: var(--muted);
+  font-weight: 500;
+}
+.live-payment-card-copy span {
+  font-size: 11px;
+  color: var(--muted, #78716c);
+}
+.live-payment-manage {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control, 8px);
+  background: #fff;
+  font-size: 11px;
+  color: #57534e;
+}
+.live-payment-manage:hover {
+  background: #f5f5f4;
 }
 .live-payment-dialog {
   width: min(760px, calc(100vw - 32px));
@@ -2642,7 +2752,7 @@ h3 {
   margin: auto;
   padding: 24px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--arcade-radius);
   background: var(--paper, #fff);
   color: var(--ink);
   overflow: auto;

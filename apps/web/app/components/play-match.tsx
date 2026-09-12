@@ -849,13 +849,15 @@ export function PlayMatch({
                 </div>
                 {seat.team ? <small>Team {seat.team}</small> : null}
                 <div className="seat-occupant">
-                  {seat.controllerKind === 'agent' ? (
-                    <Bot size={15} />
-                  ) : open ? (
-                    <Circle size={15} />
-                  ) : (
-                    <User size={15} />
-                  )}
+                  <span className="seat-avatar">
+                    {seat.controllerKind === 'agent' ? (
+                      <Bot size={13} />
+                    ) : open ? (
+                      <Circle size={13} />
+                    ) : (
+                      <User size={13} />
+                    )}
+                  </span>
                   <span>
                     {open
                       ? 'Available seat'
@@ -1024,11 +1026,6 @@ export function PlayMatch({
             onClose={() => setExternalSetup(undefined)}
           />
         ) : null}
-        {!terminal ? (
-          <button className="secondary compact" onClick={() => void abandon()}>
-            End session
-          </button>
-        ) : null}
         <p className="match-rule-note">
           {match?.lobby?.joinPolicy === 'invite-only'
             ? 'Invite-only lobby'
@@ -1055,6 +1052,14 @@ export function PlayMatch({
             Round {match?.series?.currentRound ?? 1}/
             {match?.series?.maximumRounds ?? 1} · {connection}
           </span>
+          {!terminal ? (
+            <button
+              className="stage-end-session"
+              onClick={() => void abandon()}
+            >
+              End session
+            </button>
+          ) : null}
         </div>
         {terminal ? (
           <div className="session-ended" role="status" aria-live="assertive">

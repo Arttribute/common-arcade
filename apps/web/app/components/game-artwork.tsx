@@ -35,7 +35,9 @@ export function GameArtwork({
           className="game-artwork-fallback"
           aria-label={`${title} — artwork coming soon`}
         >
-          <Gamepad2 size={56} strokeWidth={1.1} />
+          <span className="game-artwork-fallback-icon">
+            <Gamepad2 size={30} strokeWidth={1.3} />
+          </span>
           <span>{title}</span>
         </div>
       )}

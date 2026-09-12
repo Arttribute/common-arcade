@@ -21,23 +21,25 @@ export const LivePaymentPanel = memo(function LivePaymentPanel({
   const [opened, setOpened] = useState(false)
   return (
     <section className="live-payment-card" aria-label="Match payments">
-      <div>
-        <Wallet size={16} />
+      <span className="live-payment-icon">
+        <Wallet size={14} />
+      </span>
+      <div className="live-payment-card-copy">
         <strong>Payments & rewards</strong>
+        <span>
+          {matchId
+            ? 'Free to play'
+            : 'Choose free play or view paid match options'}
+        </span>
       </div>
-      <p>
-        {matchId
-          ? 'This session is free to play.'
-          : 'Choose free play or view paid match options.'}
-      </p>
       <button
-        className="secondary compact"
+        className="live-payment-manage"
         onClick={() => {
           setOpened(true)
           dialog.current?.showModal()
         }}
       >
-        Open payment controls
+        Manage
       </button>
       <dialog
         className="live-payment-dialog"

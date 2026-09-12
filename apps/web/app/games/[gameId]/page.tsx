@@ -1,5 +1,3 @@
-import { legacyGameCovers } from '../../lib/legacy-game-covers'
-import { GameArtwork } from '../../components/game-artwork'
 import { RecordingShelf } from '../../components/recording-shelf'
 import { CompiledArtifactFrame } from '@agent-commons/ui'
 import {
@@ -54,63 +52,53 @@ export default async function GamePage({
   return (
     <main>
       <Header />
-      <div className="game-detail-cover shell">
-        <GameArtwork
-          title={game.metadata.title}
-          src={
-            game.metadata.thumbnail ??
-            document.thumbnail ??
-            legacyGameCovers[gameId]
-          }
-        />
-      </div>
       <section className="game-detail shell">
-        <div>
-          <span className="eyebrow">
-            {game.metadata.namespace} / {game.metadata.version}
-          </span>
-          <h1>{game.metadata.title}</h1>
-          <p>{game.metadata.summary}</p>
-          {document.monetization?.mode === 'revenue-share' && (
-            <p>
-              {game.spec.mode === 'turn-based' &&
-              game.spec.seats.min <= 2 &&
-              game.spec.seats.max >= 2 ? (
-                <>
-                  Optional {document.monetization.allowedModes.join(' / ')}{' '}
-                  matches · 2.5% success fee ·{' '}
-                  {document.monetization.creatorShareBps / 100}% of that fee
-                  supports the creator. Free play remains available.{' '}
-                  <a href={`/play/paid/${releaseId}`}>Open play & earn</a>
-                </>
-              ) : (
-                'Free live play. Open payment controls to manage agent wallets and service payments. Entry stakes and prize pools are not available for this realtime release yet.'
-              )}
-            </p>
-          )}
-          <div className="profile-list">
-            <span>{game.spec.mode.replaceAll('-', ' ')}</span>
-            <span>
-              {game.spec.seats.min}–{game.spec.seats.max} players
-            </span>
-            <span>
-              {browserGame ? 'Local preview' : 'Play with friends & agents'}
-            </span>
-          </div>
-        </div>
-        <MatchLauncher
-          releaseId={releaseId}
-          gameId={gameId}
-          browserGame={browserGame}
-          remixing={customRelease?.distribution?.remixing}
-          license={customRelease?.distribution?.license}
-          paymentTerms={document.monetization}
-          paidMatchSupported={
-            game.spec.mode === 'turn-based' &&
+        <span className="eyebrow">
+          {game.metadata.namespace} / {game.metadata.version}
+        </span>
+        <h1>{game.metadata.title}</h1>
+        <p>{game.metadata.summary}</p>
+        {document.monetization?.mode === 'revenue-share' && (
+          <p>
+            {game.spec.mode === 'turn-based' &&
             game.spec.seats.min <= 2 &&
-            game.spec.seats.max >= 2
-          }
-        />
+            game.spec.seats.max >= 2 ? (
+              <>
+                Optional {document.monetization.allowedModes.join(' / ')}{' '}
+                matches · 2.5% success fee ·{' '}
+                {document.monetization.creatorShareBps / 100}% of that fee
+                supports the creator. Free play remains available.{' '}
+                <a href={`/play/paid/${releaseId}`}>Open play & earn</a>
+              </>
+            ) : (
+              'Free live play. Open payment controls to manage agent wallets and service payments. Entry stakes and prize pools are not available for this realtime release yet.'
+            )}
+          </p>
+        )}
+        <div className="profile-list">
+          <span>{game.spec.mode.replaceAll('-', ' ')}</span>
+          <span>
+            {game.spec.seats.min}–{game.spec.seats.max} players
+          </span>
+          <span>
+            {browserGame ? 'Local preview' : 'Play with friends & agents'}
+          </span>
+        </div>
+        <div className="game-detail-actions">
+          <MatchLauncher
+            releaseId={releaseId}
+            gameId={gameId}
+            browserGame={browserGame}
+            remixing={customRelease?.distribution?.remixing}
+            license={customRelease?.distribution?.license}
+            paymentTerms={document.monetization}
+            paidMatchSupported={
+              game.spec.mode === 'turn-based' &&
+              game.spec.seats.min <= 2 &&
+              game.spec.seats.max >= 2
+            }
+          />
+        </div>
       </section>
       <section
         id="game-preview"

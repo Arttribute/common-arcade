@@ -100,11 +100,15 @@ export function StudioHome() {
         )}
         <div className="studio-home-suggestions">
           {[
-            'A four-in-a-row strategy duel',
-            'A five-by-five line-building game',
-            'A fast competitive three-in-a-row variant',
-          ].map((idea) => (
+            { idea: 'A four-in-a-row strategy duel', color: '#4f46e5' },
+            { idea: 'A five-by-five line-building game', color: '#f97316' },
+            {
+              idea: 'A fast competitive three-in-a-row variant',
+              color: '#0ea5e9',
+            },
+          ].map(({ idea, color }) => (
             <button key={idea} onClick={() => setPrompt(idea)} disabled={busy}>
+              <span className="suggestion-dot" style={{ background: color }} />
               {idea}
               <ArrowUpRight size={12} />
             </button>

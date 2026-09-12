@@ -13,8 +13,12 @@ export default async function MatchPage({
     <main>
       <Header />
       <section className="match-head shell">
-        <span className="eyebrow">LIVE MATCH / {matchId}</span>
+        <span className="match-live-badge">
+          <span className="match-live-dot" />
+          Live match
+        </span>
         <h1>Live game session</h1>
+        <span className="match-id">{matchId}</span>
       </section>
       <section className="shell">
         <PlayMatch

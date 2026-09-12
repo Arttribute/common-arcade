@@ -146,12 +146,27 @@ export function GameCatalog({ games: catalog }: { games: GameManifest[] }) {
                 players
               </span>
             </div>
+            {game.metadata.tags.length > 0 && (
+              <div className="catalog-card-tags">
+                {game.metadata.tags.slice(0, 2).map((tag) => (
+                  <span key={tag}>{tag}</span>
+                ))}
+              </div>
+            )}
           </Link>
         ))}
       </section>
       {!visible.length && (
         <div className="catalog-empty">
-          <Search size={26} />
+          <div className="catalog-empty-art" aria-hidden="true">
+            <span className="catalog-empty-card catalog-empty-card-1" />
+            <span className="catalog-empty-card catalog-empty-card-2" />
+            <span className="catalog-empty-card catalog-empty-card-3" />
+            <span className="catalog-empty-card catalog-empty-card-4" />
+            <span className="catalog-empty-icon">
+              <Search size={22} />
+            </span>
+          </div>
           <h2>
             {games.length
               ? 'No games found'

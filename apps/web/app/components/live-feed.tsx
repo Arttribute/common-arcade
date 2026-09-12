@@ -195,7 +195,15 @@ export function LiveFeed() {
         })}
         {!loading && online && visible.length === 0 && !personalError ? (
           <article className="live-empty">
-            <Radio size={24} />
+            <div className="catalog-empty-art" aria-hidden="true">
+              <span className="catalog-empty-card catalog-empty-card-1" />
+              <span className="catalog-empty-card catalog-empty-card-2" />
+              <span className="catalog-empty-card catalog-empty-card-3" />
+              <span className="catalog-empty-card catalog-empty-card-4" />
+              <span className="catalog-empty-icon">
+                <Radio size={22} />
+              </span>
+            </div>
             <h2>
               {filter === 'mine'
                 ? 'No active sessions of your own.'

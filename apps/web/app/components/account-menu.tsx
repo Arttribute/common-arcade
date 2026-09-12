@@ -95,8 +95,18 @@ export function AccountMenu({
       <div className="arcade-account-popover">
         <small>Commons account</small>
         <strong>{user.name}</strong>
-        <a href="/agents">My agents</a>
-        <a href="https://www.agentcommons.io">Open Commons</a>
+        <a
+          href="/agents"
+          onClick={() => menu.current && (menu.current.open = false)}
+        >
+          My agents
+        </a>
+        <a
+          href="https://www.agentcommons.io"
+          onClick={() => menu.current && (menu.current.open = false)}
+        >
+          Open Commons
+        </a>
         <button type="button" disabled={busy} onClick={() => void signOut()}>
           <LogOut size={14} />
           {busy ? 'Signing out…' : 'Sign out of Arcade'}

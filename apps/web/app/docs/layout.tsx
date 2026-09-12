@@ -5,8 +5,10 @@ import { source } from '@/lib/source'
 
 export default function Layout({ children }: { children: ReactNode }) {
   return (
-    <DocsLayout tree={source.getPageTree()} {...baseOptions}>
-      {children}
-    </DocsLayout>
+    <div className="docs-shell" style={{ display: 'contents' }}>
+      <DocsLayout tree={source.getPageTree()} {...baseOptions}>
+        {children}
+      </DocsLayout>
+    </div>
   )
 }

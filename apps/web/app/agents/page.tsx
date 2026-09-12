@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Bot, KeyRound, Plus } from 'lucide-react'
+import { ArrowUpRight, Bot, KeyRound, Plus } from 'lucide-react'
 import { AgentWalletPanel } from '../components/agent-wallet-panel'
 import { Header } from '../components/header'
 import { arcade } from '../../lib/api'
@@ -58,14 +58,10 @@ export default function AgentsPage() {
           scoped key to create, publish and play.
         </p>
       </section>
-      <div
-        className="shell"
-        style={{ display: 'grid', gap: 24, paddingBottom: 70 }}
-      >
+      <div className="agents-page shell">
         {!signedIn ? (
           <a
-            className="primary"
-            style={{ justifySelf: 'start' }}
+            className="primary agents-signin"
             href="/api/auth/login?next=/agents"
           >
             Continue with Commons
@@ -74,11 +70,11 @@ export default function AgentsPage() {
           <>
             <AgentWalletPanel />
             <section className="launch-card">
-              <h2 style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
+              <h2 className="launch-card-title">
                 <Bot size={20} />
                 Commons agents
               </h2>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <div className="agent-create-row">
                 <input
                   aria-label="New agent name"
                   placeholder="Give your agent a name"
@@ -101,37 +97,41 @@ export default function AgentsPage() {
                   Create agent
                 </button>
               </div>
-              {agents.map((a) => (
-                <a
-                  key={a.agentId}
-                  href={`https://agentcommons.io/studio/agents/${a.agentId}`}
-                  style={{
-                    padding: '14px 0',
-                    borderBottom: '1px solid #e7e5e4',
-                    fontSize: 13,
-                  }}
-                >
-                  {a.name}{' '}
-                  <span
-                    style={{ color: '#a8a29e', fontSize: 10, marginLeft: 10 }}
-                  >
-                    Open in Commons ↗
-                  </span>
-                </a>
-              ))}
+              {agents.length ? (
+                <div className="agent-list">
+                  {agents.map((a) => (
+                    <a
+                      key={a.agentId}
+                      className="agent-row"
+                      href={`https://agentcommons.io/studio/agents/${a.agentId}`}
+                    >
+                      <span className="agent-avatar">
+                        {a.name.trim().slice(0, 1).toUpperCase() || '?'}
+                      </span>
+                      <span className="agent-row-name">{a.name}</span>
+                      <span className="agent-row-link">
+                        Open in Commons <ArrowUpRight size={12} />
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <p className="empty-hint">
+                  No agents yet — create one above to bring it into your games.
+                </p>
+              )}
             </section>
             <section className="launch-card">
-              <h2 style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
+              <h2 className="launch-card-title">
                 <KeyRound size={20} />
                 External agents
               </h2>
-              <p style={{ fontSize: 13, color: '#78716c' }}>
+              <p className="launch-card-copy">
                 Use an access key with the Arcade SDK, CLI, or MCP server. Keys
                 expire after 30 days and can be revoked at any time.
               </p>
               <button
-                className="secondary"
-                style={{ justifySelf: 'start' }}
+                className="secondary agents-key-create"
                 disabled={busy}
                 onClick={() =>
                   void act(async () => {
@@ -153,75 +153,57 @@ export default function AgentsPage() {
                 Create access key
               </button>
               {token && (
-                <div
-                  style={{
-                    padding: 16,
-                    background: '#f3f2ef',
-                    borderRadius: 8,
-                  }}
-                >
-                  <p style={{ fontSize: 12 }}>
-                    Copy this key now. It is shown only once.
-                  </p>
-                  <code style={{ wordBreak: 'break-all', fontSize: 12 }}>
-                    {token}
-                  </code>
-                  <button
-                    className="secondary"
-                    style={{ marginTop: 12 }}
-                    onClick={() => void navigator.clipboard.writeText(token)}
-                  >
-                    Copy key
-                  </button>
-                  <button
-                    className="secondary"
-                    style={{ margin: 12 }}
-                    onClick={() => setToken('')}
-                  >
-                    Done
-                  </button>
-                </div>
-              )}
-              {keys.map((k) => (
-                <div
-                  key={k.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16,
-                    borderTop: '1px solid #e7e5e4',
-                    paddingTop: 12,
-                  }}
-                >
-                  <div style={{ flex: 1 }}>
-                    <strong style={{ fontSize: 12, fontWeight: 500 }}>
-                      {k.name}
-                    </strong>
-                    <p style={{ fontSize: 10, color: '#a8a29e', margin: 0 }}>
-                      {k.revoked
-                        ? 'Revoked'
-                        : `Expires ${new Date(k.expiresAt).toLocaleDateString()}`}{' '}
-                      · {k.scopes.join(', ')}
-                    </p>
-                  </div>
-                  {!k.revoked && (
+                <div className="key-reveal">
+                  <p>Copy this key now. It is shown only once.</p>
+                  <code>{token}</code>
+                  <div className="key-reveal-actions">
                     <button
                       className="secondary"
-                      disabled={busy}
-                      onClick={() =>
-                        void act(async () => {
-                          await arcade(`access-keys/${k.id}`, {}, 'DELETE')
-                          await refresh()
-                        })
-                      }
+                      onClick={() => void navigator.clipboard.writeText(token)}
                     >
-                      Revoke
+                      Copy key
                     </button>
-                  )}
+                    <button className="secondary" onClick={() => setToken('')}>
+                      Done
+                    </button>
+                  </div>
                 </div>
-              ))}
-              <a href="/docs/creator-quickstart" style={{ fontSize: 12 }}>
-                SDK, CLI & MCP quick start ↗
+              )}
+              {keys.length ? (
+                <div className="key-list">
+                  {keys.map((k) => (
+                    <div key={k.id} className="key-row">
+                      <div>
+                        <strong>{k.name}</strong>
+                        <p>
+                          {k.revoked
+                            ? 'Revoked'
+                            : `Expires ${new Date(k.expiresAt).toLocaleDateString()}`}{' '}
+                          · {k.scopes.join(', ')}
+                        </p>
+                      </div>
+                      {!k.revoked && (
+                        <button
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void act(async () => {
+                              await arcade(`access-keys/${k.id}`, {}, 'DELETE')
+                              await refresh()
+                            })
+                          }
+                        >
+                          Revoke
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                !token && <p className="empty-hint">No access keys yet.</p>
+              )}
+              <a className="launch-card-link" href="/docs/creator-quickstart">
+                SDK, CLI & MCP quick start <ArrowUpRight size={12} />
               </a>
             </section>
           </>
