@@ -5,9 +5,59 @@ import Link from 'next/link'
 import { ArrowUpRight, Search, Users } from 'lucide-react'
 import { legacyGameCovers } from '../lib/legacy-game-covers'
 import { GameArtwork } from './game-artwork'
+import { SelectMenu } from './ui/select-menu'
+
+const MODES = [
+  ['realtime', 'Real time'],
+  ['turn-based', 'Turn based'],
+  ['simultaneous', 'Simultaneous'],
+  ['hybrid', 'Hybrid'],
+] as const
+// While browsing, each game type shows two rows of the compact grid.
+const SECTION_LIMIT = 8
+
+type CatalogGame = GameManifest & {
+  metadata: GameManifest['metadata'] & { thumbnail?: string }
+}
+
+function players(game: CatalogGame) {
+  const { min, max } = game.spec.seats
+  return min === max ? `${max}` : `${min}–${max}`
+}
+
+function GameCard({
+  game,
+  showMode,
+}: {
+  game: CatalogGame
+  showMode: boolean
+}) {
+  return (
+    <Link className="catalog-card" href={`/games/${game.metadata.id}`}>
+      <GameArtwork
+        title={game.metadata.title}
+        src={game.metadata.thumbnail}
+        mode={game.spec.mode}
+      />
+      <div className="catalog-card-info">
+        <div>
+          <h3>{game.metadata.title}</h3>
+          <p>{game.metadata.summary}</p>
+        </div>
+      </div>
+      <div className="catalog-card-meta">
+        {showMode ? <span>{game.spec.mode.replaceAll('-', ' ')}</span> : null}
+        <span>
+          <Users size={12} />
+          {players(game)} players
+        </span>
+      </div>
+    </Link>
+  )
+}
 
 export function GameCatalog({ games: catalog }: { games: GameManifest[] }) {
-  const games = catalog.map((game) => ({
+  const games: CatalogGame[] = catalog.map((game) => ({
     ...game,
     metadata: {
       ...game.metadata,
@@ -45,9 +95,27 @@ export function GameCatalog({ games: catalog }: { games: GameManifest[] }) {
       )
     })
     .slice(0, 2)
+  const browsing = !query && mode === 'all'
+  const knownModes = new Set<string>(MODES.map(([id]) => id))
+  // Group by game type while browsing; anything with an unrecognised mode still shows.
+  const sections = [
+    ...MODES.map(([id, label]) => ({
+      id,
+      label,
+      games: visible.filter((g) => g.spec.mode === id),
+      filterable: true,
+    })),
+    {
+      id: 'other',
+      label: 'More games',
+      games: visible.filter((g) => !knownModes.has(g.spec.mode)),
+      filterable: false,
+    },
+  ].filter((section) => section.games.length > 0)
+
   return (
     <div className="catalog shell">
-      {!query && mode === 'all' && featured.length > 0 && (
+      {browsing && featured.length > 0 && (
         <section className="catalog-featured" aria-label="In the arcade">
           {featured.map((game) => (
             <Link
@@ -58,6 +126,7 @@ export function GameCatalog({ games: catalog }: { games: GameManifest[] }) {
               <GameArtwork
                 title={game.metadata.title}
                 src={game.metadata.thumbnail}
+                mode={game.spec.mode}
               />
               <div>
                 <span className="eyebrow">READY TO PLAY</span>
@@ -89,13 +158,7 @@ export function GameCatalog({ games: catalog }: { games: GameManifest[] }) {
           />
         </label>
         <div className="catalog-filters" aria-label="Game type">
-          {[
-            ['all', 'All games'],
-            ['realtime', 'Real time'],
-            ['turn-based', 'Turn based'],
-            ['simultaneous', 'Simultaneous'],
-            ['hybrid', 'Hybrid'],
-          ]
+          {[['all', 'All games'] as const, ...MODES]
             .filter(
               ([id]) => id === 'all' || games.some((g) => g.spec.mode === id),
             )
@@ -103,52 +166,56 @@ export function GameCatalog({ games: catalog }: { games: GameManifest[] }) {
               <button
                 key={id}
                 aria-pressed={mode === id}
-                onClick={() => setMode(id!)}
+                onClick={() => setMode(id)}
               >
                 {label}
               </button>
             ))}
         </div>
-        <select
-          aria-label="Sort games"
+        <SelectMenu
+          compact
+          label="Sort games"
           value={order}
-          onChange={(e) => setOrder(e.target.value)}
-        >
-          <option value="az">Name: A–Z</option>
-          <option value="za">Name: Z–A</option>
-        </select>
+          options={[
+            { value: 'az', label: 'Name: A–Z' },
+            { value: 'za', label: 'Name: Z–A' },
+          ]}
+          onChange={setOrder}
+        />
       </div>
-      <section className="catalog-grid" aria-label="Games">
-        {visible.map((game) => (
-          <Link
-            className="catalog-card"
-            href={`/games/${game.metadata.id}`}
-            key={game.metadata.id}
+      {browsing ? (
+        sections.map((section) => (
+          <section
+            key={section.id}
+            className="catalog-section"
+            aria-labelledby={`catalog-${section.id}`}
           >
-            <GameArtwork
-              title={game.metadata.title}
-              src={game.metadata.thumbnail}
-            />
-            <div className="catalog-card-info">
-              <div>
-                <h3>{game.metadata.title}</h3>
-                <p>{game.metadata.summary}</p>
-              </div>
-              <span className="play-pill">Play</span>
+            <div className="catalog-section-head">
+              <h3 id={`catalog-${section.id}`}>{section.label}</h3>
+              <span>{section.games.length}</span>
+              {section.filterable && section.games.length > SECTION_LIMIT ? (
+                <button type="button" onClick={() => setMode(section.id)}>
+                  See all
+                </button>
+              ) : null}
             </div>
-            <div className="catalog-card-meta">
-              <span>{game.spec.mode.replaceAll('-', ' ')}</span>
-              <span>
-                <Users size={12} />
-                {game.spec.seats.min === game.spec.seats.max
-                  ? game.spec.seats.max
-                  : `${game.spec.seats.min}–${game.spec.seats.max}`}{' '}
-                players
-              </span>
+            <div className="catalog-grid compact">
+              {(section.filterable
+                ? section.games.slice(0, SECTION_LIMIT)
+                : section.games
+              ).map((game) => (
+                <GameCard key={game.metadata.id} game={game} showMode={false} />
+              ))}
             </div>
-          </Link>
-        ))}
-      </section>
+          </section>
+        ))
+      ) : visible.length ? (
+        <section className="catalog-grid compact" aria-label="Games">
+          {visible.map((game) => (
+            <GameCard key={game.metadata.id} game={game} showMode />
+          ))}
+        </section>
+      ) : null}
       {!visible.length && (
         <div className="catalog-empty">
           <Search size={26} />

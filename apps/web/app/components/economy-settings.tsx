@@ -1,6 +1,7 @@
 'use client'
 import { NETWORKS, usdcUnits, type EconomyConfig } from '@common-arcade/economy'
 import { formatUnits } from 'viem'
+import { SelectMenu } from './ui/select-menu'
 export function EconomySettings({
   value,
   onChange,
@@ -13,9 +14,11 @@ export function EconomySettings({
   return (
     <fieldset className="economy-settings">
       <legend>Match payments</legend>
-      <label>
+      <label className="switch-row">
         <input
           type="checkbox"
+          role="switch"
+          className="switch"
           checked={value.mode === 'escrow'}
           onChange={(e) =>
             onChange(
@@ -33,37 +36,32 @@ export function EconomySettings({
                 : { mode: 'free' },
             )
           }
-        />{' '}
+        />
         Use testnet USDC
       </label>
       {value.mode === 'escrow' && (
-        <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+        <div className="economy-settings-fields">
           <label>
-            Network{' '}
-            <select
+            Network
+            <SelectMenu
               value={value.network}
-              onChange={(e) =>
+              options={Object.values(NETWORKS)
+                .filter((n) => n.testnet)
+                .map((n) => ({
+                  value: n.id,
+                  label: n.chain.name,
+                  description: enabledNetworks.includes(n.id)
+                    ? undefined
+                    : 'Awaiting deployment',
+                  disabled: !enabledNetworks.includes(n.id),
+                }))}
+              onChange={(network) =>
                 onChange({
                   ...value,
-                  network: e.target.value as typeof value.network,
+                  network: network as typeof value.network,
                 })
               }
-            >
-              {Object.values(NETWORKS)
-                .filter((n) => n.testnet)
-                .map((n) => (
-                  <option
-                    key={n.id}
-                    value={n.id}
-                    disabled={!enabledNetworks.includes(n.id)}
-                  >
-                    {n.chain.name}
-                    {enabledNetworks.includes(n.id)
-                      ? ''
-                      : ' — awaiting deployment'}
-                  </option>
-                ))}
-            </select>
+            />
           </label>
           <label>
             Stake per player (USDC){' '}
@@ -83,24 +81,28 @@ export function EconomySettings({
               }}
             />
           </label>
-          <label>
+          <label className="switch-row">
             <input
               type="checkbox"
+              role="switch"
+              className="switch"
               checked={value.bounties}
               onChange={(e) =>
                 onChange({ ...value, bounties: e.target.checked })
               }
-            />{' '}
+            />
             Allow sponsored bounties
           </label>
-          <label>
+          <label className="switch-row">
             <input
               type="checkbox"
+              role="switch"
+              className="switch"
               checked={value.spectatorBets}
               onChange={(e) =>
                 onChange({ ...value, spectatorBets: e.target.checked })
               }
-            />{' '}
+            />
             Allow spectator bets before play
           </label>
           <p>

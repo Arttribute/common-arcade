@@ -23,6 +23,7 @@ import {
 import { LiveControls, actionLabel } from './live-controls'
 import { ExternalSeatAgent } from './external-seat-agent'
 import { LivePaymentPanel } from './live-payment-panel'
+import { SelectMenu } from './ui/select-menu'
 
 function resultLabel(
   result: JsonValue,
@@ -725,7 +726,8 @@ export function PlayMatch({
                   : 'Reconnecting — availability may be out of date'}
           </span>
         </p>
-        {match && (
+        {/* Payments are for the people playing; spectators only see the game. */}
+        {match && controlledSeat && (
           <LivePaymentPanel
             releaseId={match.releaseId}
             matchId={matchId}
@@ -761,17 +763,19 @@ export function PlayMatch({
         {agents.length > 0 ? (
           <label>
             Commons agent
-            <select
+            <SelectMenu
               value={selectedAgent}
-              onChange={(event) => setSelectedAgent(event.target.value)}
-            >
-              <option value="">Choose an agent</option>
-              {agents.map((agent) => (
-                <option key={agent.agentId} value={agent.agentId}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
+              searchPlaceholder="Find an agent…"
+              options={[
+                { value: '', label: 'Choose an agent' },
+                ...agents.map((agent) => ({
+                  value: agent.agentId,
+                  label: agent.name,
+                  avatar: true,
+                })),
+              ]}
+              onChange={(value) => setSelectedAgent(value)}
+            />
           </label>
         ) : null}
         {activeAgent ? (
@@ -1024,11 +1028,6 @@ export function PlayMatch({
             onClose={() => setExternalSetup(undefined)}
           />
         ) : null}
-        {!terminal ? (
-          <button className="secondary compact" onClick={() => void abandon()}>
-            End session
-          </button>
-        ) : null}
         <p className="match-rule-note">
           {match?.lobby?.joinPolicy === 'invite-only'
             ? 'Invite-only lobby'
@@ -1038,6 +1037,21 @@ export function PlayMatch({
           agents{' '}
           {match?.lobby?.allowedControllers.includes('agent') ? 'on' : 'off'}
         </p>
+        {/* Kept apart from seat actions. Only the host can end a session; the
+            page doesn't know who the host is yet, so the label says so. */}
+        {!terminal ? (
+          <div className="match-host-actions">
+            <span>Host</span>
+            <button
+              type="button"
+              className="danger-quiet"
+              title="Only the host can end the session"
+              onClick={() => void abandon()}
+            >
+              End session
+            </button>
+          </div>
+        ) : null}
       </aside>
 
       <section className="game-stage" ref={stageRef}>

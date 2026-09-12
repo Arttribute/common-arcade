@@ -4,6 +4,16 @@ import {
   gameMonetizationSchema,
   type GameMonetization,
 } from '@common-arcade/protocol'
+import { SelectMenu } from './ui/select-menu'
+
+const PAYOUT_NETWORKS = [
+  ['base-sepolia', 'Base Sepolia'],
+  ['arc-testnet', 'Arc testnet'],
+  ['hedera-testnet', 'Hedera testnet'],
+  ['celo-sepolia', 'Celo Sepolia'],
+] as const
+type PayoutNetwork = (typeof PAYOUT_NETWORKS)[number][0]
+
 export function CreatorEconomySettings({
   value,
   onChange,
@@ -14,16 +24,18 @@ export function CreatorEconomySettings({
   disabled?: boolean
 }) {
   const policy = value ?? { mode: 'free' }
-  const [network, setNetwork] = useState<
-    'base-sepolia' | 'arc-testnet' | 'hedera-testnet' | 'celo-sepolia'
-  >('base-sepolia')
+  // Networks ticked this session but without an address yet. Networks that
+  // already have a payout address always show as ticked.
+  const [ticked, setTicked] = useState<ReadonlySet<PayoutNetwork>>(new Set())
   const validation = gameMonetizationSchema.safeParse(policy)
   return (
     <fieldset disabled={disabled} className="studio-section economy-settings">
       <legend>Game earnings</legend>
-      <label>
+      <label className="switch-row">
         <input
           type="checkbox"
+          role="switch"
+          className="switch"
           checked={policy.mode === 'revenue-share'}
           onChange={(e) =>
             onChange(
@@ -39,7 +51,7 @@ export function CreatorEconomySettings({
                 : { mode: 'free' },
             )
           }
-        />{' '}
+        />
         Offer optional paid matches
       </label>
       <p className="studio-help">
@@ -101,18 +113,16 @@ export function CreatorEconomySettings({
           </fieldset>
           <label>
             Creator share of the success fee
-            <select
-              value={policy.creatorShareBps}
-              onChange={(e) =>
-                onChange({ ...policy, creatorShareBps: Number(e.target.value) })
+            <SelectMenu
+              value={String(policy.creatorShareBps)}
+              options={[0, 5000, 7000, 9000].map((n) => ({
+                value: String(n),
+                label: `${n / 100}% creator / ${(10000 - n) / 100}% platform`,
+              }))}
+              onChange={(next) =>
+                onChange({ ...policy, creatorShareBps: Number(next) })
               }
-            >
-              {[0, 5000, 7000, 9000].map((n) => (
-                <option key={n} value={n}>
-                  {n / 100}% creator / {(10000 - n) / 100}% platform
-                </option>
-              ))}
-            </select>
+            />
           </label>
           <p className="studio-help">
             One 2.5% success fee. On a 10 USDC prize pool: 9.75 to the winner,{' '}
@@ -122,52 +132,65 @@ export function CreatorEconomySettings({
             the platform. Draws and cancellations refund contributions without a
             fee.
           </p>
-          <label>
-            Payout network
-            <select
-              value={network}
-              onChange={(e) => setNetwork(e.target.value as typeof network)}
-            >
-              {(
-                [
-                  'base-sepolia',
-                  'arc-testnet',
-                  'hedera-testnet',
-                  'celo-sepolia',
-                ] as const
-              ).map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                  {policy.payouts[id] ? ' · configured' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {network} payout address
-            <input
-              placeholder="0x…"
-              value={policy.payouts[network] ?? ''}
-              onChange={(e) => {
-                const payouts = { ...policy.payouts }
-                if (e.target.value) payouts[network] = e.target.value
-                else delete payouts[network]
-                onChange({ ...policy, payouts })
-              }}
-            />
-          </label>
+          <fieldset className="payout-networks">
+            <legend>Payout networks</legend>
+            {PAYOUT_NETWORKS.map(([id, label]) => {
+              const configured = Boolean(policy.payouts[id])
+              const on = configured || ticked.has(id)
+              return (
+                <div className="payout-network" key={id}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={(e) => {
+                        const next = new Set(ticked)
+                        if (e.target.checked) next.add(id)
+                        else {
+                          next.delete(id)
+                          if (configured) {
+                            const payouts = { ...policy.payouts }
+                            delete payouts[id]
+                            onChange({ ...policy, payouts })
+                          }
+                        }
+                        setTicked(next)
+                      }}
+                    />
+                    {label}
+                    {configured ? <small>Configured</small> : null}
+                  </label>
+                  {on ? (
+                    <input
+                      placeholder="0x…"
+                      aria-label={`${label} payout address`}
+                      value={policy.payouts[id] ?? ''}
+                      onChange={(e) => {
+                        const payouts = { ...policy.payouts }
+                        if (e.target.value) payouts[id] = e.target.value
+                        else delete payouts[id]
+                        onChange({ ...policy, payouts })
+                      }}
+                    />
+                  ) : null}
+                </div>
+              )
+            })}
+          </fieldset>
           <p className="studio-help">
-            Configure at least one network. You can switch networks to add or
-            remove another payout address.
+            Tick every network you want to be paid on and add a payout address
+            for each.
           </p>
-          <label>
+          <label className="switch-row">
             <input
               type="checkbox"
+              role="switch"
+              className="switch"
               checked={policy.spectatorBets}
               onChange={(e) =>
                 onChange({ ...policy, spectatorBets: e.target.checked })
               }
-            />{' '}
+            />
             Allow optional spectator pools
           </label>
           <p className="studio-help">

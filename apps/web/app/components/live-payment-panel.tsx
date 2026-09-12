@@ -8,6 +8,7 @@ const PaymentDetails = dynamic(() => import('./live-payment-details'), {
   loading: () => <p role="status">Loading payment controls…</p>,
 })
 
+/** A single compact button in the roster; payment controls open in a dialog. */
 export const LivePaymentPanel = memo(function LivePaymentPanel({
   releaseId,
   matchId,
@@ -20,24 +21,18 @@ export const LivePaymentPanel = memo(function LivePaymentPanel({
   const dialog = useRef<HTMLDialogElement>(null)
   const [opened, setOpened] = useState(false)
   return (
-    <section className="live-payment-card" aria-label="Match payments">
-      <div>
-        <Wallet size={16} />
-        <strong>Payments & rewards</strong>
-      </div>
-      <p>
-        {matchId
-          ? 'This session is free to play.'
-          : 'Choose free play or view paid match options.'}
-      </p>
+    <section aria-label="Match payments">
       <button
-        className="secondary compact"
+        type="button"
+        className="live-payment-button"
         onClick={() => {
           setOpened(true)
           dialog.current?.showModal()
         }}
       >
-        Open payment controls
+        <Wallet size={14} />
+        Payments & rewards
+        <span>Testnet</span>
       </button>
       <dialog
         className="live-payment-dialog"

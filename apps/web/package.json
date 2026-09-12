@@ -24,6 +24,7 @@
     "@common-arcade/realtime-client": "workspace:^",
     "@common-arcade/studio": "workspace:^",
     "@radix-ui/react-dialog": "^1.1.23",
+    "@radix-ui/react-popover": "^1.1.23",
     "codemirror": "^6.0.2",
     "fumadocs-core": "^16.15.6",
     "fumadocs-mdx": "^15.4.0",

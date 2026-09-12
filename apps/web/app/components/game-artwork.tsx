@@ -1,14 +1,32 @@
 'use client'
 import { useState, type CSSProperties } from 'react'
-import { Gamepad2 } from 'lucide-react'
+import {
+  Gamepad2,
+  Hourglass,
+  Shuffle,
+  Users,
+  Zap,
+  type LucideIcon,
+} from 'lucide-react'
+
+// Placeholders say what kind of game it is, rather than repeating the title.
+const MODE_ICONS: Record<string, LucideIcon> = {
+  realtime: Zap,
+  'turn-based': Hourglass,
+  simultaneous: Users,
+  hybrid: Shuffle,
+}
 
 export function GameArtwork({
   title,
   src,
+  mode,
   className = '',
 }: {
   title: string
   src?: string
+  /** The game's play mode, used to pick the placeholder icon. */
+  mode?: string
   className?: string
 }) {
   const [failed, setFailed] = useState<string>()
@@ -18,6 +36,7 @@ export function GameArtwork({
     (/^https:\/\//.test(src) ||
       /^\/game-covers\/gam_[a-zA-Z0-9_]+\.jpg$/.test(src) ||
       /^data:image\/(jpeg|png|webp);base64,/.test(src))
+  const Icon = (mode && MODE_ICONS[mode]) || Gamepad2
   return (
     <div
       className={`game-artwork ${className}`}
@@ -33,9 +52,10 @@ export function GameArtwork({
       ) : (
         <div
           className="game-artwork-fallback"
+          role="img"
           aria-label={`${title} — artwork coming soon`}
         >
-          <Gamepad2 size={56} strokeWidth={1.1} />
+          <Icon size={32} strokeWidth={1.4} />
           <span>{title}</span>
         </div>
       )}

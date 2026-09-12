@@ -14,6 +14,7 @@ import { arcade, browserControlClient } from '../../lib/api'
 import { Dialog } from './ui/dialog'
 import { Play } from 'lucide-react'
 import { HostPaymentSettings } from './host-payment-settings'
+import { SelectMenu } from './ui/select-menu'
 import { economyConfigSchema, type EconomyConfig } from '@common-arcade/economy'
 import type { GameMonetization } from '@common-arcade/protocol'
 
@@ -217,18 +218,29 @@ export function MatchLauncher({
               <div className="match-setup-grid">
                 <label>
                   Discoverability
-                  <select
+                  <SelectMenu
                     value={visibility}
-                    onChange={(event) =>
-                      setVisibility(
-                        event.target.value as 'public' | 'unlisted' | 'private',
-                      )
+                    options={[
+                      {
+                        value: 'public',
+                        label: 'Public',
+                        description: 'Listed in Live',
+                      },
+                      {
+                        value: 'unlisted',
+                        label: 'Unlisted',
+                        description: 'Link only',
+                      },
+                      {
+                        value: 'private',
+                        label: 'Private',
+                        description: 'Owner only',
+                      },
+                    ]}
+                    onChange={(value) =>
+                      setVisibility(value as 'public' | 'unlisted' | 'private')
                     }
-                  >
-                    <option value="public">Public · listed in Live</option>
-                    <option value="unlisted">Unlisted · link only</option>
-                    <option value="private">Private · owner only</option>
-                  </select>
+                  />
                 </label>
                 <p className="match-setup-wide match-rule-note">
                   {visibility === 'public'
@@ -239,15 +251,16 @@ export function MatchLauncher({
                 </p>
                 <label>
                   Joining
-                  <select
+                  <SelectMenu
                     value={joinPolicy}
-                    onChange={(event) =>
-                      setJoinPolicy(event.target.value as typeof joinPolicy)
+                    options={[
+                      { value: 'open', label: 'Open lobby' },
+                      { value: 'invite-only', label: 'Invite only' },
+                    ]}
+                    onChange={(value) =>
+                      setJoinPolicy(value as typeof joinPolicy)
                     }
-                  >
-                    <option value="open">Open lobby</option>
-                    <option value="invite-only">Invite only</option>
-                  </select>
+                  />
                 </label>
                 {joinPolicy === 'invite-only' ? (
                   <label className="match-setup-wide">
@@ -261,59 +274,59 @@ export function MatchLauncher({
                 ) : null}
                 <label>
                   Rounds
-                  <select
-                    value={maximumRounds}
-                    onChange={(event) =>
-                      setMaximumRounds(Number(event.target.value))
-                    }
-                  >
-                    {[1, 3, 5, 7, 9].map((rounds) => (
-                      <option key={rounds} value={rounds}>
-                        {rounds}
-                      </option>
-                    ))}
-                  </select>
+                  <SelectMenu
+                    value={String(maximumRounds)}
+                    options={[1, 3, 5, 7, 9].map((rounds) => ({
+                      value: String(rounds),
+                      label: String(rounds),
+                    }))}
+                    onChange={(value) => setMaximumRounds(Number(value))}
+                  />
                 </label>
                 <label>
                   Between rounds
-                  <select
+                  <SelectMenu
                     value={restartPolicy}
-                    onChange={(event) =>
-                      setRestartPolicy(
-                        event.target.value as typeof restartPolicy,
-                      )
+                    options={[
+                      { value: 'owner', label: 'Host starts next round' },
+                      { value: 'unanimous', label: 'Every player agrees' },
+                      { value: 'automatic', label: 'Automatic' },
+                    ]}
+                    onChange={(value) =>
+                      setRestartPolicy(value as typeof restartPolicy)
                     }
-                  >
-                    <option value="owner">Host starts next round</option>
-                    <option value="unanimous">Every player agrees</option>
-                    <option value="automatic">Automatic</option>
-                  </select>
+                  />
                 </label>
                 <label>
                   Watching
-                  <select
+                  <SelectMenu
                     value={spectating}
-                    onChange={(event) =>
-                      setSpectating(event.target.value as typeof spectating)
+                    options={[
+                      { value: 'enabled', label: 'Live spectators' },
+                      { value: 'disabled', label: 'Players only' },
+                    ]}
+                    onChange={(value) =>
+                      setSpectating(value as typeof spectating)
                     }
-                  >
-                    <option value="enabled">Live spectators</option>
-                    <option value="disabled">Players only</option>
-                  </select>
+                  />
                 </label>
                 <fieldset className="controller-options">
                   <legend>Who can play?</legend>
-                  <label>
+                  <label className="switch-row">
                     <input
                       type="checkbox"
+                      role="switch"
+                      className="switch"
                       checked={allowHumans}
                       onChange={(event) => setAllowHumans(event.target.checked)}
                     />
                     Humans
                   </label>
-                  <label>
+                  <label className="switch-row">
                     <input
                       type="checkbox"
+                      role="switch"
+                      className="switch"
                       checked={allowAgents}
                       onChange={(event) => setAllowAgents(event.target.checked)}
                     />
