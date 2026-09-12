@@ -6,6 +6,7 @@ import {
   type AnnotationGeometry,
   type CanvasRecording,
 } from '@agent-commons/ui'
+import { X } from 'lucide-react'
 import { arcade } from '../../lib/api'
 
 type RecordingSummary = {
@@ -311,7 +312,7 @@ function AnnotatedRecording({
             </>
           ) : null}
           <button onClick={onClose} aria-label="Close recording">
-            ×
+            <X size={16} aria-hidden />
           </button>
         </div>
       </header>

@@ -39,5 +39,10 @@
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@9.15.3"
+  "packageManager": "pnpm@9.15.3",
+  "pnpm": {
+    "patchedDependencies": {
+      "@agent-commons/ui@0.2.5": "patches/@agent-commons__ui@0.2.5.patch"
+    }
+  }
 }

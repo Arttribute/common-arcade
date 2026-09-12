@@ -42,6 +42,8 @@ export interface ArcadeStatus {
 }
 
 export interface GameList {
+  /** Mutable curation metadata, separate from canonical game manifests. */
+  readonly catalog?: Readonly<Record<string, { readonly isFeatured: boolean }>>
   readonly games: readonly GameManifest[]
   readonly nextCursor: string | null
 }
@@ -186,10 +188,12 @@ export class ControlClient {
     const body = (await this.request('/v1/games', { signal })) as {
       games: unknown[]
       nextCursor: string | null
+      catalog?: Record<string, { isFeatured: boolean }>
     }
     return {
       games: body.games.map((game) => gameManifestSchema.parse(game)),
       nextCursor: body.nextCursor,
+      ...(body.catalog ? { catalog: body.catalog } : {}),
     }
   }
 

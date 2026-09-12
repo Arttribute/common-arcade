@@ -1,4 +1,5 @@
 'use client'
+import './payments.css'
 
 import dynamic from 'next/dynamic'
 import { memo, useRef, useState } from 'react'
@@ -23,7 +24,7 @@ export const LivePaymentPanel = memo(function LivePaymentPanel({
     <section className="live-payment-card" aria-label="Match payments">
       <div>
         <Wallet size={16} />
-        <strong>Payments & rewards</strong>
+        <strong>Entry & agent budget</strong>
       </div>
       <p>
         {matchId
@@ -37,18 +38,18 @@ export const LivePaymentPanel = memo(function LivePaymentPanel({
           dialog.current?.showModal()
         }}
       >
-        Open payment controls
+        View details
       </button>
       <dialog
         className="live-payment-dialog"
         ref={dialog}
-        aria-label="Payments and rewards"
+        aria-label="Entry and agent budget"
         onClose={() => setOpened(false)}
       >
         <header>
           <div>
-            <span className="eyebrow">TESTNET PAYMENTS</span>
-            <h2>Payments & rewards</h2>
+            <span className="eyebrow">THIS SESSION</span>
+            <h2>Entry & agent budget</h2>
           </div>
           <button
             type="button"

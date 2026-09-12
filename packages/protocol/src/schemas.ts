@@ -238,6 +238,7 @@ export const discoveryDocumentSchema = z
 export const matchDescriptorSchema = z
   .object({
     id: matchIdSchema,
+    ownerId: z.string().min(1).max(200).optional(),
     releaseId: releaseIdSchema,
     releaseDigest: digestSchema,
     mode: matchModeSchema,

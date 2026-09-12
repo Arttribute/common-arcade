@@ -22,16 +22,16 @@ export default async function Page({
     }
   }
   return (
-    <main>
+    <main className="arcade" id="main">
       <Header />
-      <section className="shell" style={{ paddingTop: 40, paddingBottom: 80 }}>
-        <div className="eyebrow">OPTIONAL TESTNET ECONOMY</div>
-        <h1>Play & earn</h1>
-        <p>
-          This match uses the published game and its immutable earning terms.
-          Free play is the default. Paid previews support two-seat, turn-based
-          games.
-        </p>
+      <section
+        className="shell page-heading"
+        style={{ paddingTop: 40, paddingBottom: 80 }}
+      >
+        <h1>
+          <span className="page-title">Game table</span>
+        </h1>
+        <p>Invite a player or join a table. Paid games use test tokens.</p>
         <GameEconomyTable
           releaseId={releaseId}
           initialEconomy={initialEconomy}

@@ -1,9 +1,11 @@
 'use client'
+import { PaymentSummary } from './payment-disclosure'
 
 import { useEffect, useState } from 'react'
 import type { GameMonetization } from '@common-arcade/protocol'
 import { NETWORKS, usdcUnits, type EconomyConfig } from '@common-arcade/economy'
 import { formatUnits } from 'viem'
+import { Select, SelectOption } from './ui/select'
 
 export function HostPaymentSettings({
   value,
@@ -54,19 +56,26 @@ export function HostPaymentSettings({
       : BigInt(value.stakeUnits) > 0n
         ? 'staked'
         : 'sponsored'
+  if (!supported || terms?.mode !== 'revenue-share')
+    return (
+      <div className="payment-terms-summary">
+        <strong>Free entry</strong>
+        <p>No wallet needed. Invite people and agents to play.</p>
+      </div>
+    )
   return (
     <fieldset className="economy-settings host-payment-settings">
-      <legend>Host payment settings</legend>
+      <legend>Entry & rewards</legend>
       <p>
-        Set entry requirements and rewards for the match. Players connect their
-        wallets and agents when they join.
+        Free play needs no wallet. For paid tables, review the terms before
+        funding.
       </p>
-      <label>
-        Payment format{' '}
-        <select
+      <div className="field">
+        <span className="field-label">Payment format</span>
+        <Select
           value={mode}
-          onChange={(event) => {
-            const selected = event.target.value
+          ariaLabel="Payment format"
+          onValueChange={(selected) => {
             if (selected === 'free') {
               onChange({ mode: 'free' })
               return
@@ -86,29 +95,29 @@ export function HostPaymentSettings({
             })
           }}
         >
-          <option value="free">Free entry · no prize pool</option>
-          <option
+          <SelectOption value="free" title="Free entry" hint="No prize pool" />
+          <SelectOption
             value="staked"
             disabled={
               !enabled ||
               terms?.mode !== 'revenue-share' ||
               !terms.allowedModes.includes('staked')
             }
-          >
-            Player stakes
-          </option>
-          <option
+            title="Player stakes"
+            hint="Players contribute; the winner receives the pool after fees"
+          />
+          <SelectOption
             value="sponsored"
             disabled={
               !enabled ||
               terms?.mode !== 'revenue-share' ||
               !terms.allowedModes.includes('sponsored')
             }
-          >
-            Sponsored prize pool · free entry
-          </option>
-        </select>
-      </label>
+            title="Sponsored prize pool"
+            hint="Fund a reward in the lobby; entry stays free"
+          />
+        </Select>
+      </div>
       {!enabled && (
         <p className="studio-help">
           {!supported
@@ -122,24 +131,28 @@ export function HostPaymentSettings({
       )}
       {value.mode === 'escrow' && (
         <div className="match-setup-grid">
-          <label>
-            Payment network{' '}
-            <select
+          <div className="field">
+            <span className="field-label">Payment network</span>
+            <Select
               value={value.network}
-              onChange={(event) =>
+              ariaLabel="Payment network"
+              onValueChange={(next) =>
                 onChange({
                   ...value,
-                  network: event.target.value as typeof value.network,
+                  network: next as typeof value.network,
                 })
               }
             >
               {available.map((network) => (
-                <option key={network} value={network}>
-                  {NETWORKS[network].chain.name} · test USDC
-                </option>
+                <SelectOption
+                  key={network}
+                  value={network}
+                  title={NETWORKS[network].chain.name}
+                  hint="Test USDC"
+                />
               ))}
-            </select>
-          </label>
+            </Select>
+          </div>
           {mode === 'staked' && (
             <label>
               Entry stake per player (USDC){' '}
@@ -164,75 +177,87 @@ export function HostPaymentSettings({
               />
             </label>
           )}
-          <label>
-            Funding window (minutes){' '}
-            <input
-              required
-              type="number"
-              min="1"
-              max="60"
-              step="1"
-              value={value.fundingSeconds / 60}
-              onChange={(event) =>
-                onChange({
-                  ...value,
-                  fundingSeconds: Number(event.target.value) * 60,
-                })
-              }
-            />
-          </label>
-          <label>
-            Match deadline after funding (minutes){' '}
-            <input
-              required
-              type="number"
-              min="2"
-              max="1440"
-              step="1"
-              value={value.settlementSeconds / 60}
-              onChange={(event) =>
-                onChange({
-                  ...value,
-                  settlementSeconds: Number(event.target.value) * 60,
-                })
-              }
-            />
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={value.bounties}
-              disabled={mode === 'sponsored'}
-              onChange={(event) =>
-                onChange({ ...value, bounties: event.target.checked })
-              }
-            />{' '}
-            Allow sponsored bounties
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={value.spectatorBets}
-              disabled={terms?.mode !== 'revenue-share' || !terms.spectatorBets}
-              onChange={(event) =>
-                onChange({ ...value, spectatorBets: event.target.checked })
-              }
-            />{' '}
-            Allow spectator bets before play
-          </label>
-          {terms?.mode === 'revenue-share' && (
-            <p className="match-setup-wide studio-help">
-              Success fee: {terms.feeBps / 100}%. Creator share of that fee:{' '}
-              {terms.creatorShareBps / 100}%.
-              <br />
-              Creator payout:{' '}
-              <span style={{ overflowWrap: 'anywhere' }}>
-                {terms.payouts[value.network]}
-              </span>
-              <br />
-              These payout terms are fixed by the published release.
-            </p>
-          )}
+          <details className="payment-disclosure match-setup-wide">
+            <PaymentSummary>Funding rules & payout terms</PaymentSummary>
+            <div className="match-setup-grid">
+              <label>
+                Funding window (minutes){' '}
+                <input
+                  required
+                  type="number"
+                  min="1"
+                  max="60"
+                  step="1"
+                  value={value.fundingSeconds / 60}
+                  onChange={(event) =>
+                    onChange({
+                      ...value,
+                      fundingSeconds: Number(event.target.value) * 60,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Match deadline after funding (minutes){' '}
+                <input
+                  required
+                  type="number"
+                  min="2"
+                  max="1440"
+                  step="1"
+                  value={value.settlementSeconds / 60}
+                  onChange={(event) =>
+                    onChange({
+                      ...value,
+                      settlementSeconds: Number(event.target.value) * 60,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={value.bounties}
+                  disabled={mode === 'sponsored'}
+                  onChange={(event) =>
+                    onChange({ ...value, bounties: event.target.checked })
+                  }
+                />{' '}
+                Allow sponsored bounties
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={value.spectatorBets}
+                  disabled={
+                    terms?.mode !== 'revenue-share' || !terms.spectatorBets
+                  }
+                  onChange={(event) =>
+                    onChange({ ...value, spectatorBets: event.target.checked })
+                  }
+                />{' '}
+                Allow spectator bets before play
+              </label>
+              {terms?.mode === 'revenue-share' && (
+                <p className="match-setup-wide studio-help">
+                  Success fee: {terms.feeBps / 100}%. Creator share of that fee:{' '}
+                  {terms.creatorShareBps / 100}%.
+                  <br />
+                  Creator payout:{' '}
+                  <span style={{ overflowWrap: 'anywhere' }}>
+                    {terms.payouts[value.network]}
+                  </span>
+                  <br />
+                  These payout terms are fixed by the published release.
+                </p>
+              )}
+            </div>
+          </details>
+          <p className="match-setup-wide field-hint">
+            Test USDC on {NETWORKS[value.network].chain.name}. You will review a
+            token allowance and a separate deposit in your wallet. Creating the
+            lobby does not charge the entry stake.
+          </p>
         </div>
       )}
     </fieldset>

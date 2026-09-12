@@ -1,5 +1,7 @@
 import {
   arcadeEscrowAbi,
+  settlementAccounting,
+  type SettlementAccounting,
   hashArcadeId,
   type EscrowDeployment,
   type EconomyConfig,
@@ -32,6 +34,7 @@ export interface MatchSettlementAdapter {
     resultHash: Hex,
   ): Promise<Hex | undefined>
   inspect(id: Hex): Promise<unknown>
+  accounting?(id: Hex): Promise<SettlementAccounting | undefined>
 }
 /** All calls reconcile contract state before submission; a lost HTTP receipt never authorizes another payout. */
 export function createSettlementAdapter(
@@ -139,6 +142,28 @@ export function createSettlementAdapter(
       return winner
         ? send('settle', [id, hashArcadeId(winner), resultHash])
         : send('voidMatch', [id])
+    },
+    async accounting(id) {
+      const match = await read(id)
+      if (match.status !== 3 && match.status !== 4) return undefined
+      const [winningShares, winnerRecipient] =
+        match.status === 3
+          ? await Promise.all([
+              reader.readContract({
+                address: deployment.contract,
+                abi: arcadeEscrowAbi,
+                functionName: 'outcomePool',
+                args: [id, match.winner],
+              }),
+              reader.readContract({
+                address: deployment.contract,
+                abi: arcadeEscrowAbi,
+                functionName: 'recipient',
+                args: [id, match.winner],
+              }),
+            ])
+          : ([0n, ''] as const)
+      return settlementAccounting({ ...match, winningShares, winnerRecipient })
     },
     inspect: read,
   }

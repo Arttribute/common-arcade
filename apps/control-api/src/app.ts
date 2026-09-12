@@ -1,9 +1,11 @@
 import { planCoaching } from './coaching.js'
+import { catalogMetadata } from './catalog.js'
 import { createBrowserTestApi } from './browser-tests.js'
 import { createRecordingApi } from './recordings.js'
 import { bodyLimit } from 'hono/body-limit'
 import {
   CommonsServiceError,
+  CopilotRequestError,
   commonsRequest,
   createStudioApi,
   type CopilotJobInvocation,
@@ -249,7 +251,11 @@ function problem(
       },
     }
   }
-  if (error instanceof LocalPlatformError || error instanceof ApiError) {
+  if (
+    error instanceof LocalPlatformError ||
+    error instanceof ApiError ||
+    error instanceof CopilotRequestError
+  ) {
     return {
       status: error.status as ContentfulStatusCode,
       body: {
@@ -520,21 +526,28 @@ export function createApp(options: ControlApiOptions = {}) {
     }),
   )
 
-  app.get('/v1/games', async (context) =>
-    context.json({
-      games: [
-        ...(
-          await store.list<{ version: number; release: StudioRelease }>(
-            'releases',
-          )
-        ).map((r) => r.release.manifest),
-      ].filter(
-        (g, i, all) =>
-          all.findLastIndex((x) => x.metadata.id === g.metadata.id) === i,
+  app.get('/v1/games', async (context) => {
+    const releases = await store.list<{
+      version: number
+      release: StudioRelease
+    }>('releases')
+    const games = releases
+      .map(({ release }) => release.manifest)
+      .filter(
+        (game, index, all) =>
+          all.findLastIndex(
+            (candidate) => candidate.metadata.id === game.metadata.id,
+          ) === index,
+      )
+    return context.json({
+      games,
+      catalog: await catalogMetadata(
+        store,
+        games.map((game) => game.metadata.id),
       ),
       nextCursor: null,
-    }),
-  )
+    })
+  })
 
   app.get('/v1/games/:gameId', async (context) =>
     context.json(
@@ -1081,6 +1094,16 @@ function openApiDocument(serverUrl: string) {
       '/v1/projects/{id}/copilot-session': {
         get: { summary: 'Resume the durable Studio copilot conversation' },
       },
+      '/v1/projects/{id}/copilot-sessions': {
+        get: { summary: 'List this game’s Commons conversations' },
+        post: { summary: 'Start a new Commons conversation for this game' },
+      },
+      '/v1/projects/{id}/copilot-changes': {
+        get: { summary: 'Review proposed Copilot changes for this game' },
+      },
+      '/v1/projects/{id}/copilot-changes/{changeId}/{action}': {
+        post: { summary: 'Approve or reject a version-bound Copilot proposal' },
+      },
       '/v1/studio/runs/{id}': {
         get: {
           summary:
@@ -1160,7 +1183,38 @@ function openApiDocument(serverUrl: string) {
       '/v1/access-keys/{id}': {
         delete: { summary: 'Revoke an owned access key' },
       },
-      '/v1/games': { get: { summary: 'Discover games' } },
+      '/v1/games': {
+        get: {
+          summary: 'Discover published games',
+          description:
+            'Canonical manifests remain unchanged. Separate catalog metadata is keyed by game ID and contains the curated isFeatured flag.',
+          responses: {
+            '200': {
+              description: 'Published games and catalog metadata',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['games', 'catalog', 'nextCursor'],
+                    properties: {
+                      games: { type: 'array', items: { type: 'object' } },
+                      catalog: {
+                        type: 'object',
+                        additionalProperties: {
+                          type: 'object',
+                          required: ['isFeatured'],
+                          properties: { isFeatured: { type: 'boolean' } },
+                        },
+                      },
+                      nextCursor: { type: ['string', 'null'] },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       '/v1/games/{gameId}': { get: { summary: 'Inspect a game manifest' } },
       '/v1/games/{gameId}/releases': {
         get: { summary: 'List immutable releases for a game' },

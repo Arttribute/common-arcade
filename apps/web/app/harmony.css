@@ -1,0 +1,685 @@
+/* Commons geometry with artwork-led Arcade pages and App Store-style actions. */
+.arcade-wordmark {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  height: 32px;
+  font-size: 16px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+}
+.arcade-wordmark span:first-child {
+  background: #e4dcfa;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.arcade-wordmark span:last-child {
+  background: #fbd38d;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.arcade-brand-icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: #e4dcfa;
+  color: #292524;
+}
+.sidebar-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  margin: 0 4px 12px;
+}
+.app-sidebar .brand {
+  padding: 0;
+}
+.brand-collapsed {
+  display: none;
+}
+.sidebar-toggle {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  padding: 4px;
+  color: var(--ink-muted);
+}
+.app-sidebar .nav-links a,
+.app-sidebar .nav-links a[aria-current='page'] {
+  font-weight: 400;
+  border-radius: var(--radius-sm);
+}
+.app-sidebar .nav-links a[aria-current='page'] svg {
+  color: inherit;
+}
+.app-sidebar.is-collapsed {
+  width: 60px;
+  padding-inline: 12px;
+}
+.app-sidebar.is-collapsed .sidebar-brand-row {
+  height: auto;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 0 20px;
+}
+.app-sidebar.is-collapsed .brand-expanded,
+.app-sidebar.is-collapsed .nav-links a span,
+.app-sidebar.is-collapsed .arcade-account-name {
+  display: none;
+}
+.app-sidebar.is-collapsed .brand-collapsed {
+  display: block;
+}
+.app-sidebar.is-collapsed .nav-links {
+  gap: 12px;
+}
+.app-sidebar.is-collapsed .nav-links a {
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+}
+main.arcade:has(> .app-sidebar.is-collapsed) {
+  padding-left: 60px;
+}
+.page-heading {
+  padding-top: 24px;
+}
+.arcade .page-heading h1,
+.arcade .discover-head h1,
+.arcade .live-head h1 {
+  font-size: 28px;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+.page-title {
+  color: var(--ink);
+}
+.page-heading p {
+  color: var(--ink-muted);
+  margin: 0;
+  font-size: 14px;
+}
+.game-play-button,
+.arcade .primary,
+.ac-button-primary,
+.ac-composer-send {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-ink);
+}
+.game-artwork-fallback {
+  background: hsl(var(--art-hue, 260) 76% 76%);
+  color: #25212b;
+}
+.game-artwork-fallback svg {
+  opacity: 0.85;
+}
+.catalog-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+}
+.catalog-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+.catalog-card .game-artwork {
+  width: 100%;
+  flex-shrink: 0;
+  padding: 0;
+}
+.catalog-card-info {
+  min-height: 60px;
+  align-items: flex-start;
+}
+.catalog-card-info h3 {
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.catalog-card-info p {
+  white-space: normal;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.catalog-card-meta {
+  margin-top: auto;
+}
+.studio-home-create {
+  padding-top: 48px;
+  padding-bottom: 48px;
+}
+.studio-home-create h2 {
+  font-size: clamp(24px, 3vw, 36px);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+}
+.studio-home-projects {
+  padding: 0 24px 64px;
+}
+.studio-project-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 24px;
+}
+.studio-project-grid > a {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  background: transparent;
+  min-width: 0;
+}
+.studio-project-grid > a:hover {
+  background: var(--sunken);
+}
+.studio-project-grid .game-artwork {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  aspect-ratio: 1;
+  border-radius: var(--radius-md);
+}
+.studio-project-grid .game-artwork-fallback {
+  padding: 8px;
+}
+.studio-project-grid .game-artwork-fallback span {
+  display: none;
+}
+.studio-project-grid .game-artwork-fallback svg {
+  width: 24px;
+  height: 24px;
+}
+.studio-project-copy {
+  flex: 1;
+  min-width: 0;
+}
+.studio-project-grid h3,
+.studio-project-grid p {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.studio-project-grid small {
+  font-size: 11px;
+}
+.agent-directory {
+  max-height: 360px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  display: flex;
+  flex-direction: column;
+}
+.agent-directory > a {
+  display: block;
+}
+.studio-workspace {
+  flex-direction: row;
+}
+.studio-rail {
+  width: 60px;
+  min-height: 0;
+  height: 100dvh;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+  background: var(--paper);
+  border-right: 1px solid var(--line);
+  border-bottom: 0;
+}
+.rail-brand {
+  width: 24px;
+  height: 24px;
+  margin: 0 0 20px;
+  background: transparent;
+}
+.studio-rail > button {
+  width: 28px;
+  min-height: 28px;
+  height: 28px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.studio-rail > button[aria-pressed='true'] {
+  background: var(--sunken);
+  color: var(--ink);
+}
+.rail-account {
+  width: 28px;
+  margin: auto 0 0;
+  padding: 0;
+}
+.studio-workspace > .ac-canvas {
+  min-height: 0;
+  width: 100%;
+  height: 100dvh;
+}
+.ac-canvas-body,
+.ac-canvas-center,
+.ac-canvas-stage,
+.studio-code,
+.source-browser,
+.source-editor-host {
+  min-width: 0;
+  min-height: 0;
+}
+.source-editor-host {
+  position: relative;
+}
+.source-editor-host > .cm-editor {
+  position: absolute;
+  inset: 0;
+}
+.source-editor-host .cm-scroller {
+  max-width: 100%;
+  max-height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.source-main > header {
+  flex-shrink: 0;
+}
+.ui-select-content {
+  max-height: min(360px, var(--radix-select-content-available-height));
+}
+.ui-select-viewport {
+  max-height: 320px;
+  overflow-y: auto;
+}
+@media (max-width: 1000px) {
+  .catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 850px) {
+  .app-sidebar .brand-expanded {
+    display: none;
+  }
+  .app-sidebar .brand-collapsed {
+    display: block;
+  }
+  .sidebar-toggle {
+    display: none;
+  }
+  .sidebar-brand-row {
+    margin-bottom: 24px;
+  }
+  .app-sidebar .nav-links {
+    gap: 12px;
+  }
+  .app-sidebar .nav-links a {
+    width: 28px;
+    height: 28px;
+    padding: 6px;
+  }
+  .app-sidebar .brand > span:last-child {
+    display: block;
+  }
+  .studio-workspace .ac-canvas-left {
+    left: 60px;
+    top: 52px;
+  }
+  .studio-workspace .ac-canvas-right {
+    top: 52px;
+  }
+}
+@media (max-width: 650px) {
+  .catalog-grid,
+  .studio-project-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .studio-rail {
+    gap: 12px;
+  }
+}
+.copilot-session-controls {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.chat-session-toolbar,
+.copilot-permissions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.chat-session-toolbar .ui-select-trigger,
+.copilot-permissions .ui-select-trigger {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  font-size: 12px;
+}
+.chat-session-toolbar > button:not(.ui-select-trigger),
+.copilot-permissions > button:not(.ui-select-trigger) {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+}
+.copilot-computer-permission {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+.copilot-computer-permission label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.copilot-computer-permission p {
+  margin: 6px 0 0;
+}
+.copilot-error {
+  padding: 8px 12px;
+}
+.copilot-change {
+  margin: 8px 12px;
+  padding: 10px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-md);
+  background: var(--accent-wash);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.copilot-change pre {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre;
+  background: var(--paper);
+  font-size: 11px;
+  padding: 8px;
+}
+.copilot-change .actions {
+  margin-top: 8px;
+}
+.studio-copilot {
+  overflow: auto;
+  min-height: 0;
+}
+.studio-copilot .studio-conversation {
+  min-height: 120px;
+}
+.studio-home {
+  background: var(--canvas);
+}
+.studio-home-create {
+  min-height: 0;
+  max-width: 800px;
+  margin-top: 0;
+  padding: 48px 24px 56px;
+}
+@media (max-width: 650px) {
+  .studio-home-create {
+    padding: 36px 20px;
+  }
+}
+
+.copilot-session-controls .chat-session-toolbar {
+  padding: 0;
+  border: 0;
+}
+.copilot-session-controls .ui-select-trigger {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+}
+.copilot-session-controls svg {
+  flex-shrink: 0;
+}
+.copilot-session-controls .ui-select-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-workspace .studio-message.user {
+  background: var(--message-user);
+  color: var(--message-user-ink);
+}
+@media (max-width: 850px) {
+  .studio-workspace .ac-canvas-left,
+  .studio-workspace .ac-canvas-right {
+    width: min(360px, calc(100vw - 60px)) !important;
+    max-width: calc(100vw - 60px);
+  }
+}
+
+.app-sidebar.is-collapsed:not(.is-locked) .brand {
+  display: none;
+}
+.app-sidebar.is-collapsed .sidebar-brand-row {
+  min-height: 32px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .app-sidebar {
+    transition: width 200ms var(--ease);
+  }
+}
+/* Keep the shared composer controls on one line at every drawer width. */
+.arcade-composer-wrap .ac-composer-controls {
+  flex-wrap: nowrap;
+}
+.arcade-composer-wrap .ac-composer-menu {
+  flex: 0 1 120px;
+  min-width: 0;
+}
+.arcade-composer-wrap .ac-composer-pill {
+  max-width: 100%;
+  min-width: 0;
+}
+.arcade-composer-wrap .ac-composer-pill svg,
+.arcade-composer-wrap .ac-composer-send,
+.arcade-composer-wrap .ac-composer-controls > .ac-tool-button {
+  flex-shrink: 0;
+}
+.arcade-composer-wrap .ac-composer-spacer {
+  min-width: 0;
+}
+@media (min-width: 851px) {
+  .studio-workspace .ac-canvas-right {
+    min-width: 390px;
+  }
+}
+.arcade-composer-wrap
+  .ac-composer-menu:has(> button[aria-label='Model'])
+  .ac-composer-popover {
+  left: auto;
+  right: 0;
+}
+.arcade-composer-wrap .ac-composer-popover {
+  border-radius: var(--radius-lg);
+}
+@media (max-width: 1000px) {
+  .studio-workspace .ac-canvas-left {
+    left: 60px;
+  }
+}
+.app-sidebar.is-collapsed .arcade-account summary > svg {
+  display: none;
+}
+.app-sidebar.is-collapsed .arcade-account summary {
+  justify-content: center;
+  padding-inline: 0;
+}
+.studio-tabs .copilot-settings-toggle {
+  margin-left: auto;
+}
+.copilot-settings {
+  gap: 12px;
+  padding: 20px 16px;
+  border: 0;
+}
+.copilot-settings h2 {
+  font-size: 16px;
+  margin: 12px 0;
+}
+.copilot-settings-label {
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+.copilot-settings-back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.copilot-settings-computer {
+  border-top: 1px solid var(--line);
+  margin-top: 8px;
+  padding-top: 16px;
+}
+.copilot-settings-computer h3 {
+  font-size: 14px;
+  margin: 0 0 12px;
+  color: var(--ink);
+}
+.copilot-settings-computer details {
+  margin-block: 12px;
+}
+.copilot-open-computer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  font-size: 12px;
+}
+.studio-workspace .ac-canvas-toolbar > .studio-back {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.copilot-settings-computer input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 0;
+  padding: 0;
+  flex: 0 0 16px;
+  accent-color: var(--accent);
+}
+.copilot-settings-computer label {
+  font-size: 12px;
+}
+.arcade .discover-head h1 {
+  font-size: clamp(28px, 3.2vw, 40px);
+  margin-top: 14px;
+}
+.catalog-featured {
+  margin-bottom: 36px;
+}
+.feature-game {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 280px;
+}
+.feature-game h2 {
+  font-size: clamp(24px, 2.4vw, 32px);
+}
+@media (max-width: 700px) {
+  .feature-game {
+    min-height: 220px;
+  }
+}
+/* A workflow-like canvas made from an SVG dot tile, without a gradient. */
+.studio-workspace .studio-preview-stage {
+  background-color: #e9edf4;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='1' cy='1' r='.8' fill='%239ba8bd' fill-opacity='.7'/%3E%3C/svg%3E");
+  background-attachment: local;
+  background-position: center;
+}
+.studio-workspace .studio-preview-stage:fullscreen .studio-preview-meta,
+.studio-workspace .studio-preview-stage:fullscreen .studio-preview-footer {
+  color: var(--ink-muted);
+}
+
+.game-play-button:hover,
+.arcade .primary:hover,
+.ac-button-primary:hover,
+.ac-composer-send:hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+/* Commons-inspired 8/10/12px corner scale and Lucide stroke weight are shared throughout. */
+.lucide {
+  display: inline-block;
+  vertical-align: middle;
+  stroke-width: 1.75;
+  flex-shrink: 0;
+}
+a > .lucide {
+  vertical-align: middle;
+}
+.game-artwork-fallback {
+  min-height: 0;
+}
+
+/* A restrained Commons-inspired colour blend, limited to placeholder artwork. */
+.game-artwork-fallback,
+.agent-select-avatar[style] {
+  background-image: linear-gradient(
+    135deg,
+    hsl(var(--art-hue, 260) 72% 86%),
+    hsl(calc(var(--art-hue, 260) + 28) 76% 78%)
+  );
+}
+
+/* Bring inherited Commons controls onto the same shared corner scale. */
+.ac-composer,
+.ac-window {
+  border-radius: var(--radius-lg);
+}
+.ac-composer-pill,
+.ac-composer-send,
+.ac-tool-button,
+.ac-window-tabs,
+.ac-recording-controls button,
+.ac-recording-timeline button {
+  border-radius: var(--radius-md);
+}
+.ac-attachment,
+.ac-attachment-icon,
+.ac-attachment button,
+.ac-context-chip,
+.ac-window-tabs button {
+  border-radius: var(--radius-sm);
+}

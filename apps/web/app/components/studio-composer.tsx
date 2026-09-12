@@ -1,12 +1,15 @@
 'use client'
 import { useEffect, useState, type ReactNode } from 'react'
-import { ChatComposer, type ComposerAttachment } from '@agent-commons/ui'
+import { type ComposerAttachment } from '@agent-commons/ui'
+import { ChatComposer } from './chat-composer'
+import { AgentSelect } from './agent-select'
 import { arcade } from '../../lib/api'
 
 export type CommonsAgent = {
   agentId: string
   name: string
-  modelId?: string
+  avatar?: string | null
+  modelId?: string | null
   modelProvider?: string
 }
 export function useArcadeIdentity() {
@@ -185,9 +188,16 @@ export function ArcadeComposer({
             ? 'Describe a game, an idea, or a change…'
             : 'Sign in to create with your Commons agents'
         }
-        agents={identity.agents.map((a) => ({ id: a.agentId, name: a.name }))}
-        agentId={identity.copilotId}
-        onAgentChange={onAgentChange}
+        agentPicker={
+          <AgentSelect
+            compact
+            agents={identity.agents}
+            value={identity.copilotId}
+            onChange={onAgentChange}
+            disabled={!identity.user || busy}
+            ariaLabel="Agent"
+          />
+        }
         models={[
           { id: '', name: 'Agent default' },
           ...identity.models.map((m) => ({

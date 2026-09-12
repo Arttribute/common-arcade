@@ -18,7 +18,8 @@ export function StudioHome() {
     [error, setError] = useState('')
   const [projects, setProjects] = useState<StudioProject[]>([])
   useEffect(() => {
-    if (identity.copilotId) setAgentId(identity.copilotId)
+    if (identity.copilotId)
+      setAgentId((current) => current || identity.copilotId)
   }, [identity.copilotId])
   useEffect(() => {
     if (identity.user)
@@ -45,7 +46,9 @@ export function StudioHome() {
       // shape in the studio instead of waiting on this page for it to appear.
       sessionStorage.setItem(
         `arcade-prompt:${project.id}`,
-        generate ? prompt : '',
+        generate
+          ? JSON.stringify({ message: prompt, agentId, attachments, model })
+          : '',
       )
       router.push(`/studio/${project.id}`)
     } catch (e) {
@@ -61,14 +64,20 @@ export function StudioHome() {
     }
   }
   return (
-    <main className="studio-home">
+    <main className="arcade studio-home" id="main">
       <Header />
+      <header className="page-heading shell">
+        <h1>
+          <span className="page-title">Studio</span>
+        </h1>
+        <p>Create and manage your games.</p>
+      </header>
       <section className="studio-home-create">
         <span className="studio-home-eyebrow">
           <Gamepad2 size={17} />
           Arcade Studio
         </span>
-        <h1>What shall we play?</h1>
+        <h2>What shall we play?</h2>
         <p>
           Create a game or simulation with your Commons agents.
           <br />
@@ -100,9 +109,9 @@ export function StudioHome() {
         )}
         <div className="studio-home-suggestions">
           {[
-            'A four-in-a-row strategy duel',
-            'A five-by-five line-building game',
-            'A fast competitive three-in-a-row variant',
+            'A neon racing game with drifting',
+            'A cooperative space adventure',
+            'A tactical card duel',
           ].map((idea) => (
             <button key={idea} onClick={() => setPrompt(idea)} disabled={busy}>
               {idea}
@@ -114,7 +123,7 @@ export function StudioHome() {
       {identity.user && (
         <section className="studio-home-projects">
           <div>
-            <h2>Your projects</h2>
+            <h2>Your games</h2>
             <button
               className="ac-button"
               disabled={busy}
@@ -132,12 +141,17 @@ export function StudioHome() {
                     title={p.document.title}
                     src={p.document.thumbnail}
                   />
-                  <h3>{p.document.title}</h3>
-                  <p>{p.document.description || 'Ready for your next idea.'}</p>
-                  <small>
-                    Revision {p.revision} ·{' '}
-                    {new Date(p.updatedAt).toLocaleDateString()}
-                  </small>
+                  <div className="studio-project-copy">
+                    <h3>{p.document.title}</h3>
+                    <p>
+                      {p.document.description || 'Ready for your next idea.'}
+                    </p>
+                    <small>
+                      Revision {p.revision} ·{' '}
+                      {new Date(p.updatedAt).toLocaleDateString()}
+                    </small>
+                  </div>
+                  <ArrowUpRight size={16} aria-hidden />
                 </Link>
               ))}
             </div>

@@ -1,6 +1,7 @@
 'use client'
 import { NETWORKS, usdcUnits, type EconomyConfig } from '@common-arcade/economy'
 import { formatUnits } from 'viem'
+import { Select, SelectOption } from './ui/select'
 export function EconomySettings({
   value,
   onChange,
@@ -38,33 +39,40 @@ export function EconomySettings({
       </label>
       {value.mode === 'escrow' && (
         <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-          <label>
-            Network{' '}
-            <select
+          <div className="field">
+            <span className="field-label">Network</span>
+            <Select
               value={value.network}
-              onChange={(e) =>
-                onChange({
-                  ...value,
-                  network: e.target.value as typeof value.network,
-                })
-              }
+              ariaLabel="Table payment network"
+              onValueChange={(network) => {
+                if (
+                  Object.hasOwn(NETWORKS, network) &&
+                  enabledNetworks.includes(network)
+                ) {
+                  onChange({
+                    ...value,
+                    network: network as typeof value.network,
+                  })
+                }
+              }}
             >
               {Object.values(NETWORKS)
-                .filter((n) => n.testnet)
-                .map((n) => (
-                  <option
-                    key={n.id}
-                    value={n.id}
-                    disabled={!enabledNetworks.includes(n.id)}
-                  >
-                    {n.chain.name}
-                    {enabledNetworks.includes(n.id)
-                      ? ''
-                      : ' — awaiting deployment'}
-                  </option>
+                .filter((network) => network.testnet)
+                .map((network) => (
+                  <SelectOption
+                    key={network.id}
+                    value={network.id}
+                    disabled={!enabledNetworks.includes(network.id)}
+                    title={network.chain.name}
+                    hint={
+                      enabledNetworks.includes(network.id)
+                        ? undefined
+                        : 'Unavailable'
+                    }
+                  />
                 ))}
-            </select>
-          </label>
+            </Select>
+          </div>
           <label>
             Stake per player (USDC){' '}
             <input

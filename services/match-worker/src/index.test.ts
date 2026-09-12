@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { gameDocumentSchema, replaySchema } from '@common-arcade/protocol'
 import { documentDigest, releaseManifest } from '@common-arcade/studio'
 import { LocalArcadePlatform } from './index.js'
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 async function setup() {
   const platform = await LocalArcadePlatform.create({
@@ -274,76 +278,113 @@ describe('local match worker boundary', () => {
     )
   })
 
-  it('advances a custom non-grid game on its authoritative fixed clock', async () => {
-    vi.useFakeTimers()
-    const document = gameDocumentSchema.parse({
-      kind: 'browser',
-      title: 'Clock race',
-      description: 'The first deterministic realtime worker fixture.',
-      entryFile: 'index.html',
-      play: {
-        mode: 'realtime',
-        seats: { min: 2, max: 2, default: 2 },
-        maxDecisionsPerSecond: 10,
-      },
-      runtime: {
-        kind: 'sandboxed-script',
-        entryFile: 'server.js',
-        tickRate: 20,
-        memoryMiB: 8,
-        timeoutMs: 20,
-      },
-      files: [
-        { path: 'index.html', content: '<main>Clock race</main>' },
-        {
-          path: 'server.js',
-          content:
-            'globalThis.arcadeGame={initialize:c=>({ticks:0,roster:c.roster}),validateAction:()=>null,applyAction:s=>({state:s,events:[]}),tick:s=>({state:{...s,ticks:s.ticks+1},events:[]}),observe:s=>({visibleState:s,legalActions:[]}),result:s=>s.ticks>=2?{winnerSeatId:s.roster[0].seatId}:null};',
-        },
-      ],
-    })
-    const digest = await documentDigest(document)
-    const project = {
-      id: 'prj_clock_race',
-      ownerId: 'clock_owner',
-      revision: 1,
-      digest,
-      document,
-      annotations: [],
-      createdAt: '2026-01-01T00:00:00.000Z',
-      updatedAt: '2026-01-01T00:00:00.000Z',
-    }
-    const release = {
-      id: 'rel_clock_race',
-      projectId: project.id,
-      revision: 1,
-      document,
-      digest,
-      manifest: await releaseManifest(project, 'rel_clock_race'),
-      ownerId: project.ownerId,
-      publishedAt: '2026-01-01T00:00:00.000Z',
-    }
-    const platform = await LocalArcadePlatform.create({
-      ticketSecret: new Uint8Array(32).fill(5),
-      loadRelease: async (id) => (id === release.id ? release : undefined),
-    })
-    const match = await platform.createMatch({
-      releaseId: release.id,
-      idempotencyKey: 'clock-race-match',
-    })
-    for (const [index, seat] of match.seats.entries())
-      await platform.claimSeat({
-        matchId: match.id,
-        seatId: seat.id,
-        actorId: `clock_actor_${index}`,
-        controllerId: `clock_controller_${index}`,
+  it.each(['owner', 'automatic'] as const)(
+    'completes every realtime round with %s restarts on its authoritative clock',
+    async (restartPolicy) => {
+      vi.useFakeTimers()
+      // WebCrypto threads can otherwise finish after the virtual timer queue
+      // drains during asynchronous round initialization.
+      vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (_, data) => {
+        const bytes = ArrayBuffer.isView(data)
+          ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+          : new Uint8Array(data)
+        return Uint8Array.from(createHash('sha256').update(bytes).digest())
+          .buffer
       })
-    await vi.runAllTimersAsync()
-    expect((await platform.getMatch(match.id)).status).toBe('completed')
-    expect(
-      platform.getReplay(match.id).timeline?.map((step) => step.kind),
-    ).toEqual(['tick', 'tick'])
-  })
+      const document = gameDocumentSchema.parse({
+        kind: 'browser',
+        title: 'Clock race',
+        description: 'The first deterministic realtime worker fixture.',
+        entryFile: 'index.html',
+        play: {
+          mode: 'realtime',
+          seats: { min: 2, max: 2, default: 2 },
+          maxDecisionsPerSecond: 10,
+        },
+        runtime: {
+          kind: 'sandboxed-script',
+          entryFile: 'server.js',
+          tickRate: 20,
+          memoryMiB: 8,
+          timeoutMs: 20,
+        },
+        files: [
+          { path: 'index.html', content: '<main>Clock race</main>' },
+          {
+            path: 'server.js',
+            content:
+              'globalThis.arcadeGame={initialize:c=>({ticks:0,roster:c.roster}),validateAction:()=>null,applyAction:s=>({state:s,events:[]}),tick:s=>({state:{...s,ticks:s.ticks+1},events:[]}),observe:s=>({visibleState:s,legalActions:[]}),result:s=>s.ticks>=2?{winnerSeatId:s.roster[0].seatId}:null};',
+          },
+        ],
+      })
+      const digest = await documentDigest(document)
+      const project = {
+        id: 'prj_clock_race',
+        ownerId: 'clock_owner',
+        revision: 1,
+        digest,
+        document,
+        annotations: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }
+      const release = {
+        id: 'rel_clock_race',
+        projectId: project.id,
+        revision: 1,
+        document,
+        digest,
+        manifest: await releaseManifest(project, 'rel_clock_race'),
+        ownerId: project.ownerId,
+        publishedAt: '2026-01-01T00:00:00.000Z',
+      }
+      const platform = await LocalArcadePlatform.create({
+        ticketSecret: new Uint8Array(32).fill(5),
+        loadRelease: async (id) => (id === release.id ? release : undefined),
+      })
+      const match = await platform.createMatch({
+        releaseId: release.id,
+        idempotencyKey: 'clock-race-match',
+        ownerId: 'clock_owner',
+        series: { maximumRounds: 3, restartPolicy },
+      })
+      for (const [index, seat] of match.seats.entries())
+        await platform.claimSeat({
+          matchId: match.id,
+          seatId: seat.id,
+          actorId: `clock_actor_${index}`,
+          controllerId: `clock_controller_${index}`,
+        })
+      try {
+        await vi.runAllTimersAsync()
+        if (restartPolicy === 'owner') {
+          for (let round = 2; round <= 3; round++) {
+            expect((await platform.getMatch(match.id)).series?.status).toBe(
+              'awaiting-restart',
+            )
+            await platform.restartRound(match.id, 'clock_owner')
+            await vi.runAllTimersAsync()
+          }
+        }
+        const finished = await platform.getMatch(match.id)
+        expect(finished.status).toBe('completed')
+        expect(finished.series).toMatchObject({
+          currentRound: 3,
+          maximumRounds: 3,
+          status: 'complete',
+          scores: { [match.seats[0]!.id]: 3 },
+        })
+        for (const round of [1, 2, 3])
+          expect(
+            platform
+              .getRoundReplay(match.id, round)
+              .timeline?.map((step) => step.kind),
+          ).toEqual(['tick', 'tick'])
+      } finally {
+        platform.close()
+      }
+    },
+  )
 })
 
 describe('durable match recovery', () => {
