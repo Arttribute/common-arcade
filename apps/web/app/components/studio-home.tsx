@@ -69,9 +69,7 @@ export function StudioHome() {
       <Header />
       <PageHeader title="Studio" description="Create and manage your games." />
       <section className="studio-home-create">
-        <h2>
-          What shall we <span className="hero-mark">play</span>?
-        </h2>
+        <h2>What shall we play?</h2>
         <p>
           Create a game or simulation with your Commons agents.
           <br />

@@ -361,14 +361,14 @@
  * marker highlight.
  *
  * Arcade's signature is a bright marigold orange, pulled toward yellow so black
- * type sits on it cleanly (11:1), with an electric sky blue as its complement
- * (10:1). Colour is spent the way Commons spends it — vividly, one place at a
+ * type sits on it cleanly (11:1), with an electric cyan as its complement
+ * (11:1). Colour is spent the way Commons spends it — vividly, one place at a
  * time: marigold marks the logo and page titles; the pair appear together only
- * where there is room to play (the landing hero, its animation, Studio's
- * prompt). Neither is ever used for chrome, borders or buttons. */
+ * where there is room to play (the landing hero and its animation). Neither is ever used for chrome, borders or buttons. */
 :root {
   --hl-primary: #ffb547;
-  --hl-secondary: #6cb6ff;
+  --hl-secondary: #22d3ee;
+  --hl-primary-soft: #ffd9a0;
   --title-highlight: var(--hl-primary);
   --title-highlight-ink: #0c0a09;
   --highlight-warm: var(--hl-secondary);
@@ -1480,10 +1480,8 @@
 }
 .hero-pixel {
   position: absolute;
-  width: 14px;
-  height: 14px;
-  border-radius: 2px;
-  will-change: opacity, transform;
+  border-radius: 1px;
+  will-change: opacity;
 }
 /* At phone width the claim spans the whole column, so there is no open space
    left for the pixels to sit in without landing on text. */
@@ -1830,16 +1828,6 @@
 .arcade.studio-workspace .studio-copilot .studio-conversation,
 .arcade.studio-workspace .studio-copilot .copilot-session-name {
   padding-inline: var(--space-2);
-}
-
-/* Studio's prompt echoes the landing hero's pair. */
-.arcade .studio-home-create h2 .hero-mark {
-  display: inline-block;
-  padding: 0 0.14em;
-  border-radius: 4px;
-  line-height: 1.15;
-  background: var(--hl-secondary);
-  color: var(--title-highlight-ink);
 }
 
 /* Closed rail: the account row is the avatar (or sign-in icon) alone, centred.
