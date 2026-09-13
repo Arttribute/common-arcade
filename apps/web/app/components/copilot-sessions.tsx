@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MessageSquare, ShieldCheck, Monitor, Check, X } from 'lucide-react'
 import { arcade, ArcadeApiError } from '../../lib/api'
+import { errorMessage } from '../../lib/error-message'
 import { Select, SelectOption } from './ui/select'
 import { SwitchField } from './ui/switch'
 import { Field } from './ui/field'
@@ -22,7 +23,7 @@ type Change = {
   args: unknown
   baseRevision: number
   status: string
-  result?: { error?: string }
+  result?: { error?: unknown }
 }
 export type ApprovalMode = 'manual' | 'automatic' | 'read-only'
 
@@ -215,6 +216,10 @@ export function useProjectCopilot(
     sessionId,
     setSessionId: rememberSession,
     changes,
+    updateChange: (change: Change) =>
+      setChanges((current) =>
+        current.map((item) => (item.id === change.id ? change : item)),
+      ),
     loading: loading || Boolean(activeJobId),
     activeJobId,
     recoveredRevision,
@@ -318,9 +323,15 @@ export function CopilotReview({
   onReviewing: (value: boolean) => void
 }) {
   const [applying, setApplying] = useState('')
+  const reviewing = useRef(false)
+  const [reviewStatus, setReviewStatus] = useState('')
   const disabled = busy || copilot.loading || Boolean(applying)
+  useEffect(() => setReviewStatus(''), [projectId, copilot.sessionId])
   async function review(change: Change, action: 'approve' | 'reject') {
+    if (reviewing.current || disabled || (action === 'approve' && dirty)) return
+    reviewing.current = true
     setApplying(change.id)
+    setReviewStatus('')
     onReviewing(true)
     copilot.setError('')
     try {
@@ -328,23 +339,38 @@ export function CopilotReview({
         `projects/${projectId}/copilot-changes/${change.id}/${action}`,
         {},
       )
+      copilot.updateChange(result)
       if (result.status === 'failed')
         throw new Error(
-          result.result?.error ?? 'The change could not be applied.',
+          errorMessage(
+            result.result?.error,
+            'The change could not be applied.',
+          ),
         )
-      if (result.status === 'applied') await onApplied()
+      if (result.status === 'applied') {
+        setReviewStatus('Change approved and saved.')
+        await onApplied()
+      } else if (result.status === 'rejected') {
+        setReviewStatus('Proposal rejected. The game was not changed.')
+      } else if (result.status === 'applying') {
+        setReviewStatus(
+          'This change is being applied. Reload the conversation to check its status.',
+        )
+      }
       await copilot.refresh()
     } catch (cause) {
       copilot.setError(
         cause instanceof Error ? cause.message : 'Could not review change.',
       )
     } finally {
+      reviewing.current = false
       setApplying('')
       onReviewing(false)
     }
   }
   return (
     <>
+      {reviewStatus && <p role="status">{reviewStatus}</p>}
       {copilot.jobError && (
         <p className="copilot-error" role="status">
           {copilot.jobError} You can continue this conversation.
@@ -370,7 +396,7 @@ export function CopilotReview({
         .filter(
           (change) =>
             change.sessionId === copilot.sessionId &&
-            change.status === 'pending',
+            ['pending', 'applying', 'failed'].includes(change.status),
         )
         .map((change) => (
           <details key={change.id} className="copilot-change">
@@ -381,17 +407,39 @@ export function CopilotReview({
               · revision {change.baseRevision}
             </summary>
             <pre>{JSON.stringify(change.args, null, 2)}</pre>
-            {dirty && <p>Save your edits before reviewing this proposal.</p>}
+            {change.status === 'failed' && (
+              <p role="alert" className="error-text">
+                {errorMessage(
+                  change.result?.error,
+                  'The change could not be applied.',
+                )}{' '}
+                Ask Copilot to repair the proposal, or reject it.
+              </p>
+            )}
+            {change.status === 'applying' && (
+              <p role="status">
+                Applying change…{' '}
+                <button
+                  disabled={disabled}
+                  onClick={() => void copilot.choose(copilot.sessionId)}
+                >
+                  Reload conversation
+                </button>
+              </p>
+            )}
+            {dirty && change.status === 'pending' && (
+              <p>Save your edits before approving this proposal.</p>
+            )}
             <div className="actions">
               <button
-                disabled={disabled || dirty}
+                disabled={disabled || dirty || change.status !== 'pending'}
                 onClick={() => void review(change, 'approve')}
               >
                 <Check size={14} />
-                Approve
+                {applying === change.id ? 'Reviewing…' : 'Approve'}
               </button>
               <button
-                disabled={disabled}
+                disabled={disabled || change.status === 'applying'}
                 onClick={() => void review(change, 'reject')}
               >
                 <X size={14} />

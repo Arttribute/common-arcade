@@ -545,6 +545,134 @@ describe('project conversations and reviewed edits', () => {
       ).revision,
     ).toBe(2)
   })
+  it.each(['missing-runtime', 'invalid-script'])(
+    'returns %s proposals to Copilot for repair before asking for approval',
+    async (failure) => {
+      const game = {
+        ...liveGame,
+        files:
+          failure === 'missing-runtime'
+            ? liveGame.files.filter((file) => file.path !== 'server.js')
+            : liveGame.files.map((file) =>
+                file.path === 'main.js'
+                  ? { ...file, content: file.content + " const unfinished = '" }
+                  : file,
+              ),
+      }
+      const calls = stubCommons({ game })
+      const app = createApp({
+        store: new MemoryDocumentStore(),
+        logRequests: false,
+      })
+      const project = await createProject(app)
+      const job = await turn(app, project.id, { approvalMode: 'manual' })
+      expect(job.status).toBe('ready')
+      const result = JSON.parse(
+        calls.find(
+          (call) =>
+            call.url.endsWith('/v1/agents/cli-tool-result') &&
+            call.body.requestId === 'req_write',
+        )!.body.result,
+      )
+      expect(typeof result.error).toBe('string')
+      expect(result.error).not.toContain('[object Object]')
+      if (failure === 'missing-runtime')
+        expect(result.error).toContain('runtime.entryFile')
+      expect(result.approvalRequired).toBeUndefined()
+      const changes = await (
+        await app.request(`/v1/projects/${project.id}/copilot-changes`, {
+          headers,
+        })
+      ).json()
+      expect(changes.changes).toEqual([])
+      const saved = await (
+        await app.request(`/v1/projects/${project.id}`, { headers })
+      ).json()
+      expect(saved.revision).toBe(1)
+    },
+  )
+  it('keeps legacy invalid proposals failed with readable errors and allows rejecting them', async () => {
+    stubCommons()
+    const store = new MemoryDocumentStore()
+    const app = createApp({ store, logRequests: false })
+    const project = await createProject(app)
+    await turn(app, project.id, { approvalMode: 'manual' })
+    const {
+      changes: [change],
+    } = await (
+      await app.request(`/v1/projects/${project.id}/copilot-changes`, {
+        headers,
+      })
+    ).json()
+    // Reproduce a proposal saved by the old manual flow with its server file missing.
+    await store.put(
+      'copilot-changes:usr_creator',
+      `${project.id}:${change.id}`,
+      {
+        ...change,
+        version: change.version + 1,
+        args: {
+          ...liveGame,
+          files: liveGame.files.filter((file) => file.path !== 'server.js'),
+        },
+      },
+      change.version,
+    )
+    const base = `/v1/projects/${project.id}/copilot-changes/${change.id}`
+    const decide = async (action: string) => {
+      const response = await app.request(`${base}/${action}`, {
+        method: 'POST',
+        headers,
+        body: '{}',
+      })
+      expect(response.status).toBe(200)
+      return response.json()
+    }
+    const failed = await decide('approve')
+    expect(failed.status).toBe('failed')
+    expect(failed.result.error).toContain('runtime.entryFile')
+    expect(failed.result.error).not.toContain('[object Object]')
+    expect((await decide('approve')).status).toBe('failed')
+    expect((await decide('reject')).status).toBe('rejected')
+    expect((await decide('reject')).status).toBe('rejected')
+    expect((await decide('approve')).status).toBe('rejected')
+    const saved = await (
+      await app.request(`/v1/projects/${project.id}`, { headers })
+    ).json()
+    expect(saved.revision).toBe(1)
+    expect(saved.document).toEqual(project.document)
+  })
+  it('rejects a valid proposal without saving it and cannot approve it afterwards', async () => {
+    stubCommons()
+    const app = createApp({
+      store: new MemoryDocumentStore(),
+      logRequests: false,
+    })
+    const project = await createProject(app)
+    await turn(app, project.id, { approvalMode: 'manual' })
+    const {
+      changes: [change],
+    } = await (
+      await app.request(`/v1/projects/${project.id}/copilot-changes`, {
+        headers,
+      })
+    ).json()
+    const base = `/v1/projects/${project.id}/copilot-changes/${change.id}`
+    for (const action of ['reject', 'reject', 'approve']) {
+      const response = await app.request(`${base}/${action}`, {
+        method: 'POST',
+        headers,
+        body: '{}',
+      })
+      expect(response.status).toBe(200)
+      expect((await response.json()).status).toBe('rejected')
+    }
+    const saved = await (
+      await app.request(`/v1/projects/${project.id}`, { headers })
+    ).json()
+    expect(saved.revision).toBe(1)
+    expect(saved.document).toEqual(project.document)
+  })
   it('rejects stale approvals after another revision and supports rejecting proposals', async () => {
     stubCommons()
     const app = createApp({
