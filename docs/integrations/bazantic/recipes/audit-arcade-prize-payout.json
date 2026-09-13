@@ -92,7 +92,7 @@
   "model": "anthropic/claude-sonnet-4.6",
   "tool_bindings": [
     {
-      "gateway_slug": "ARCADE_PAYMENTS_GATEWAY_SLUG",
+      "gateway_slug": "ga4s6ugwlrh57kwd7ejatxx2ni",
       "tool_name": "getPaidMatch"
     },
     {

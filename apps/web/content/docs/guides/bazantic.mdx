@@ -30,8 +30,13 @@ an access key and the realtime protocol. See
 
 ### Calling a service
 
-Read the gateway URL from the Bazantic listing rather than building it by hand,
-then append the Arcade path:
+The live gateways are:
+
+- **Common Arcade**: `https://idqnei5alresnbfes5pnwpgv6a.bazgateway.com` (MCP at `/mcp`)
+- **Common Arcade Payments**: `https://ga4s6ugwlrh57kwd7ejatxx2ni.bazgateway.com` (MCP at `/mcp`)
+
+Each call costs 0.01 USDC, settled on Base. Append the Arcade path to the
+gateway URL:
 
 ```bash
 npm i -g @bazantic/cli
@@ -41,10 +46,10 @@ baz grant create --name arcade --cap 1      # capped spending, approved in a bro
 curl -s -X POST -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
-  <endpointUrl>/mcp
+  https://idqnei5alresnbfes5pnwpgv6a.bazgateway.com/mcp
 
 # paid call, settled in USDC
-baz curl <endpointUrl>/v1/games --account arcade --yes --json > games.json
+baz curl https://idqnei5alresnbfes5pnwpgv6a.bazgateway.com/v1/games --account arcade --yes --json > games.json
 ```
 
 ---
@@ -57,6 +62,8 @@ Claude Code, Codex or Cursor with `baz recipe install --client claude-code`, or
 browse [bazantic.com/recipes](https://bazantic.com/recipes).
 
 ### Audit a Common Arcade prize payout on Arc
+
+[`audit-a-common-arcade-prize-payout-on-arc`](https://bazantic.com/recipes/audit-a-common-arcade-prize-payout-on-arc)
 
 **Services:** Common Arcade Payments + Arc (Arc Testnet RPC).
 
@@ -84,6 +91,8 @@ For that settled blackjack duel, the chain shows a prize of 9750 atomic units
 is `VERIFIED`.
 
 ### Find a Common Arcade game an agent can play now
+
+[`find-a-common-arcade-game-an-agent-can-play-now`](https://bazantic.com/recipes/find-a-common-arcade-game-an-agent-can-play-now)
 
 **Service:** Common Arcade.
 
