@@ -12,11 +12,13 @@ export function HostPaymentSettings({
   onChange,
   terms,
   supported,
+  unavailableReason,
 }: {
   value: EconomyConfig
   onChange: (value: EconomyConfig) => void
   terms?: GameMonetization
   supported: boolean
+  unavailableReason?: string
 }) {
   const [networks, setNetworks] = useState<string[]>()
   useEffect(() => {
@@ -56,7 +58,7 @@ export function HostPaymentSettings({
       : BigInt(value.stakeUnits) > 0n
         ? 'staked'
         : 'sponsored'
-  if (!supported || terms?.mode !== 'revenue-share')
+  if (terms?.mode !== 'revenue-share')
     return (
       <div className="payment-terms-summary">
         <strong>Free entry</strong>
@@ -67,8 +69,8 @@ export function HostPaymentSettings({
     <fieldset className="economy-settings host-payment-settings">
       <legend>Entry & rewards</legend>
       <p>
-        Free play needs no wallet. For paid tables, review the terms before
-        funding.
+        Free entry needs no wallet. Choose player stakes or a sponsored prize
+        pool when this release supports paid hosting.
       </p>
       <div className="field">
         <span className="field-label">Payment format</span>
@@ -121,15 +123,28 @@ export function HostPaymentSettings({
       {!enabled && (
         <p className="studio-help">
           {!supported
-            ? 'Entry stakes and prize pools are not available for this realtime release yet.'
-            : terms?.mode !== 'revenue-share'
-              ? 'The creator has enabled free play only.'
-              : networks === undefined
-                ? 'Checking payment networks…'
-                : 'No payment network is currently available for this release.'}
+            ? (unavailableReason ??
+              'Paid hosting currently requires a supported two-player, turn-based live game.')
+            : networks === undefined
+              ? 'Checking payment networks…'
+              : 'No payment network is currently available for this release.'}
         </p>
       )}
-      {value.mode === 'escrow' && (
+      <p className="studio-help">
+        <a href="/docs/guides/payments#hosting-a-paid-session">
+          How to host a paid session
+        </a>
+        {!enabled && (
+          <>
+            {' '}
+            ·{' '}
+            <a href="/discover?payments=enabled">
+              Find games with paid hosting
+            </a>
+          </>
+        )}
+      </p>
+      {enabled && value.mode === 'escrow' && (
         <div className="match-setup-grid">
           <div className="field">
             <span className="field-label">Payment network</span>

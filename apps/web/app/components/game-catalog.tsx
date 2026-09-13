@@ -7,12 +7,16 @@ import { legacyGameCovers } from '../lib/legacy-game-covers'
 import { GameArtwork } from './game-artwork'
 import { Tab, Tabs } from './ui/tabs'
 import { Select, SelectOption } from './ui/select'
+import { offersPaidHosting } from '../../lib/host-payments'
+import { SwitchField } from './ui/switch'
 import { PageHeader } from './page-header'
 
 export function GameCatalog({
   games: catalog,
+  initialPaidOnly = false,
 }: {
   games: (GameManifest & { isFeatured?: boolean })[]
+  initialPaidOnly?: boolean
 }) {
   const games = catalog.map((game) => ({
     ...game,
@@ -21,11 +25,13 @@ export function GameCatalog({
       thumbnail: game.metadata.thumbnail || legacyGameCovers[game.metadata.id],
     },
   }))
+  const [paidOnly, setPaidOnly] = useState(initialPaidOnly)
   const [query, setQuery] = useState(''),
     [mode, setMode] = useState('all'),
     [order, setOrder] = useState('az')
   const filtered = games.filter(
     (g) =>
+      (!paidOnly || offersPaidHosting(g)) &&
       (mode === 'all' || g.spec.mode === mode) &&
       `${g.metadata.title} ${g.metadata.summary} ${g.metadata.tags.join(' ')}`
         .toLowerCase()
@@ -44,7 +50,7 @@ export function GameCatalog({
         description="New worlds, friendly rivals, and games made by people and agents."
       />
       <div className="catalog shell">
-        {!query && mode === 'all' && featured.length > 0 && (
+        {!paidOnly && !query && mode === 'all' && featured.length > 0 && (
           <section className="catalog-featured" aria-label="Featured games">
             {featured.map((game) => (
               <Link
@@ -103,6 +109,17 @@ export function GameCatalog({
             <SelectOption value="za" title="Name: Z–A" />
           </Select>
         </div>
+        <SwitchField
+          checked={paidOnly}
+          onCheckedChange={setPaidOnly}
+          label="Games with paid hosting"
+        />
+        {paidOnly && (
+          <p className="field-hint">
+            Published games that offer stakes or sponsored prizes. Available
+            networks are checked when you host.
+          </p>
+        )}
         <section className="catalog-grid" aria-label="Games">
           {visible.map((game) => (
             <Link
@@ -153,6 +170,7 @@ export function GameCatalog({
                 onClick={() => {
                   setQuery('')
                   setMode('all')
+                  setPaidOnly(false)
                 }}
               >
                 Clear filters

@@ -873,6 +873,23 @@ export function GameStudio({
     window.history.replaceState(null, '', `/studio/${p.id}`)
     return p
   }
+  async function publish() {
+    if (!document.thumbnail) {
+      setWorkspaceGroup('publishing')
+      showLeftPanel(true)
+      throw new Error('Add a game thumbnail in Publishing before publishing.')
+    }
+    const p = !project || dirty ? await save() : project
+    const release = await arcade<StudioRelease>(
+      `projects/${p.id}/publish`,
+      {},
+      'POST',
+      { 'If-Match': String(p.revision) },
+    )
+    setProject({ ...p, releaseId: release.id })
+    setPublicationRefresh((value) => value + 1)
+    setNotice('Published. Your game is now in the Arcade.')
+  }
   async function setCollaborators(
     collaborators: NonNullable<StudioProject['collaborators']>,
   ) {
@@ -1494,29 +1511,7 @@ export function GameStudio({
                   {isOwner && liveReadiness.liveReady ? (
                     <Button
                       disabled={!!busy}
-                      onClick={() =>
-                        void task('publish', async () => {
-                          if (!document.thumbnail) {
-                            setWorkspaceGroup('publishing')
-                            showLeftPanel(true)
-                            throw new Error(
-                              'Add a game thumbnail in Publishing before publishing.',
-                            )
-                          }
-                          const p = !project || dirty ? await save() : project
-                          const release = await arcade<StudioRelease>(
-                            `projects/${p.id}/publish`,
-                            {},
-                            'POST',
-                            { 'If-Match': String(p.revision) },
-                          )
-                          setProject({ ...p, releaseId: release.id })
-                          setPublicationRefresh((value) => value + 1)
-                          setNotice(
-                            'Published. Your game is now in the Arcade.',
-                          )
-                        })
-                      }
+                      onClick={() => void task('publish', publish)}
                       variant="primary"
                     >
                       <Upload size={14} />
@@ -1561,6 +1556,32 @@ export function GameStudio({
                   onChange={(monetization) => update({ monetization })}
                   disabled={!isOwner}
                 />
+                <div className="studio-section">
+                  <p className="studio-help">
+                    Save keeps these settings in your draft. Publish releases
+                    the current game, including these settings, for new
+                    sessions. Existing sessions keep their terms.
+                  </p>
+                  {document.monetization?.mode === 'revenue-share' &&
+                    isBrowserGame(document) &&
+                    document.play?.mode !== 'turn-based' && (
+                      <p className="studio-help" role="status">
+                        You can publish these earnings settings, but stakes and
+                        prize pools are not supported for this game mode yet.
+                        Paid hosting currently requires a two-player, turn-based
+                        game.
+                      </p>
+                    )}
+                  {isOwner && (
+                    <Button
+                      variant="primary"
+                      disabled={!!busy || !liveReadiness.liveReady}
+                      onClick={() => void task('publish', publish)}
+                    >
+                      <Upload size={14} /> Save & publish payment settings
+                    </Button>
+                  )}
+                </div>
                 {project?.unresolvedRemixRoyalty && (
                   <p className="studio-help">
                     This source has legacy royalty terms without payout

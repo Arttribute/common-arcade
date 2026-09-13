@@ -23,6 +23,7 @@ export function MatchLauncher({
   license,
   paymentTerms,
   paidMatchSupported = false,
+  paymentUnavailableReason,
 }: {
   releaseId: string
   gameId: string
@@ -31,6 +32,7 @@ export function MatchLauncher({
   license?: string
   paymentTerms?: GameMonetization
   paidMatchSupported?: boolean
+  paymentUnavailableReason?: string
 }) {
   const router = useRouter()
   const [signedIn, setSignedIn] = useState(false)
@@ -254,6 +256,7 @@ export function MatchLauncher({
                   onChange={setEconomy}
                   terms={paymentTerms}
                   supported={paidMatchSupported}
+                  unavailableReason={paymentUnavailableReason}
                 />
                 {!browserGame && economy.mode === 'free' ? (
                   <details className="payment-disclosure">

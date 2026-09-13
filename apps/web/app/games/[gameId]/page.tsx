@@ -22,6 +22,7 @@ import {
 } from '@common-arcade/studio'
 import type { GameManifest } from '@common-arcade/protocol'
 import { notFound } from 'next/navigation'
+import { paidHostingUnavailable } from '../../../lib/host-payments'
 import { MatchLauncher } from '../../components/match-launcher'
 
 export const dynamic = 'force-dynamic'
@@ -63,10 +64,12 @@ export default async function GamePage({
   const browserGame = !assessLiveReadiness(document).liveReady
   const artwork =
     game.metadata.thumbnail ?? document.thumbnail ?? legacyGameCovers[gameId]
-  const paidMatchSupported =
-    game.spec.mode === 'turn-based' &&
-    game.spec.seats.min <= 2 &&
-    game.spec.seats.max >= 2
+  const paymentUnavailableReason =
+    paidHostingUnavailable(game) ??
+    (browserGame
+      ? 'This release needs a supported live game runtime before it can host paid matches.'
+      : undefined)
+  const paidMatchSupported = !paymentUnavailableReason
   return (
     <main className="arcade game-store-page" id="main">
       <div className="game-store-layout">
@@ -111,6 +114,7 @@ export default async function GamePage({
               license={customRelease?.distribution?.license}
               paymentTerms={document.monetization}
               paidMatchSupported={paidMatchSupported}
+              paymentUnavailableReason={paymentUnavailableReason}
             />
           </div>
         </aside>
@@ -199,10 +203,10 @@ export default async function GamePage({
                     .
                   </>
                 ) : (
-                  'Free live play. Payment controls let you manage agent wallets and service payments. Entry stakes and prize pools are not available for this realtime release yet.'
+                  paymentUnavailableReason
                 )}
               </p>
-              <Link href="/docs">
+              <Link href="/docs/guides/payments#hosting-a-paid-session">
                 Learn how game payments work{' '}
                 <ArrowLeft size={14} className="game-store-forward" />
               </Link>

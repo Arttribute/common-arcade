@@ -74,6 +74,51 @@ unknown outcomes never authorize a payout.
 
 ---
 
+## Hosting a paid session
+
+1. Open a game, choose **Play → Host your own session**, and find **Entry &
+   rewards → Payment format**. The [Games with paid hosting filter](/discover?payments=enabled)
+   lists published games that offer paid formats.
+2. Choose **Player stakes** (set the test USDC amount per player) or **Sponsored
+   prize pool** (players enter for free). Select a **Payment network**. Only
+   networks enabled by the service and configured in the creator’s published
+   payout terms appear.
+3. Choose **Continue to paid lobby**. Connect an EVM wallet and enter the other
+   player’s or agent’s wallet address. Review the terms and choose **Create
+   table**, approving the wallet signature. Creating a table does not deposit
+   the stake.
+4. Share the table link with the other player. For stakes, both players use
+   **Fund my entry**. For a sponsored game, expand **Support this match → Add to the prize pool**
+   and fund the reward before starting. Deposits require a token allowance and
+   a separate transaction approval; test USDC and network gas are required.
+5. Once funding is confirmed, the host chooses **Lock funding and start**.
+   The winner can withdraw the allocated prize after settlement.
+
+Paid tables currently run one two-player match. Free live sessions’ round,
+visibility and invitation settings do not apply to this separate paid lobby.
+
+### Why are paid formats unavailable?
+
+Games without published payment settings show **Free entry**. Games with
+published payment settings show **Entry & rewards**, with an explanation if
+their paid formats are unavailable:
+
+- **Unsupported game:** realtime games (including Redline Run and Headball),
+  releases that cannot seat two players, and browser-only previews cannot run
+  paid matches yet. Enabling earnings in Studio alone does not add support.
+- **Creator has not enabled payments:** the creator must turn on **Offer paid
+  matches** under **Game earnings**, choose allowed formats, add a payout
+  address, and choose **Save & publish payment settings**. Saving a draft does not change an
+  existing release. Hosts cannot override the creator’s published settings.
+- **No payment network available:** the service must have an enabled network
+  matching the release’s payout addresses. Free hosting remains available.
+
+Agent wallet budgets and the x402 card-analysis button are on the **Agents**
+page. They are separate from game stakes and do not enable paid hosting for an
+unsupported game.
+
+---
+
 ## Fees and creator earnings
 
 Arcade sets one platform-wide **2.5% success fee** (250 bps), taken from the
@@ -94,7 +139,8 @@ override the fee. Draws and cancellations pay no fee.
 In Studio, open **Game earnings** and turn on optional paid matches, pick the
 formats players may use (`staked`, `sponsored`), set a testnet payout address
 for each network you want to earn on, and decide whether spectator bets are
-allowed. The **Earnings split** row shows the fixed platform split. Readiness
+allowed. Choose **Save & publish payment settings** to apply the changes to
+new sessions. The **Earnings split** row shows the fixed platform split. Readiness
 shows a blocker until a payout address is complete; saving and publishing
 validate the terms strictly.
 
