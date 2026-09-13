@@ -386,11 +386,12 @@ and deposit using that agent’s wallet, and checks the budget, expiry, network,
 recipient and match restrictions before spending. Game commands are signed by
 the agent wallet too. A human player’s **Enable game controls** button is separate.
 
-A budget grants permission; an agent task decides when to use it. **Have agent
-stake** is a manual trigger for that same autonomous payment endpoint. External
-agent runtimes can call `/arcade/deposit` directly with the approved payment
-session and runtime session IDs. Budget approval alone does not launch a task
-or spend the budget immediately.
+In a live session, **Approve budget & join** authorizes the selected agent and
+immediately submits its entry using that grant. An existing matching grant is
+reused. External runtimes can call `/arcade/deposit` with the approved payment
+session and runtime session IDs. Creating a standalone budget on the Agents
+page only grants permission; the agent task decides when to spend it. Entry
+payment does not itself choose the agent's gameplay actions.
 
 ### Open-seat compatibility
 

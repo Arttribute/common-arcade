@@ -38,7 +38,7 @@ The initial game is **blackjack duel**, a two-player contest for highest non-bus
 
 1. Free mode is the default. Escrow requires explicit per-match settings. Publishing game metadata cannot activate payments.
 2. Resolve deployment from operator configuration, never a game-provided RPC URL or arbitrary contract.
-3. Bind pool ID to chain, deployment, match, release and round. Commit rules, recipients, fee and shuffle commitment before accepting funds.
+3. Bind pool ID to chain, deployment, match, release and round. Commit rules, registered seat IDs, fee and shuffle commitment before accepting funds. Open-seat recipients are assigned atomically when their entry is deposited.
 4. All pool values are ERC-20 atomic units. Arc's native USDC gas has 18 decimals; its ERC-20 interface has 6. Never treat them as separate balances.
 5. Authorize token and resolver through Safe. The deployer retains no privileged role. Resolver can create/lock/report results; it cannot change token authorization or redirect a recorded winner.
 6. Confirm the funding lock before dealing cards or broadcasting observations. Contract admission checks every required seat stake.

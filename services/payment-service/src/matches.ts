@@ -96,6 +96,7 @@ export class MatchHost {
       (id) => this.adapters[id]?.deployment.openSeats,
     )
   }
+  private lobbyReadAt = new Map<string, number>()
   private closing = false
   private starting = new Set<string>()
   private runtimes = new Map<string, AuthoritativeMatch<unknown, unknown>>()
@@ -626,7 +627,10 @@ export class MatchHost {
     if (record.openSeats && record.stage === 'funding')
       return this.exclusive(id, async () => {
         const latest = await this.require(id)
-        await this.refreshSeats(latest)
+        if (Date.now() - (this.lobbyReadAt.get(id) ?? 0) >= 2000) {
+          await this.refreshSeats(latest)
+          this.lobbyReadAt.set(id, Date.now())
+        }
         return this.viewRecord(latest)
       })
     if (
