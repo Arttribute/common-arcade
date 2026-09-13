@@ -3122,11 +3122,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
             </div>
           )
         ) : (
-          <div
-            className="studio-preview-stage"
-            ref={previewStageRef}
-            style={{ backgroundSize: `${24 * zoom}px ${24 * zoom}px` }}
-          >
+          <div className="studio-preview-stage" ref={previewStageRef}>
             {fullscreen ? (
               <button
                 className="studio-fullscreen-exit"

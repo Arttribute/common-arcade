@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, ArrowUpRight } from 'lucide-react'
+import { ArrowRight, ChevronRight } from 'lucide-react'
 import { GameArtwork } from './components/game-artwork'
 import { legacyGameCovers } from './lib/legacy-game-covers'
 import { Header } from './components/header'
@@ -48,19 +48,23 @@ export default function HomePage() {
       <Header />
       <section className="hero shell">
         <h1>
-          Your imagination.<span>Ready to play.</span>
+          Your <span className="hero-mark">imagination</span>.
+          <br />
+          Ready to <span className="hero-mark is-warm">play</span>.
         </h1>
-        <p className="hero-copy">
-          Common Arcade is where games get made and played together. Build one
-          with an agent, open it to the world, and take a seat.
-        </p>
-        <div className="actions">
-          <Link className="primary" href="/studio">
-            Create a game <ArrowUpRight size={15} />
-          </Link>
-          <Link className="secondary" href="/discover">
-            Explore the arcade
-          </Link>
+        <div className="hero-foot">
+          <p className="hero-copy">
+            Create, discover, and play web games. Build with an agent, bring
+            your own ideas, and share a world worth exploring.
+          </p>
+          <div className="actions">
+            <Link className="primary" href="/studio">
+              Create a game
+            </Link>
+            <Link className="secondary" href="/discover">
+              <ChevronRight size={16} aria-hidden /> Explore the arcade
+            </Link>
+          </div>
         </div>
       </section>
       <section className="home-showcase shell">

@@ -7,6 +7,7 @@ import { legacyGameCovers } from '../lib/legacy-game-covers'
 import { GameArtwork } from './game-artwork'
 import { Tab, Tabs } from './ui/tabs'
 import { Select, SelectOption } from './ui/select'
+import { PageHeader } from './page-header'
 
 export function GameCatalog({
   games: catalog,
@@ -37,130 +38,130 @@ export function GameCatalog({
   )
   const featured = games.filter((game) => game.isFeatured)
   return (
-    <div className="catalog shell">
-      <div className="catalog-heading">
-        <h1>Explore the arcade</h1>
-      </div>
-      <div className="catalog-toolbar">
-        <label className="catalog-search">
-          <Search size={16} aria-hidden />
-          <input
-            type="search"
-            aria-label="Search games"
-            placeholder="Search games"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </label>
-        <Tabs
-          value={mode}
-          onValueChange={setMode}
-          ariaLabel="Game type"
-          className="catalog-filters"
-        >
-          {[
-            ['all', 'All games'],
-            ['realtime', 'Real time'],
-            ['turn-based', 'Turn based'],
-            ['simultaneous', 'Simultaneous'],
-            ['hybrid', 'Hybrid'],
-          ]
-            .filter(
-              ([id]) => id === 'all' || games.some((g) => g.spec.mode === id),
-            )
-            .map(([id, label]) => (
-              <Tab key={id} value={id!}>
-                {label}
-              </Tab>
+    <>
+      <PageHeader title="Explore the arcade" />
+      <div className="catalog shell">
+        {!query && mode === 'all' && featured.length > 0 && (
+          <section className="catalog-featured" aria-label="Featured games">
+            {featured.map((game) => (
+              <Link
+                key={game.metadata.id}
+                href={`/games/${game.metadata.id}`}
+                className="feature-game"
+              >
+                <GameArtwork
+                  title={game.metadata.title}
+                  src={game.metadata.thumbnail}
+                  mode={game.spec.mode}
+                />
+                <div>
+                  <h2>{game.metadata.title}</h2>
+                  <p>{game.metadata.summary}</p>
+                </div>
+              </Link>
             ))}
-        </Tabs>
-        <Select value={order} onValueChange={setOrder} ariaLabel="Sort games">
-          <SelectOption value="az" title="Name: A–Z" />
-          <SelectOption value="za" title="Name: Z–A" />
-        </Select>
-      </div>
-      {!query && mode === 'all' && featured.length > 0 && (
-        <section className="catalog-featured" aria-label="Featured games">
-          {featured.map((game) => (
+          </section>
+        )}
+        <div className="catalog-toolbar">
+          <label className="catalog-search">
+            <Search size={16} aria-hidden />
+            <input
+              type="search"
+              aria-label="Search games"
+              placeholder="Search games"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+          <Tabs
+            value={mode}
+            onValueChange={setMode}
+            ariaLabel="Game type"
+            className="catalog-filters"
+          >
+            {[
+              ['all', 'All games'],
+              ['realtime', 'Real time'],
+              ['turn-based', 'Turn based'],
+              ['simultaneous', 'Simultaneous'],
+              ['hybrid', 'Hybrid'],
+            ]
+              .filter(
+                ([id]) => id === 'all' || games.some((g) => g.spec.mode === id),
+              )
+              .map(([id, label]) => (
+                <Tab key={id} value={id!}>
+                  {label}
+                </Tab>
+              ))}
+          </Tabs>
+          <Select value={order} onValueChange={setOrder} ariaLabel="Sort games">
+            <SelectOption value="az" title="Name: A–Z" />
+            <SelectOption value="za" title="Name: Z–A" />
+          </Select>
+        </div>
+        <section className="catalog-grid" aria-label="Games">
+          {visible.map((game) => (
             <Link
-              key={game.metadata.id}
+              className="catalog-card"
               href={`/games/${game.metadata.id}`}
-              className="feature-game"
+              key={game.metadata.id}
             >
               <GameArtwork
                 title={game.metadata.title}
                 src={game.metadata.thumbnail}
                 mode={game.spec.mode}
               />
-              <div>
-                <h2>{game.metadata.title}</h2>
-                <p>{game.metadata.summary}</p>
+              <div className="catalog-card-info">
+                <div>
+                  <h3>{game.metadata.title}</h3>
+                  <p>{game.metadata.summary}</p>
+                </div>
+              </div>
+              <div className="catalog-card-meta">
+                <span>{game.spec.mode.replaceAll('-', ' ')}</span>
+                <span>
+                  <Users size={12} />
+                  {game.spec.seats.min === game.spec.seats.max
+                    ? game.spec.seats.max
+                    : `${game.spec.seats.min}–${game.spec.seats.max}`}{' '}
+                  players
+                </span>
               </div>
             </Link>
           ))}
         </section>
-      )}
-      <section className="catalog-grid" aria-label="Games">
-        {visible.map((game) => (
-          <Link
-            className="catalog-card"
-            href={`/games/${game.metadata.id}`}
-            key={game.metadata.id}
-          >
-            <GameArtwork
-              title={game.metadata.title}
-              src={game.metadata.thumbnail}
-              mode={game.spec.mode}
-            />
-            <div className="catalog-card-info">
-              <div>
-                <h3>{game.metadata.title}</h3>
-                <p>{game.metadata.summary}</p>
-              </div>
-            </div>
-            <div className="catalog-card-meta">
-              <span>{game.spec.mode.replaceAll('-', ' ')}</span>
-              <span>
-                <Users size={12} />
-                {game.spec.seats.min === game.spec.seats.max
-                  ? game.spec.seats.max
-                  : `${game.spec.seats.min}–${game.spec.seats.max}`}{' '}
-                players
-              </span>
-            </div>
-          </Link>
-        ))}
-      </section>
-      {!visible.length && (
-        <div className="catalog-empty">
-          <Search size={26} />
-          <h2>
-            {games.length
-              ? 'No games found'
-              : 'The next great game could be yours.'}
-          </h2>
-          <p>
-            {games.length
-              ? 'Try a different name or game type.'
-              : 'Create a game in Studio and share it with the arcade.'}
-          </p>
-          {games.length ? (
-            <button
-              className="secondary"
-              onClick={() => {
-                setQuery('')
-                setMode('all')
-              }}
-            >
-              Clear filters
-            </button>
-          ) : (
-            <Link className="primary" href="/studio">
-              Create a game
-            </Link>
-          )}
-        </div>
-      )}
-    </div>
+        {!visible.length && (
+          <div className="catalog-empty">
+            <Search size={26} />
+            <h2>
+              {games.length
+                ? 'No games found'
+                : 'The next great game could be yours.'}
+            </h2>
+            <p>
+              {games.length
+                ? 'Try a different name or game type.'
+                : 'Create a game in Studio and share it with the arcade.'}
+            </p>
+            {games.length ? (
+              <button
+                className="secondary"
+                onClick={() => {
+                  setQuery('')
+                  setMode('all')
+                }}
+              >
+                Clear filters
+              </button>
+            ) : (
+              <Link className="primary" href="/studio">
+                Create a game
+              </Link>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   )
 }

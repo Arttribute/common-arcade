@@ -1,10 +1,11 @@
 'use client'
 import { Header } from './header'
+import { PageHeader } from './page-header'
 import { GameArtwork } from './game-artwork'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowUpRight, Plus } from 'lucide-react'
+import { ArrowUpRight, ChevronRight, Plus } from 'lucide-react'
 import { emptyBrowserDocument, type StudioProject } from '@common-arcade/studio'
 import { ArcadeComposer, useArcadeIdentity } from './studio-composer'
 import { arcade } from '../../lib/api'
@@ -66,10 +67,7 @@ export function StudioHome() {
   return (
     <main className="arcade studio-home" id="main">
       <Header />
-      <header className="page-heading shell">
-        <h1>Studio</h1>
-        <p>Create and manage your games.</p>
-      </header>
+      <PageHeader title="Studio" description="Create and manage your games." />
       <section className="studio-home-create">
         <h2>What shall we play?</h2>
         <p>
@@ -115,42 +113,50 @@ export function StudioHome() {
         </div>
       </section>
       {identity.user && (
-        <section className="studio-home-projects">
-          <div>
+        <section className="studio-games">
+          <div className="studio-games-heading">
             <h2>Your games</h2>
             <button
-              className="ac-button"
+              className="ui-button"
               disabled={busy}
               onClick={() => void create([], false)}
             >
-              <Plus size={14} />
+              <Plus size={14} aria-hidden />
               Blank project
             </button>
           </div>
           {projects.length ? (
-            <div className="studio-project-grid">
+            <div className="studio-games-list">
               {projects.map((p) => (
-                <Link href={`/studio/${p.id}`} key={p.id}>
-                  <GameArtwork
-                    title={p.document.title}
-                    src={p.document.thumbnail}
-                  />
-                  <div className="studio-project-copy">
-                    <h3>{p.document.title}</h3>
-                    <p>
-                      {p.document.description || 'Ready for your next idea.'}
-                    </p>
+                <Link
+                  href={`/studio/${p.id}`}
+                  key={p.id}
+                  className="studio-game-row"
+                >
+                  <span className="studio-game-icon" aria-hidden>
+                    <GameArtwork
+                      title={p.document.title}
+                      src={p.document.thumbnail}
+                    />
+                  </span>
+                  <span className="studio-game-copy">
+                    <strong>{p.document.title}</strong>
                     <small>
-                      Revision {p.revision} ·{' '}
-                      {new Date(p.updatedAt).toLocaleDateString()}
+                      {p.document.description || 'Ready for your next idea.'}
                     </small>
-                  </div>
-                  <ArrowUpRight size={16} aria-hidden />
+                  </span>
+                  <ChevronRight
+                    size={16}
+                    className="studio-game-chevron"
+                    aria-hidden
+                  />
                 </Link>
               ))}
             </div>
           ) : (
-            <p>Your saved games will appear here.</p>
+            <p className="studio-games-empty">
+              Your saved games will appear here.
+            </p>
           )}
         </section>
       )}

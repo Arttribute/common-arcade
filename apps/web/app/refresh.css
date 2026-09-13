@@ -1085,11 +1085,6 @@ main.arcade.studio-workspace {
   line-height: 1.25;
   font-weight: 600;
 }
-.studio-workspace .studio-message.user {
-  background: var(--sunken);
-  border-radius: var(--radius-lg);
-  padding: 12px;
-}
 .studio-workspace .studio-message p {
   font-size: 13px;
   line-height: 1.7;

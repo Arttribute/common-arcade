@@ -356,46 +356,58 @@
  *  Page surfaces
  * ======================================================================== */
 
-/* ---- Page headings ------------------------------------------------------
- * One shape everywhere: title, one line of purpose, then the content. The
- * gap between them was 24-30px, which read as two unrelated blocks. */
-.arcade .page-heading {
-  padding-top: var(--space-8);
-  padding-bottom: var(--space-5);
+/* ---- Page header -------------------------------------------------------
+ * Agent Commons' studio page title: 16px medium type sitting fully inside a
+ * soft marker highlight. The highlight uses the Arcade wordmark's lavender so
+ * titles and the brand read as one mark; change --title-highlight to retint
+ * every page at once. */
+:root {
+  --title-highlight: #e4dcfa;
+  --title-highlight-ink: #171717;
+  --highlight-warm: #fbd38d;
 }
-.arcade .page-heading h1 {
-  margin: 0 0 var(--space-1);
-  font-size: var(--text-2xl);
-  font-weight: 600;
-  line-height: var(--leading-tight);
-  letter-spacing: var(--tracking-tight);
-  color: var(--ink);
+.arcade .page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-top: var(--space-5);
+  padding-bottom: var(--space-3);
 }
-.arcade .page-heading p {
+.page-header-copy {
+  min-width: 0;
+}
+.arcade .page-header-title {
   margin: 0;
-  max-width: 60ch;
+  font-size: var(--text-lg);
+  font-weight: 500;
+  line-height: 1.375;
+  letter-spacing: var(--tracking-tight);
+}
+.arcade .page-header-title > span {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--title-highlight);
+  color: var(--title-highlight-ink);
+}
+.arcade .page-header-description {
+  margin: 6px 0 0;
   font-size: var(--text-base);
   line-height: var(--leading-normal);
   color: var(--ink-muted);
 }
+.page-header-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-3);
+}
 
 /* ---- Discover ----------------------------------------------------------- */
-.arcade .catalog-heading {
-  display: block;
-  margin: 0;
-  padding-top: var(--space-8);
-  padding-bottom: var(--space-1);
-}
-.arcade .catalog-heading h1 {
-  margin: 0;
-  font-size: var(--text-2xl);
-  font-weight: 600;
-  line-height: var(--leading-tight);
-  letter-spacing: var(--tracking-tight);
-}
 .arcade .catalog-toolbar {
   gap: var(--space-3);
-  margin: var(--space-4) 0 var(--space-6);
+  margin: 0 0 var(--space-6);
 }
 .arcade label.catalog-search {
   height: 36px;
@@ -467,41 +479,121 @@
   text-transform: uppercase;
 }
 
-/* ---- Studio home -------------------------------------------------------- */
-.arcade .studio-home-projects {
+/* ---- Studio home: Your games ------------------------------------------
+ * The same row as the Commons tool list: icon, name, one line of description
+ * and a faint chevron, in two columns. The hover fill IS the row — padding sits
+ * inside it evenly, with nothing stacked below the text to make it lopsided. */
+.studio-games {
+  width: 100%;
+  max-width: 896px;
+  margin: 0 auto;
   padding: 0 var(--space-6) var(--space-16);
 }
-.arcade .studio-project-grid {
-  gap: var(--space-1) var(--space-6);
-}
-/* A row highlights on hover by filling to its own edges, like the rows in the
- * Commons tool list — the old card kept 12px of unfilled padding inside the
- * tint, which read as a misaligned box. */
-.arcade .studio-project-grid > a {
+.studio-games-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
+  margin-bottom: var(--space-2);
+  padding: 0 var(--space-3);
 }
-.arcade .studio-project-grid h3 {
+.arcade .studio-games-heading h2 {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+}
+.studio-games-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--space-6);
+}
+.arcade .studio-game-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: 10px var(--space-3);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--ink);
+  transition: background var(--duration-fast) var(--ease);
+}
+.arcade .studio-game-row:hover,
+.arcade .studio-game-row:focus-visible {
+  background: rgba(245, 245, 244, 0.8);
+  outline: none;
+}
+.studio-game-icon {
+  display: block;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+}
+.arcade .studio-game-icon .game-artwork {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 0;
+}
+.arcade .studio-game-icon .game-artwork-fallback {
+  height: 100%;
+  padding: 0;
+}
+.arcade .studio-game-icon .game-artwork-fallback span {
+  display: none;
+}
+.arcade .studio-game-icon .game-artwork-fallback svg {
+  width: 20px;
+  height: 20px;
+}
+.studio-game-copy {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.studio-game-copy strong,
+.studio-game-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-game-copy strong {
   font-size: var(--text-base);
   font-weight: 500;
 }
-.arcade .studio-project-grid p {
+.arcade .studio-game-copy small {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}
+.arcade .studio-game-chevron {
+  flex-shrink: 0;
+  color: var(--line-strong);
+  transition: color var(--duration-fast) var(--ease);
+}
+.arcade .studio-game-row:hover .studio-game-chevron {
+  color: var(--ink-muted);
+}
+.arcade .studio-games-empty {
+  margin: 0;
+  padding: var(--space-10) var(--space-3);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-lg);
+  text-align: center;
   font-size: var(--text-sm);
   color: var(--ink-muted);
 }
-.arcade .studio-project-grid small {
-  font-size: var(--text-xs);
-  color: var(--ink-subtle);
-}
-.arcade .studio-home-projects > div {
-  align-items: center;
-  margin-bottom: var(--space-2);
-}
-.arcade .studio-home-projects h2 {
-  font-size: var(--text-xl);
-  font-weight: 600;
-  letter-spacing: var(--tracking-tight);
+@media (max-width: 700px) {
+  .studio-games-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ======================================================================== *
@@ -898,41 +990,87 @@
   color: var(--ink-subtle);
 }
 
-/* The user's turn uses the same bubble as Agent Commons. */
-.arcade .studio-workspace .studio-message.user {
+/* The user's turn is the Agent Commons bubble: indigo-100, 16px corners with
+   the corner nearest the sender tucked in, and no "You" label. `main` carries
+   both .arcade and .studio-workspace, so these are compound, not descendant. */
+:root {
+  --message-user: #e0e7ff;
+  --message-user-ink: var(--ink);
+}
+.dark {
+  --message-user: #312e81;
+  --message-user-ink: #eef2ff;
+}
+.arcade.studio-workspace .studio-message.user,
+.arcade .general-chat .studio-message.user {
+  max-width: 80%;
+  margin-left: auto;
+  padding: 10px 16px;
+  border-radius: 16px 4px 16px 16px;
   background: var(--message-user);
   color: var(--message-user-ink);
 }
+.arcade.studio-workspace .studio-message.user p,
+.arcade .general-chat .studio-message.user p {
+  color: inherit;
+}
 
 /* ---- Canvas ------------------------------------------------------------
- * One ground across the whole centre column. The dotted canvas used to be a
- * blue tile painted on the preview only, so switching to Code or the Test
- * Arena stepped onto a different grey mid-column. */
-.arcade .studio-workspace .ac-canvas-center,
-.arcade .studio-workspace .studio-preview-stage,
-.arcade .studio-workspace .studio-code,
-.arcade .studio-workspace .ac-source-browser {
+ * One neutral dotted ground painted once, on the whole centre column. Every
+ * layer inside it — the Preview/Code toolbar, the preview stage, the code
+ * view — is transparent, so the dots run behind the view switcher and on into
+ * Code without a seam. Surfaces that hold content (the game frame, the code
+ * window) paint themselves and stop the dots at their edge. */
+.arcade.studio-workspace .ac-canvas-center {
   background-color: var(--canvas);
   background-image: radial-gradient(
     circle at 1px 1px,
-    var(--line-strong) 0.8px,
+    #d6d3d1 1px,
     transparent 0
   );
-  background-size: 24px 24px;
-  background-position: center;
-  background-attachment: local;
+  background-size: 22px 22px;
+  background-position: 0 0;
 }
-/* Anything that sits on the canvas paints its own surface, so the dots stop
-   at its edge instead of showing through. */
-.arcade .studio-workspace .studio-preview-frame,
-.arcade .studio-workspace .source-editor-host,
-.arcade .studio-workspace .ac-source-tree {
+.arcade.studio-workspace .ac-canvas-center > .studio-stage-toolbar,
+.arcade.studio-workspace .studio-preview-stage,
+.arcade.studio-workspace .studio-code,
+.arcade.studio-workspace .ac-canvas-stage {
+  background: transparent !important;
+}
+.arcade.studio-workspace .studio-preview-frame,
+.arcade.studio-workspace .studio-window,
+.arcade.studio-workspace .studio-code .source-browser,
+.arcade.studio-workspace .studio-code > .ac-source-browser {
   background-color: var(--paper);
-  background-image: none;
 }
-.arcade .studio-workspace .studio-stage-actions,
-.arcade .studio-workspace .source-main > header {
-  background-image: none;
+/* Toolbar controls sit on the dots, so they need a surface of their own. */
+.arcade.studio-workspace .studio-segment {
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+}
+.arcade.studio-workspace .studio-segment button {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+.arcade.studio-workspace .studio-segment button.is-active {
+  background: var(--sunken);
+  box-shadow: none;
+  color: var(--ink);
+}
+.arcade.studio-workspace .studio-stage-actions {
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+}
+.arcade.studio-workspace .studio-stage-actions:empty {
+  display: none;
 }
 
 /* ======================================================================== *
@@ -1291,41 +1429,74 @@
  *  Landing
  * ======================================================================== */
 
+/* Infisical-style: a very large left-aligned claim with its key words set in
+ * marker highlights, then the copy and the actions split across one row. */
 .arcade .hero {
-  padding: var(--space-16) 0 var(--space-12);
+  padding: clamp(56px, 9vw, 120px) 0 clamp(48px, 7vw, 88px);
 }
 .arcade .hero h1 {
-  max-width: 16ch;
-  margin: 0 0 var(--space-5);
-  font-size: clamp(44px, 6.5vw, 84px);
-  font-weight: 600;
-  line-height: 1.02;
+  max-width: none;
+  margin: 0;
+  font-size: clamp(44px, 7.4vw, 104px);
+  font-weight: 500;
+  line-height: 1.08;
   letter-spacing: -0.045em;
+  color: var(--ink);
 }
-/* The second line is the turn of the sentence, so it gets the quieter tone
-   rather than the accent colour — one voice, two weights. */
 .arcade .hero h1 span {
-  display: block;
-  color: var(--ink-subtle);
+  display: inline;
+  color: inherit;
+}
+.arcade .hero-mark {
+  padding: 0 0.12em;
+  background: var(--title-highlight);
+  color: var(--title-highlight-ink);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.arcade .hero-mark.is-warm {
+  background: var(--highlight-warm);
+}
+.hero-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-8);
+  margin-top: clamp(40px, 6vw, 88px);
 }
 .arcade .hero-copy {
-  max-width: 46ch;
+  max-width: 52ch;
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: clamp(16px, 1.4vw, 20px);
   line-height: 1.6;
   color: var(--ink-muted);
 }
 .arcade .hero .actions {
+  flex-shrink: 0;
   gap: var(--space-3);
-  margin: var(--space-8) 0 0;
+  margin: 0;
 }
 .arcade .hero .actions .primary,
 .arcade .hero .actions .secondary {
-  height: var(--control-h-lg);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 52px;
   padding: 0 var(--space-6);
-  border-radius: var(--radius-md);
+  border-radius: 2px;
   font-size: var(--text-lg);
-  font-weight: 500;
+  font-weight: 400;
+}
+.arcade .hero .actions .secondary {
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--ink);
+}
+@media (max-width: 820px) {
+  .hero-foot {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 /* A section heading with its own way through, as on the App Store shelves. */
@@ -1421,4 +1592,16 @@
   .arcade .capabilities {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Fullscreen lifts the stage out of the centre column, so it has to carry the
+   same dotted ground itself (it used to fall back to a solid blue). */
+.arcade.studio-workspace .studio-preview-stage:fullscreen {
+  background-color: var(--canvas) !important;
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    #d6d3d1 1px,
+    transparent 0
+  ) !important;
+  background-size: 22px 22px;
 }

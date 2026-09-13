@@ -1,5 +1,6 @@
 import { Header } from '../../components/header'
 import { PlayMatch } from '../../components/play-match'
+import { PageHeader } from '../../components/page-header'
 
 export default async function MatchPage({
   params,
@@ -12,11 +13,7 @@ export default async function MatchPage({
   return (
     <main className="arcade" id="main">
       <Header />
-      <section className="match-head page-heading shell">
-        <h1>
-          <span className="page-title">Live session</span>
-        </h1>
-      </section>
+      <PageHeader title="Live session" className="match-head" />
       <section className="shell">
         <PlayMatch
           matchId={matchId}

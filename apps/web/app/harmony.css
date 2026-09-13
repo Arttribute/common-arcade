@@ -421,10 +421,6 @@ main.arcade:has(> .app-sidebar.is-collapsed) {
     padding: 36px 20px;
   }
 }
-.studio-workspace .studio-message.user {
-  background: var(--message-user);
-  color: var(--message-user-ink);
-}
 @media (max-width: 850px) {
   .studio-workspace .ac-canvas-left,
   .studio-workspace .ac-canvas-right {
@@ -528,13 +524,6 @@ main.arcade:has(> .app-sidebar.is-collapsed) {
   .feature-game {
     min-height: 220px;
   }
-}
-/* A workflow-like canvas made from an SVG dot tile, without a gradient. */
-.studio-workspace .studio-preview-stage {
-  background-color: #e9edf4;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='1' cy='1' r='.8' fill='%239ba8bd' fill-opacity='.7'/%3E%3C/svg%3E");
-  background-attachment: local;
-  background-position: center;
 }
 .studio-workspace .studio-preview-stage:fullscreen .studio-preview-meta,
 .studio-workspace .studio-preview-stage:fullscreen .studio-preview-footer {

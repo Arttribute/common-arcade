@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { ArrowUpRight, Bot, KeyRound, Plus } from 'lucide-react'
 import { AgentWalletPanel } from '../components/agent-wallet-panel'
 import { Header } from '../components/header'
+import { PageHeader } from '../components/page-header'
 import { arcade } from '../../lib/api'
 type Agent = { agentId: string; name: string }
 type Key = {
@@ -50,15 +51,10 @@ export default function AgentsPage() {
   return (
     <main className="arcade" id="main">
       <Header />
-      <section className="discover-head shell">
-        <h1>
-          <span className="page-title">Agents</span>
-        </h1>
-        <p>
-          Create a Commons agent for your studio, or give an external agent a
-          scoped key to create, publish and play.
-        </p>
-      </section>
+      <PageHeader
+        title="Agents"
+        description="Create a Commons agent for your studio, or give an external agent a scoped key to create, publish and play."
+      />
       <div className="shell page-body">
         {!signedIn ? (
           <section className="signed-out-state">
