@@ -18,5 +18,29 @@
     "contract": "0xbe529edf75ebeb609dcf7ab26783dc558b735851",
     "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
     "rpcUrl": "https://forno.celo-sepolia.celo-testnet.org"
+  },
+  "base-sepolia:open-seats-v2": {
+    "contract": "0x3b3a3302effb91631a25732582e8823879690f85",
+    "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+    "rpcUrl": "https://sepolia.base.org",
+    "openSeats": true
+  },
+  "arc-testnet:open-seats-v2": {
+    "contract": "0xd912b9b7715d7dcefb2b65daf876ca6efc8e3ce9",
+    "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+    "rpcUrl": "https://rpc.testnet.arc.io",
+    "openSeats": true
+  },
+  "hedera-testnet:open-seats-v2": {
+    "contract": "0x15f3eb03fce4b11ae62df7e6e03ba63ead94d875",
+    "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+    "rpcUrl": "https://testnet.hashio.io/api",
+    "openSeats": true
+  },
+  "celo-sepolia:open-seats-v2": {
+    "contract": "0x957e41e77ac48bcef425d24eed903133b398b23c",
+    "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+    "rpcUrl": "https://forno.celo-sepolia.celo-testnet.org",
+    "openSeats": true
   }
 }

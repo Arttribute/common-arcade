@@ -1,0 +1,57 @@
+{
+  "revision": "seat-controllers-v3",
+  "bytecodeHash": "0xe8f7d4b0d64ee310c119d7ac15f5449e451fd7434d5c5c085a79953bb4689bc0",
+  "network": "hedera-testnet",
+  "chainId": 296,
+  "admin": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+  "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+  "resolver": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+  "token": "0x0000000000000000000000000000000000068cda",
+  "compiler": {
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "transactions": {
+    "deploy": {
+      "hash": "0xfd9aafcb477d66baf7b0e4eb3bd9729935822163e68ee40b4eff29e9e1cfcf8d",
+      "blockNumber": "40478215",
+      "status": "success"
+    },
+    "allowUSDC": {
+      "hash": "0x24d61d697d879be1d542e47774017261625b9f4ccdb281de0c0417bc0c012079",
+      "blockNumber": "40478218",
+      "status": "success"
+    },
+    "allowResolver": {
+      "hash": "0x75322134135cea7c9aab41c0c2f4ca53af49040506a9dbe827a38159aa3442c5",
+      "blockNumber": "40478221",
+      "status": "success"
+    },
+    "associateEscrowUSDC": {
+      "hash": "0x149d268ffe0054fd881f0216345d2af97ba7ebbe5faa43501453d3e650bc06a4",
+      "blockNumber": "40478224",
+      "status": "success"
+    }
+  },
+  "contract": "0xe2609fd5126a41a8b6a721d1c1502c7c50b71537",
+  "verifiedAt": "2026-09-13T21:01:00.499Z",
+  "settings": {
+    "remappings": [
+      "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+      "forge-std/=lib/forge-std/src/",
+      "openzeppelin-contracts/=lib/openzeppelin-contracts/",
+      "safe-contracts/=lib/safe-contracts/"
+    ],
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "metadata": {
+      "bytecodeHash": "ipfs"
+    },
+    "compilationTarget": {
+      "contracts/ArcadeEscrow.sol": "ArcadeEscrow"
+    },
+    "evmVersion": "paris",
+    "libraries": {}
+  }
+}
