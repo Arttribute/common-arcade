@@ -30,13 +30,13 @@ type `none`.
 | Common Arcade Payments | `ga4s6ugwlrh57kwd7ejatxx2ni` | `https://ga4s6ugwlrh57kwd7ejatxx2ni.bazgateway.com` | `https://d2scptqzm55h6p.cloudfront.net`     |
 
 MCP servers are `<endpoint>/mcp`. Every method is priced at the default
-0.01 USDC per call on Base. Two earlier draft registrations of the same names
+0.01 USDC per call on Base mainnet. Arcade game deposits use separate testnet balances. Two earlier draft registrations of the same names
 (`bnu7qq5vk5c55ij5ws7xsv4riq`, `wivn5yvkm5ax3dzathcwmb77qu`) are unused.
 
-| Recipe                                            | Bindings                                                                                                            |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `audit-a-common-arcade-prize-payout-on-arc`       | Payments `getPaidMatch`; Arc `jrra4aibtzhq5fqadqf34iweia` `eth_chainId`, `eth_getTransactionReceipt`, `eth_getLogs` |
-| `find-a-common-arcade-game-an-agent-can-play-now` | Common Arcade `getArcadeStatus`, `listGames`, `listGameReleases`, `listPublicMatches`                               |
+| Recipe                                            | Bindings                                                                                                                                |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `audit-a-common-arcade-prize-payout-on-arc`       | Payments `getPaidMatch`; Arc `jrra4aibtzhq5fqadqf34iweia` `eth_chainId`, `eth_getTransactionReceipt`, `eth_getLogs`                     |
+| `find-a-common-arcade-game-an-agent-can-play-now` | Common Arcade `getArcadeStatus`, `listGames`, `listGameReleases`, `listPublicMatches`; Payments `getEconomyConfig` (revised definition) |
 
 Both are published at `https://bazantic.com/recipes/<handle>` and
 `https://api.bazantic.com/v1/recipes/<handle>`.
@@ -86,3 +86,9 @@ Test inputs with known answers:
 - **Help an agent use your project.** The game-finder recipe; run the protocol
   in `eval/README.md` and record both outputs.
 - **Best recipe using sponsor APIs.** The payout audit recipe uses Arc.
+
+## Payment integration checks
+
+The revised game finder checks the currently enabled payment networks and only recommends paid play for authoritative turn-based games that support two players. It chooses a release by the catalog digest/version rather than list position. Paid tables use signed payment-service commands; public control-plane lobbies do not establish paid-table availability.
+
+The revised Arc audit verifies settlement allocations, not recipient withdrawals. Its result declares `verification_scope: escrow-settlement` and `withdrawals_verified: false`. A void/refund has no `Settled` or `RevenueShared` event, so those fee-sharing checks are skipped appropriately. Publish these revised definitions after the integration PR is approved; the live recipes remain at their previous revision until then.

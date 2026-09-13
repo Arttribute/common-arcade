@@ -1,6 +1,6 @@
 {
   "name": "Audit a Common Arcade Prize Payout on Arc",
-  "description": "Did a Common Arcade paid match really pay out what the Arcade says it did? Reads the match's pool, payout accounting and settlement transaction hashes from the Common Arcade Payments gateway, then independently fetches every transaction receipt and escrow event from Arc Testnet through the Arc gateway. Decodes MatchCreated, Locked, RevenueShared and Settled from the ArcadeEscrow contract and checks that the onchain prize and fee equal the reported winner and fee allocations. Returns a VERIFIED / MISMATCH / UNVERIFIABLE verdict with per-transaction evidence and explorer links. Neither service can answer this alone: Arcade knows what should have happened, Arc proves what did.",
+  "description": "Did a Common Arcade paid match allocate what the Arcade says it did? Reads the match's pool, payout accounting and settlement transaction hashes from the Common Arcade Payments gateway, then independently fetches every transaction receipt and escrow event from Arc Testnet through the Arc gateway. Decodes MatchCreated, Locked, RevenueShared and Settled from the ArcadeEscrow contract and checks that the onchain prize and fee equal the reported winner and fee allocations. Verifies escrow settlement allocations, not withdrawals into wallets. Returns a VERIFIED / MISMATCH / UNVERIFIABLE verdict with per-transaction evidence and explorer links. Neither service can answer this alone: Arcade knows what should have happened, Arc proves what did.",
   "input_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -57,7 +57,10 @@
         "status": "success",
         "to_escrow": true,
         "events": ["RevenueShared", "Settled"],
-        "settled": { "prize_usdc": "0.009750", "fee_usdc": "0.000250" },
+        "settled": {
+          "prize_usdc": "0.009750",
+          "fee_usdc": "0.000250"
+        },
         "revenue_shared": {
           "creator_fee_usdc": "0.000000",
           "platform_fee_usdc": "0.000250"
@@ -66,7 +69,10 @@
       }
     ],
     "checks": [
-      { "check": "every transaction succeeded", "pass": true },
+      {
+        "check": "every transaction succeeded",
+        "pass": true
+      },
       {
         "check": "every transaction targets the reported escrow contract",
         "pass": true
@@ -79,16 +85,24 @@
         "check": "lifecycle order MatchCreated -> Locked -> Settled",
         "pass": true
       },
-      { "check": "Settled.prize equals the winner allocation", "pass": true },
-      { "check": "Settled.fee equals accounting.feeUnits", "pass": true },
+      {
+        "check": "Settled.prize equals the winner allocation",
+        "pass": true
+      },
+      {
+        "check": "Settled.fee equals accounting.feeUnits",
+        "pass": true
+      },
       {
         "check": "RevenueShared creator + platform equals the fee",
         "pass": true
       }
     ],
-    "summary": "The Arc escrow settled this Blackjack duel exactly as Common Arcade reports: 0.00975 USDC to the winner and a 0.00025 USDC fee, all three transactions succeeded against the reported escrow and pool."
+    "summary": "The Arc escrow allocated this Blackjack duel exactly as Common Arcade reports: 0.00975 USDC to the winner and a 0.00025 USDC fee, all three transactions succeeded against the reported escrow and pool. This audit does not verify withdrawals into wallets.",
+    "verification_scope": "escrow-settlement",
+    "withdrawals_verified": false
   },
-  "prompt_template": "You audit payouts of Common Arcade paid matches. Common Arcade is a game platform where humans and AI agents play; a paid match holds a test-USDC prize pool in the ArcadeEscrow contract and a resolver settles the authoritative winner. You must not trust the Arcade record on its own: you verify it against the chain.\n\nInputs: {{inputs}}\n\nStep 1 - Read what Arcade reports. Call the Common Arcade Payments tool that gets one paid match (getPaidMatch) with the match_id. From the response record: game, releaseId, stage, economy.network, economy.feeBps, pool, deployment.chainId, deployment.contract, accounting.prizePoolUnits, accounting.feeUnits, accounting.status, every accounting.allocations entry (role, recipient, amountUnits), and transactions (ordered hashes). Ignore replay, state and events; they are large and not needed.\n- If the call fails or returns an error, return verdict UNVERIFIABLE with the reason.\n- If economy.network is not arc-testnet (deployment.chainId is not 5042002), stop and return verdict UNVERIFIABLE explaining that only Arc Testnet can be checked by this recipe, and list the reported figures.\n- If stage is not settled, or transactions is empty, return verdict UNVERIFIABLE with the stage and what is still pending.\n\nStep 2 - Confirm the chain. Call the Arc eth_chainId tool once. It must return 0x4cef52 (5042002). If not, return UNVERIFIABLE.\n\nStep 3 - Verify every transaction. For each hash in transactions, call the Arc eth_getTransactionReceipt tool. Record: status (0x1 = success), to, blockNumber, and each log. Decode logs whose address equals deployment.contract (compare lowercase) by topics[0]:\n- 0x60b0f1b2d8e599672ef1bb94732d0c982bf9cdfcbf09bbf2833d852e8269c482 = MatchCreated(bytes32 indexed matchId, address indexed token, bytes32 rulesHash, address resolver)\n- 0xde53dfbea8834b2d665850d0e7a38c986241a31516b317cc2caf7aef58b8bc0d = Deposited(bytes32 indexed matchId, address indexed payer, uint8 kind, bytes32 seatId, uint256 amount)\n- 0x3223c64d0518f39e3854050c1ea77cb9f25539e39168510c5a0cc7aad992b306 = Locked(bytes32 indexed matchId)\n- 0xbc617c6127ed003ef761639281e212043e2ad3dff5fc9a9bdf7a35bc02ac22ee = RevenueShared(bytes32 indexed matchId, address indexed creator, uint256 creatorFee, uint256 platformFee); data = creatorFee word, platformFee word\n- 0xd4b81a0d219e759ca90777b0943ae99ae9d0519532c2d00dbf403170454039b0 = Settled(bytes32 indexed matchId, bytes32 indexed winner, bytes32 resultHash, uint256 prize, uint256 fee); data = resultHash word, prize word, fee word\n- 0x628aa5a39bfb120b7f81de1e33db15545fe0d6ba9454f7d2b51f50949d0f8e62 = Voided(bytes32 indexed matchId)\nFor these events topics[1] is the matchId and must equal pool. Data is 32-byte (64 hex character) words after 0x; convert the relevant word from hex to a decimal integer exactly (do the arithmetic carefully; these are small numbers).\nIf Settled is not found in the receipts you have, call the Arc eth_getLogs tool once with filter {address: deployment.contract, topics: [null, pool], fromBlock: the first transaction's blockNumber, toBlock: the last transaction's blockNumber plus 0x3e8} and decode from there.\n\nStep 4 - Compare. All amounts are atomic USDC with 6 decimals. Run these checks and mark each pass true or false:\n1. every transaction succeeded\n2. every transaction targets deployment.contract\n3. every escrow event topics[1] equals pool\n4. lifecycle order MatchCreated -> Locked -> Settled (or Voided)\n5. Settled.prize equals the amountUnits of the allocation whose role is winner (skip with pass null if accounting.status is refundable)\n6. Settled.fee equals accounting.feeUnits\n7. RevenueShared creatorFee + platformFee equals Settled.fee, and creatorFee equals the creator allocation plus any royalty allocations (0 when there are none)\n\nVerdict: VERIFIED if every applicable check passes; MISMATCH if any check fails (name the check and both values); UNVERIFIABLE only for the stop conditions above. Never guess a value you did not read from a tool; never mark a check as passing without the evidence.\n\nReturn only JSON with keys: verdict, match {id, game, release_id, network, chain_id, stage, escrow_contract, pool_id}, reported {prize_pool_usdc, winner_usdc, creator_usdc, platform_usdc, fee_usdc} as decimal strings with 6 places, onchain (one entry per transaction: tx, status, to_escrow, events, decoded amounts as USDC decimal strings where present, explorer https://testnet.arcscan.app/tx/<hash>), checks [{check, pass}], summary (one or two plain sentences).",
+  "prompt_template": "You audit escrow settlement allocations of Common Arcade paid matches. This audit does not prove that anyone withdrew their claimable winnings into a wallet. Always return verification_scope escrow-settlement and withdrawals_verified false, and use allocated rather than paid when describing a Settled event. Wallet balances must be fetched independently on the relevant network. Common Arcade is a game platform where humans and AI agents play; a paid match holds a test-USDC prize pool in the ArcadeEscrow contract and a resolver settles the authoritative winner. You must not trust the Arcade record on its own: you verify it against the chain.\n\nInputs: {{inputs}}\n\nStep 1 - Read what Arcade reports. Call the Common Arcade Payments tool that gets one paid match (getPaidMatch) with the match_id. From the response record: game, releaseId, stage, economy.network, economy.feeBps, pool, deployment.chainId, deployment.contract, accounting.prizePoolUnits, accounting.feeUnits, accounting.status, every accounting.allocations entry (role, recipient, amountUnits), and transactions (ordered hashes). Ignore replay, state and events; they are large and not needed.\n- If the call fails or returns an error, return verdict UNVERIFIABLE with the reason.\n- If economy.network is not arc-testnet (deployment.chainId is not 5042002), stop and return verdict UNVERIFIABLE explaining that only Arc Testnet can be checked by this recipe, and list the reported figures.\n- If accounting is absent or its status is neither allocated nor refundable, return UNVERIFIABLE.\n- If stage is not settled, or transactions is empty, return verdict UNVERIFIABLE with the stage and what is still pending.\n\nStep 2 - Confirm the chain. Call the Arc eth_chainId tool once. It must return 0x4cef52 (5042002). If not, return UNVERIFIABLE.\n\nStep 3 - Verify every transaction. For each hash in transactions, call the Arc eth_getTransactionReceipt tool. Record: status (0x1 = success), to, blockNumber, and each log. Decode logs whose address equals deployment.contract (compare lowercase) by topics[0]:\n- 0x60b0f1b2d8e599672ef1bb94732d0c982bf9cdfcbf09bbf2833d852e8269c482 = MatchCreated(bytes32 indexed matchId, address indexed token, bytes32 rulesHash, address resolver)\n- 0xde53dfbea8834b2d665850d0e7a38c986241a31516b317cc2caf7aef58b8bc0d = Deposited(bytes32 indexed matchId, address indexed payer, uint8 kind, bytes32 seatId, uint256 amount)\n- 0x3223c64d0518f39e3854050c1ea77cb9f25539e39168510c5a0cc7aad992b306 = Locked(bytes32 indexed matchId)\n- 0xbc617c6127ed003ef761639281e212043e2ad3dff5fc9a9bdf7a35bc02ac22ee = RevenueShared(bytes32 indexed matchId, address indexed creator, uint256 creatorFee, uint256 platformFee); data = creatorFee word, platformFee word\n- 0xd4b81a0d219e759ca90777b0943ae99ae9d0519532c2d00dbf403170454039b0 = Settled(bytes32 indexed matchId, bytes32 indexed winner, bytes32 resultHash, uint256 prize, uint256 fee); data = resultHash word, prize word, fee word\n- 0x628aa5a39bfb120b7f81de1e33db15545fe0d6ba9454f7d2b51f50949d0f8e62 = Voided(bytes32 indexed matchId)\nFor these events topics[1] is the matchId and must equal pool. Data is 32-byte (64 hex character) words after 0x; convert the relevant word from hex to a decimal integer exactly (do the arithmetic carefully; these are small numbers).\nIf Settled is not found in the receipts you have, call the Arc eth_getLogs tool once with filter {address: deployment.contract, topics: [null, pool], fromBlock: the first transaction's blockNumber, toBlock: the last transaction's blockNumber plus 0x3e8} and decode from there.\n\nStep 4 - Compare. All amounts are atomic USDC with 6 decimals. Run these checks and mark each pass true or false:\n1. every transaction succeeded\n2. every transaction targets deployment.contract\n3. every escrow event topics[1] equals pool\n4. lifecycle order MatchCreated -> Locked -> Settled (or Voided)\n5. Settled.prize equals the amountUnits of the allocation whose role is winner (skip with pass null if accounting.status is refundable)\n6. Settled.fee equals accounting.feeUnits (for refundable accounting, require a Voided event, no Settled event, and reported feeUnits equal to 0)\n7. RevenueShared creatorFee + platformFee equals Settled.fee, and creatorFee equals the creator allocation plus any royalty allocations (0 when there are none). Skip with pass null for refundable accounting; a void has no fee-sharing event\n\nVerdict: VERIFIED if every applicable check passes; MISMATCH if any check fails (name the check and both values); UNVERIFIABLE only for the stop conditions above. Never guess a value you did not read from a tool; never mark a check as passing without the evidence.\n\nReturn only JSON with keys: verdict, verification_scope, withdrawals_verified, match {id, game, release_id, network, chain_id, stage, escrow_contract, pool_id}, reported {prize_pool_usdc, winner_usdc, creator_usdc, platform_usdc, fee_usdc} as decimal strings with 6 places, onchain (one entry per transaction: tx, status, to_escrow, events, decoded amounts as USDC decimal strings where present, explorer https://testnet.arcscan.app/tx/<hash>), checks [{check, pass}], summary (one or two plain sentences).",
   "model": "anthropic/claude-sonnet-4.6",
   "tool_bindings": [
     {
@@ -103,6 +117,9 @@
       "gateway_slug": "jrra4aibtzhq5fqadqf34iweia",
       "tool_name": "eth_getTransactionReceipt"
     },
-    { "gateway_slug": "jrra4aibtzhq5fqadqf34iweia", "tool_name": "eth_getLogs" }
+    {
+      "gateway_slug": "jrra4aibtzhq5fqadqf34iweia",
+      "tool_name": "eth_getLogs"
+    }
   ]
 }

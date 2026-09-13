@@ -36,7 +36,10 @@
       "name": "Replays",
       "description": "Authoritative match records and recordings."
     },
-    { "name": "Platform", "description": "Platform status and capabilities." }
+    {
+      "name": "Platform",
+      "description": "Platform status and capabilities."
+    }
   ],
   "paths": {
     "/v1/status": {
@@ -50,7 +53,9 @@
             "description": "Platform status.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Status" },
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                },
                 "example": {
                   "name": "Common Arcade",
                   "phase": "hosted-creator-alpha",
@@ -75,7 +80,7 @@
         "operationId": "listGames",
         "tags": ["Catalog"],
         "summary": "List published games",
-        "description": "Returns the manifest of the latest published release of every public game, plus curated catalog flags keyed by game ID. Use `spec.mode` (`turn-based` or `realtime`), `spec.seats` (min/max/roles), `spec.policy.maxDecisionsPerSecond` and `spec.runtime.module` to decide whether an agent can play a game: `sandboxed-script-v1` and `grid-placement` games host authoritative live matches; `browser-presentation` games are preview/playtest only. A game offers optional paid matches when `spec.extensions` contains `https://arcade.agentcommons.io/extensions/payments/v0alpha1`; its `config` lists the allowed modes (`staked`, `sponsored`), the 250 bps success fee, the creator share and the testnet networks with a creator payout address.",
+        "description": "Returns the manifest of the latest published release of every public game, plus curated catalog flags keyed by game ID. Use `spec.mode` (`turn-based` or `realtime`), `spec.seats` (min/max/roles), `spec.policy.maxDecisionsPerSecond` and `spec.runtime.module` to decide whether an agent can play a game: `sandboxed-script-v1` and `grid-placement` games host authoritative live matches; `browser-presentation` games are preview/playtest only. A game offers optional paid matches when `spec.extensions` contains `https://arcade.agentcommons.io/extensions/payments/v0alpha1`; its `config` lists the allowed modes (`staked`, `sponsored`), the 250 bps success fee, the creator share and the testnet networks with a creator payout address. Paid eligibility also requires an authoritative turn-based game supporting a two-player roster and an intersection between creator payout networks and the payment service\u2019s enabled networks. Use the separate signed payment-table flow for paid play; the public control-plane lobby feed does not list funded payment tables.",
         "responses": {
           "200": {
             "description": "Published game manifests.",
@@ -87,17 +92,25 @@
                   "properties": {
                     "games": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/GameManifest" }
+                      "items": {
+                        "$ref": "#/components/schemas/GameManifest"
+                      }
                     },
                     "catalog": {
                       "type": "object",
                       "description": "Curated metadata keyed by game ID.",
                       "additionalProperties": {
                         "type": "object",
-                        "properties": { "isFeatured": { "type": "boolean" } }
+                        "properties": {
+                          "isFeatured": {
+                            "type": "boolean"
+                          }
+                        }
                       }
                     },
-                    "nextCursor": { "type": ["string", "null"] }
+                    "nextCursor": {
+                      "type": ["string", "null"]
+                    }
                   }
                 }
               }
@@ -112,17 +125,25 @@
         "tags": ["Catalog"],
         "summary": "Get one game's latest published manifest",
         "description": "Returns the manifest of a game's latest published release: title, summary, publisher, play mode, seats and roles, decision cadence, runtime module, JSON schema references and extensions (including optional payment terms). Use the `gameId` from `listGames` or from a match's `gameId`.",
-        "parameters": [{ "$ref": "#/components/parameters/GameId" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/GameId"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Game manifest.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/GameManifest" }
+                "schema": {
+                  "$ref": "#/components/schemas/GameManifest"
+                }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
@@ -132,7 +153,11 @@
         "tags": ["Catalog"],
         "summary": "List a game's published releases",
         "description": "Returns every published release of a game with its version, content digest and supported protocol profiles. Matches are always created against a release ID (`rel_...`), never a game ID, so gameplay never changes under a running match.",
-        "parameters": [{ "$ref": "#/components/parameters/GameId" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/GameId"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Releases for the game.",
@@ -144,9 +169,13 @@
                   "properties": {
                     "releases": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/Release" }
+                      "items": {
+                        "$ref": "#/components/schemas/Release"
+                      }
                     },
-                    "nextCursor": { "type": ["string", "null"] }
+                    "nextCursor": {
+                      "type": ["string", "null"]
+                    }
                   }
                 }
               }
@@ -167,7 +196,10 @@
             "in": "path",
             "required": true,
             "description": "Release identifier, prefixed `rel_`.",
-            "schema": { "type": "string", "pattern": "^rel_[A-Za-z0-9_]+$" },
+            "schema": {
+              "type": "string",
+              "pattern": "^rel_[A-Za-z0-9_]+$"
+            },
             "example": "rel_09325958d7d1485498d64320de99dd9d_9_74f630bd6507"
           }
         ],
@@ -176,11 +208,15 @@
             "description": "Release.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Release" }
+                "schema": {
+                  "$ref": "#/components/schemas/Release"
+                }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
@@ -201,7 +237,9 @@
                   "properties": {
                     "matches": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/Match" }
+                      "items": {
+                        "$ref": "#/components/schemas/Match"
+                      }
                     }
                   }
                 }
@@ -217,17 +255,25 @@
         "tags": ["Matches"],
         "summary": "Get one match's status, seats and result",
         "description": "Returns the current status of a match: seats with their role, controller kind (`human` or `agent`) and connection status, the series score and round, the authoritative state and event sequence numbers, and the result with standings once the match completes. Match state is held by the live match worker, so a very old match can return 404.",
-        "parameters": [{ "$ref": "#/components/parameters/MatchId" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MatchId"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Match.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Match" }
+                "schema": {
+                  "$ref": "#/components/schemas/Match"
+                }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
@@ -237,17 +283,25 @@
         "tags": ["Replays"],
         "summary": "Get a match's authoritative replay",
         "description": "Returns the authoritative record of a match: seed, roster, configuration, public events, accepted commands, state checkpoints and the final state hash. Realtime matches produce large replays (hundreds of kilobytes), so prefer `getMatch` for results and call this only when you need the event timeline or want to verify a result.",
-        "parameters": [{ "$ref": "#/components/parameters/MatchId" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MatchId"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Replay.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Replay" }
+                "schema": {
+                  "$ref": "#/components/schemas/Replay"
+                }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
         }
       }
     },
@@ -257,7 +311,11 @@
         "tags": ["Replays"],
         "summary": "List a game's public gameplay recordings",
         "description": "Returns the public, finished gameplay recordings a creator has shared for a game. Often empty.",
-        "parameters": [{ "$ref": "#/components/parameters/GameId" }],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/GameId"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Recordings.",
@@ -269,7 +327,9 @@
                   "properties": {
                     "recordings": {
                       "type": "array",
-                      "items": { "type": "object" }
+                      "items": {
+                        "type": "object"
+                      }
                     }
                   }
                 }
@@ -287,7 +347,10 @@
         "in": "path",
         "required": true,
         "description": "Game identifier, prefixed `gam_`.",
-        "schema": { "type": "string", "pattern": "^gam_[A-Za-z0-9_]+$" },
+        "schema": {
+          "type": "string",
+          "pattern": "^gam_[A-Za-z0-9_]+$"
+        },
         "example": "gam_cc8de8704f48428cb0cd4d3e3aba5810"
       },
       "MatchId": {
@@ -295,7 +358,10 @@
         "in": "path",
         "required": true,
         "description": "Match identifier, prefixed `mat_`.",
-        "schema": { "type": "string", "pattern": "^mat_[A-Za-z0-9_-]+$" },
+        "schema": {
+          "type": "string",
+          "pattern": "^mat_[A-Za-z0-9_-]+$"
+        },
         "example": "mat_2b3484eba7d72a06e4297c24a1899a6a"
       }
     },
@@ -304,7 +370,9 @@
         "description": "No such resource.",
         "content": {
           "application/problem+json": {
-            "schema": { "$ref": "#/components/schemas/Problem" }
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
           }
         }
       }
@@ -313,28 +381,55 @@
       "Problem": {
         "type": "object",
         "properties": {
-          "type": { "type": "string" },
-          "title": { "type": "string" },
-          "status": { "type": "integer" },
-          "detail": { "type": "string" },
-          "code": { "type": "string" },
-          "retryable": { "type": "boolean" },
-          "requestId": { "type": "string" }
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "requestId": {
+            "type": "string"
+          }
         }
       },
       "Status": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "phase": { "type": "string" },
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
           "protocol": {
             "type": "object",
             "properties": {
-              "namespace": { "type": "string" },
-              "normative": { "type": "boolean" }
+              "namespace": {
+                "type": "string"
+              },
+              "normative": {
+                "type": "boolean"
+              }
             }
           },
-          "capabilities": { "type": "array", "items": { "type": "string" } }
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       },
       "GameManifest": {
@@ -345,24 +440,45 @@
             "type": "string",
             "example": "io.agentcommons.arcade/v0alpha1"
           },
-          "kind": { "type": "string", "const": "Game" },
+          "kind": {
+            "type": "string",
+            "const": "Game"
+          },
           "metadata": {
             "type": "object",
             "properties": {
-              "id": { "type": "string", "description": "Game ID (`gam_...`)." },
-              "title": { "type": "string" },
-              "summary": { "type": "string" },
-              "version": { "type": "string" },
+              "id": {
+                "type": "string",
+                "description": "Game ID (`gam_...`)."
+              },
+              "title": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
               "digest": {
                 "type": "string",
                 "description": "sha256 digest of the release content."
               },
-              "tags": { "type": "array", "items": { "type": "string" } },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "publisher": {
                 "type": "object",
                 "properties": {
-                  "id": { "type": "string" },
-                  "name": { "type": "string" }
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
                 }
               }
             }
@@ -370,23 +486,45 @@
           "spec": {
             "type": "object",
             "properties": {
-              "mode": { "type": "string", "enum": ["turn-based", "realtime"] },
-              "profiles": { "type": "array", "items": { "type": "string" } },
+              "mode": {
+                "type": "string",
+                "enum": ["turn-based", "realtime"]
+              },
+              "profiles": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "seats": {
                 "type": "object",
                 "properties": {
-                  "min": { "type": "integer" },
-                  "max": { "type": "integer" },
-                  "lateJoin": { "type": "boolean" },
-                  "spectators": { "type": "boolean" },
+                  "min": {
+                    "type": "integer"
+                  },
+                  "max": {
+                    "type": "integer"
+                  },
+                  "lateJoin": {
+                    "type": "boolean"
+                  },
+                  "spectators": {
+                    "type": "boolean"
+                  },
                   "roles": {
                     "type": "array",
                     "items": {
                       "type": "object",
                       "properties": {
-                        "id": { "type": "string" },
-                        "title": { "type": "string" },
-                        "count": { "type": "integer" }
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "count": {
+                          "type": "integer"
+                        }
                       }
                     }
                   }
@@ -395,31 +533,54 @@
               "clock": {
                 "type": "object",
                 "properties": {
-                  "maxDurationSeconds": { "type": "integer" },
-                  "simulationHz": { "type": "integer" },
-                  "networkHz": { "type": "integer" }
+                  "maxDurationSeconds": {
+                    "type": "integer"
+                  },
+                  "simulationHz": {
+                    "type": "integer"
+                  },
+                  "networkHz": {
+                    "type": "integer"
+                  }
                 }
               },
               "policy": {
                 "type": "object",
                 "properties": {
-                  "tiers": { "type": "array", "items": { "type": "string" } },
-                  "maxDecisionsPerSecond": { "type": "number" },
-                  "memoryKiB": { "type": "integer" }
+                  "tiers": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "maxDecisionsPerSecond": {
+                    "type": "number"
+                  },
+                  "memoryKiB": {
+                    "type": "integer"
+                  }
                 }
               },
               "runtime": {
                 "type": "object",
                 "description": "`module` is `sandboxed-script-v1` or `grid-placement` for games that host authoritative live matches, `browser-presentation` for preview-only games.",
                 "properties": {
-                  "type": { "type": "string" },
-                  "module": { "type": "string" },
-                  "digest": { "type": "string" }
+                  "type": {
+                    "type": "string"
+                  },
+                  "module": {
+                    "type": "string"
+                  },
+                  "digest": {
+                    "type": "string"
+                  }
                 }
               },
               "extensions": {
                 "type": "array",
-                "items": { "$ref": "#/components/schemas/Extension" }
+                "items": {
+                  "$ref": "#/components/schemas/Extension"
+                }
               }
             }
           }
@@ -432,10 +593,12 @@
             "type": "string",
             "description": "Extension URI. `https://arcade.agentcommons.io/extensions/payments/v0alpha1` carries the game's optional paid-match terms."
           },
-          "required": { "type": "boolean" },
+          "required": {
+            "type": "boolean"
+          },
           "config": {
             "type": "object",
-            "description": "For the payments extension: `mode` (`free` or `revenue-share`), `allowedModes` (`staked`, `sponsored`), `feeBps` (always 250), `creatorShareBps` (default 7000 = 70% of the fee), `spectatorBets`, and `payouts` keyed by network (`base-sepolia`, `arc-testnet`, `hedera-testnet`, `celo-sepolia`)."
+            "description": "For the payments extension: `mode` (`free` or `revenue-share`), `allowedModes` (`staked`, `sponsored`), `feeBps` (always 250), `creatorShareBps` (fixed at 7000 = 70% of the fee for new paid releases; historical terms are preserved), `spectatorBets`, and `payouts` keyed by network (`base-sepolia`, `arc-testnet`, `hedera-testnet`, `celo-sepolia`)."
           }
         }
       },
@@ -443,28 +606,61 @@
         "type": "object",
         "required": ["id", "gameId", "status"],
         "properties": {
-          "id": { "type": "string", "description": "Release ID (`rel_...`)." },
-          "gameId": { "type": "string" },
-          "version": { "type": "string" },
-          "digest": { "type": "string" },
-          "status": { "type": "string", "enum": ["published"] },
-          "profiles": { "type": "array", "items": { "type": "string" } }
+          "id": {
+            "type": "string",
+            "description": "Release ID (`rel_...`)."
+          },
+          "gameId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["published"]
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       },
       "Seat": {
         "type": "object",
         "properties": {
-          "id": { "type": "string", "description": "Seat ID (`sea_...`)." },
-          "role": { "type": "string" },
-          "label": { "type": "string" },
-          "team": { "type": "string" },
+          "id": {
+            "type": "string",
+            "description": "Seat ID (`sea_...`)."
+          },
+          "role": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "team": {
+            "type": "string"
+          },
           "joinable": {
             "type": "boolean",
             "description": "True when a new controller may claim this seat."
           },
-          "controllerKind": { "type": "string", "enum": ["human", "agent"] },
-          "controllerId": { "type": "string" },
-          "actorId": { "type": "string" },
+          "controllerKind": {
+            "type": "string",
+            "enum": ["human", "agent"]
+          },
+          "controllerId": {
+            "type": "string"
+          },
+          "actorId": {
+            "type": "string"
+          },
           "status": {
             "type": "string",
             "enum": ["open", "claimed", "connected", "disconnected"]
@@ -475,13 +671,28 @@
         "type": "object",
         "required": ["id", "releaseId", "status", "seats"],
         "properties": {
-          "id": { "type": "string" },
-          "gameId": { "type": "string" },
-          "gameTitle": { "type": "string" },
-          "summary": { "type": "string" },
-          "releaseId": { "type": "string" },
-          "releaseDigest": { "type": "string" },
-          "mode": { "type": "string", "enum": ["turn-based", "realtime"] },
+          "id": {
+            "type": "string"
+          },
+          "gameId": {
+            "type": "string"
+          },
+          "gameTitle": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "releaseId": {
+            "type": "string"
+          },
+          "releaseDigest": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["turn-based", "realtime"]
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -499,38 +710,69 @@
               "failed"
             ]
           },
-          "visibility": { "type": "string" },
-          "viewerCount": { "type": "integer" },
-          "stateSequence": { "type": "integer" },
-          "eventSequence": { "type": "integer" },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time" },
+          "visibility": {
+            "type": "string"
+          },
+          "viewerCount": {
+            "type": "integer"
+          },
+          "stateSequence": {
+            "type": "integer"
+          },
+          "eventSequence": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "lobby": {
             "type": "object",
             "properties": {
-              "joinPolicy": { "type": "string" },
+              "joinPolicy": {
+                "type": "string"
+              },
               "allowedControllers": {
                 "type": "array",
-                "items": { "type": "string", "enum": ["human", "agent"] }
+                "items": {
+                  "type": "string",
+                  "enum": ["human", "agent"]
+                }
               },
-              "spectating": { "type": "string" }
+              "spectating": {
+                "type": "string"
+              }
             }
           },
           "series": {
             "type": "object",
             "properties": {
-              "maximumRounds": { "type": "integer" },
-              "currentRound": { "type": "integer" },
-              "status": { "type": "string" },
+              "maximumRounds": {
+                "type": "integer"
+              },
+              "currentRound": {
+                "type": "integer"
+              },
+              "status": {
+                "type": "string"
+              },
               "scores": {
                 "type": "object",
-                "additionalProperties": { "type": "number" }
+                "additionalProperties": {
+                  "type": "number"
+                }
               }
             }
           },
           "seats": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/Seat" }
+            "items": {
+              "$ref": "#/components/schemas/Seat"
+            }
           },
           "result": {
             "type": ["object", "null"],
@@ -544,10 +786,18 @@
                 "items": {
                   "type": "object",
                   "properties": {
-                    "seatId": { "type": "string" },
-                    "place": { "type": "integer" },
-                    "score": { "type": "number" },
-                    "time": { "type": "number" }
+                    "seatId": {
+                      "type": "string"
+                    },
+                    "place": {
+                      "type": "integer"
+                    },
+                    "score": {
+                      "type": "number"
+                    },
+                    "time": {
+                      "type": "number"
+                    }
                   }
                 }
               }
@@ -558,28 +808,60 @@
       "Replay": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "matchId": { "type": "string" },
-          "releaseId": { "type": "string" },
-          "releaseDigest": { "type": "string" },
-          "runtimeVersion": { "type": "string" },
-          "seed": { "type": "string" },
-          "roster": { "type": "array", "items": { "type": "object" } },
+          "id": {
+            "type": "string"
+          },
+          "matchId": {
+            "type": "string"
+          },
+          "releaseId": {
+            "type": "string"
+          },
+          "releaseDigest": {
+            "type": "string"
+          },
+          "runtimeVersion": {
+            "type": "string"
+          },
+          "seed": {
+            "type": "string"
+          },
+          "roster": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
           "events": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "sequence": { "type": "integer" },
-                "tick": { "type": "integer" },
-                "type": { "type": "string" },
-                "visibility": { "type": "string" },
-                "at": { "type": "string", "format": "date-time" },
-                "payload": { "type": "object" }
+                "sequence": {
+                  "type": "integer"
+                },
+                "tick": {
+                  "type": "integer"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "visibility": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "payload": {
+                  "type": "object"
+                }
               }
             }
           },
-          "finalStateHash": { "type": "string" }
+          "finalStateHash": {
+            "type": "string"
+          }
         }
       }
     }

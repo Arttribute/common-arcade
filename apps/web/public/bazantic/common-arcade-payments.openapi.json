@@ -4,7 +4,7 @@
     "title": "Common Arcade Payments",
     "version": "0.1.0-testnet",
     "summary": "Read the prize pools, payout accounting and settlement transactions of Common Arcade paid matches.",
-    "description": "Common Arcade matches are free by default. A host can opt a match into a paid format (player stakes or a sponsored prize pool) held by the ArcadeEscrow contract in testnet USDC on Base Sepolia, Arc Testnet, Celo Sepolia or Hedera Testnet. The authoritative game runtime decides the winner, the resolver settles the pool, and one 2.5% success fee is split between the game's creator (70% by default) and the platform.\n\nThis document is the read-only, credential-free part of the Arcade payment service. It answers: which payment networks are live, and for one paid match, what the pool contained, who was allocated what, which escrow contract and token held it, and which onchain transaction hashes the service submitted. Every figure is in atomic USDC units (6 decimals: 1000000 = 1 USDC). Verify the transaction hashes independently with an RPC provider for the match's network (chain IDs: base-sepolia 84532, arc-testnet 5042002, celo-sepolia 11142220, hedera-testnet 296).\n\nTestnet only. The resolver and dealer are trusted operators; results are verifiable against the published replay and commitment, not trustless.",
+    "description": "Common Arcade matches are free by default. A host can opt a match into a paid format (player stakes or a sponsored prize pool) held by the ArcadeEscrow contract in testnet USDC on Base Sepolia, Arc Testnet, Celo Sepolia or Hedera Testnet. The authoritative game runtime decides the winner, the resolver settles the pool, and one 2.5% success fee is split between the game's creator (70% for new paid releases) and the platform.\n\nThis document is the read-only, credential-free part of the Arcade payment service. It answers: which payment networks are live, and for one paid match, what the pool contained, who was allocated what, which escrow contract and token held it, and which onchain transaction hashes the service submitted. Every figure is in atomic USDC units (6 decimals: 1000000 = 1 USDC). Verify the transaction hashes independently with an RPC provider for the match's network (chain IDs: base-sepolia 84532, arc-testnet 5042002, celo-sepolia 11142220, hedera-testnet 296).\n\nTestnet only. The resolver and dealer are trusted operators; results are verifiable against the published replay and commitment, not trustless.",
     "contact": {
       "name": "Common Arcade",
       "url": "https://arcade.agentcommons.io/docs/guides/payments"
@@ -44,11 +44,18 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "ok": { "type": "boolean" },
-                    "testnetOnly": { "type": "boolean" }
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "testnetOnly": {
+                      "type": "boolean"
+                    }
                   }
                 },
-                "example": { "ok": true, "testnetOnly": true }
+                "example": {
+                  "ok": true,
+                  "testnetOnly": true
+                }
               }
             }
           }
@@ -72,10 +79,17 @@
                   "properties": {
                     "networks": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/Network" }
+                      "items": {
+                        "$ref": "#/components/schemas/Network"
+                      }
                     },
-                    "defaultMode": { "type": "string", "enum": ["free"] },
-                    "testnetOnly": { "type": "boolean" }
+                    "defaultMode": {
+                      "type": "string",
+                      "enum": ["free"]
+                    },
+                    "testnetOnly": {
+                      "type": "boolean"
+                    }
                   }
                 },
                 "example": {
@@ -99,14 +113,17 @@
         "operationId": "getPaidMatch",
         "tags": ["Economy"],
         "summary": "Get one paid match's pool, payout accounting and settlement transactions",
-        "description": "Returns the public record of a paid (escrow) match: the game and immutable release it ran, the economy terms (`economy.network`, stake, fee bps, bounties, spectator bets, funding and settlement windows), the lifecycle `stage` (`prepared`, `funding`, `playing`, `settlement-pending`, `settled`), the pool ID and escrow `deployment` (`chainId`, `contract`, USDC `token`), the payout `accounting` once settled (prize pool, fee, and each allocation's role, recipient and amount), the ordered onchain `transactions` the service submitted (lock, then settlement), the shuffle `commitment`, `rulesHash`, public events and the completed replay. All amounts are atomic USDC strings (6 decimals). To audit a payout, fetch each hash in `transactions` from an RPC provider for `deployment.chainId` and check that it succeeded and targeted `deployment.contract`.",
+        "description": "Returns the public record of a paid (escrow) match: the game and immutable release it ran, the economy terms (`economy.network`, stake, fee bps, bounties, spectator bets, funding and settlement windows), the lifecycle `stage` (`prepared`, `funding`, `playing`, `settlement-pending`, `settled`), the pool ID and escrow `deployment` (`chainId`, `contract`, USDC `token`), the payout `accounting` once settled (prize pool, fee, and each allocation's role, recipient and amount), the ordered onchain `transactions` the service submitted (creation, lock, then settlement), the shuffle `commitment`, `rulesHash`, public events and the completed replay. All amounts are atomic USDC strings (6 decimals). To audit a payout, fetch each hash in `transactions` from an RPC provider for `deployment.chainId` and check that it succeeded and targeted `deployment.contract`. Settlement accounting proves claimable allocations, not completed withdrawals into recipient wallets. Check wallet balances and withdrawal transactions separately.",
         "parameters": [
           {
             "name": "matchId",
             "in": "path",
             "required": true,
             "description": "Paid match identifier, `mat_` followed by a UUID.",
-            "schema": { "type": "string", "pattern": "^mat_[0-9a-f-]{36}$" },
+            "schema": {
+              "type": "string",
+              "pattern": "^mat_[0-9a-f-]{36}$"
+            },
             "example": "mat_b0018dc5-6c0b-4978-a914-305de6f20090"
           }
         ],
@@ -115,7 +132,9 @@
             "description": "Paid match record.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/PaidMatch" }
+                "schema": {
+                  "$ref": "#/components/schemas/PaidMatch"
+                }
               }
             }
           },
@@ -125,7 +144,11 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": { "error": { "type": "string" } }
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
@@ -154,10 +177,19 @@
         "type": "object",
         "required": ["id", "stage"],
         "properties": {
-          "id": { "type": "string" },
-          "game": { "type": "string", "description": "Game title." },
-          "releaseId": { "type": "string" },
-          "releaseDigest": { "type": "string" },
+          "id": {
+            "type": "string"
+          },
+          "game": {
+            "type": "string",
+            "description": "Game title."
+          },
+          "releaseId": {
+            "type": "string"
+          },
+          "releaseDigest": {
+            "type": "string"
+          },
           "stage": {
             "type": "string",
             "enum": [
@@ -171,17 +203,32 @@
           "economy": {
             "type": "object",
             "properties": {
-              "mode": { "type": "string", "enum": ["escrow"] },
-              "network": { "$ref": "#/components/schemas/Network" },
-              "stakeUnits": { "$ref": "#/components/schemas/Units" },
-              "bounties": { "type": "boolean" },
-              "spectatorBets": { "type": "boolean" },
+              "mode": {
+                "type": "string",
+                "enum": ["escrow"]
+              },
+              "network": {
+                "$ref": "#/components/schemas/Network"
+              },
+              "stakeUnits": {
+                "$ref": "#/components/schemas/Units"
+              },
+              "bounties": {
+                "type": "boolean"
+              },
+              "spectatorBets": {
+                "type": "boolean"
+              },
               "feeBps": {
                 "type": "integer",
                 "description": "Success fee in basis points of the prize pool (250 = 2.5%)."
               },
-              "fundingSeconds": { "type": "integer" },
-              "settlementSeconds": { "type": "integer" }
+              "fundingSeconds": {
+                "type": "integer"
+              },
+              "settlementSeconds": {
+                "type": "integer"
+              }
             }
           },
           "pool": {
@@ -191,7 +238,9 @@
           "deployment": {
             "type": "object",
             "properties": {
-              "chainId": { "type": "integer" },
+              "chainId": {
+                "type": "integer"
+              },
               "contract": {
                 "type": "string",
                 "description": "ArcadeEscrow contract address."
@@ -204,8 +253,10 @@
           },
           "recipients": {
             "type": "array",
-            "items": { "type": "string" },
-            "description": "Payout recipients committed before funding (treasury, creator, royalty holders)."
+            "items": {
+              "type": "string"
+            },
+            "description": "The two player wallet addresses committed before funding. Creator and royalty terms are in revenue; allocations include the platform."
           },
           "revenue": {
             "type": "object",
@@ -219,10 +270,18 @@
                 "enum": ["allocated", "refundable"],
                 "description": "`refundable` means a draw or void: contributions are returned and no fee is taken."
               },
-              "prizePoolUnits": { "$ref": "#/components/schemas/Units" },
-              "spectatorPoolUnits": { "$ref": "#/components/schemas/Units" },
-              "feeUnits": { "$ref": "#/components/schemas/Units" },
-              "spectatorPayoutUnits": { "$ref": "#/components/schemas/Units" },
+              "prizePoolUnits": {
+                "$ref": "#/components/schemas/Units"
+              },
+              "spectatorPoolUnits": {
+                "$ref": "#/components/schemas/Units"
+              },
+              "feeUnits": {
+                "$ref": "#/components/schemas/Units"
+              },
+              "spectatorPayoutUnits": {
+                "$ref": "#/components/schemas/Units"
+              },
               "allocations": {
                 "type": "array",
                 "items": {
@@ -232,8 +291,12 @@
                       "type": "string",
                       "enum": ["winner", "creator", "royalty", "platform"]
                     },
-                    "recipient": { "type": "string" },
-                    "amountUnits": { "$ref": "#/components/schemas/Units" }
+                    "recipient": {
+                      "type": "string"
+                    },
+                    "amountUnits": {
+                      "$ref": "#/components/schemas/Units"
+                    }
                   }
                 }
               }
@@ -245,15 +308,22 @@
           },
           "transactions": {
             "type": "array",
-            "items": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
+            "items": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{64}$"
+            },
             "description": "Transaction hashes submitted by the payment service for this pool, in order."
           },
           "commitment": {
             "type": "string",
             "description": "Commitment to the secret shuffle published before funding."
           },
-          "rulesHash": { "type": "string" },
-          "rules": { "type": "string" },
+          "rulesHash": {
+            "type": "string"
+          },
+          "rules": {
+            "type": "string"
+          },
           "seed": {
             "type": "string",
             "description": "Revealed seed once the match completes."
@@ -266,9 +336,18 @@
             "type": "integer",
             "description": "Unix seconds."
           },
-          "events": { "type": "array", "items": { "type": "object" } },
-          "state": { "type": "object" },
-          "replay": { "type": "object" }
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "state": {
+            "type": "object"
+          },
+          "replay": {
+            "type": "object"
+          }
         }
       }
     }
