@@ -361,7 +361,7 @@ export class MatchHost {
           record.release.id,
           record.release.digest,
         )
-      : blackjackGame
+      : { ...blackjackGame, projectSpectatorState: publicBlackjackState }
     if (record.releaseDigest !== game.releaseDigest)
       throw new Error(
         'Match release is unavailable in this worker; restore its version or claim timeout refunds',
