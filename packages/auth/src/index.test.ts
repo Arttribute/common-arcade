@@ -69,11 +69,10 @@ describe('local one-time realtime tickets', () => {
     const tickets = await authority(() => now)
     const token = await tickets.mint({ ...request, ttlSeconds: 1 })
     const parts = token.split('.')
-    const signature = Buffer.from(parts[2]!, 'base64url')
+    const signature = parts[2]!
     // Changing the last Base64 character can only change unused padding bits.
-    // Flip an actual signature bit so this fixture always changes the HMAC.
-    signature[0] = signature[0]! ^ 1
-    parts[2] = signature.toString('base64url')
+    // The leading character contains data bits, so changing it changes the HMAC.
+    parts[2] = `${signature.startsWith('A') ? 'B' : 'A'}${signature.slice(1)}`
     const tampered = parts.join('.')
     await expect(
       tickets.redeem(tampered, {
