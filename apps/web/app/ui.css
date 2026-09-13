@@ -1529,8 +1529,8 @@
 .hero-foot {
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-8);
+  justify-content: flex-start;
+  gap: clamp(32px, 6vw, 88px);
   margin-top: clamp(32px, 4.5vw, 64px);
 }
 .arcade .hero-copy {
