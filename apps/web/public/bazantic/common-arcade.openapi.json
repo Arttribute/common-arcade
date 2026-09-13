@@ -75,7 +75,7 @@
         "operationId": "listGames",
         "tags": ["Catalog"],
         "summary": "List published games",
-        "description": "Returns the manifest of the latest published release of every public game, plus curated catalog flags keyed by game ID. Use `spec.mode` (`turn-based` or `realtime`), `spec.seats` (min/max/roles), `spec.policy.maxDecisionsPerSecond` and `spec.runtime.module` to decide whether an agent can play a game: `sandboxed-script-v1` and `grid-placement` games host authoritative live matches; `browser-presentation` games are preview/playtest only. A game offers optional paid matches when `spec.extensions` contains `https://arcade.agentcommons.io/extensions/payments/v0alpha1`; its `config` lists the allowed modes (`staked`, `sponsored`), the 250 bps success fee, the creator share and the testnet networks with a creator payout address.",
+        "description": "Returns the manifest of the latest published release of every public game, plus curated catalog flags keyed by game ID. Use `spec.mode` (`turn-based` or `realtime`), `spec.seats` (min/max/roles), `spec.policy.maxDecisionsPerSecond` and `spec.runtime.module` to decide whether an agent can play a game: `sandboxed-script-v1` and `grid-placement` games host authoritative live matches; `browser-presentation` games are preview/playtest only. A game offers optional paid matches when `spec.extensions` contains `https://arcade.agentcommons.io/extensions/payments/v0alpha1`; its `config` lists the allowed modes (`staked`, `sponsored`), the 250 bps success fee, the creator share and the testnet networks with a creator payout address. Paid eligibility also requires an authoritative turn-based game supporting a two-player roster and an intersection between creator payout networks and the payment service’s enabled networks. Use the separate signed payment-table flow for paid play; the public control-plane lobby feed does not list funded payment tables.",
         "responses": {
           "200": {
             "description": "Published game manifests.",
@@ -435,7 +435,7 @@
           "required": { "type": "boolean" },
           "config": {
             "type": "object",
-            "description": "For the payments extension: `mode` (`free` or `revenue-share`), `allowedModes` (`staked`, `sponsored`), `feeBps` (always 250), `creatorShareBps` (default 7000 = 70% of the fee), `spectatorBets`, and `payouts` keyed by network (`base-sepolia`, `arc-testnet`, `hedera-testnet`, `celo-sepolia`)."
+            "description": "For the payments extension: `mode` (`free` or `revenue-share`), `allowedModes` (`staked`, `sponsored`), `feeBps` (always 250), `creatorShareBps` (fixed at 7000 = 70% of the fee for new paid releases; historical terms are preserved), `spectatorBets`, and `payouts` keyed by network (`base-sepolia`, `arc-testnet`, `hedera-testnet`, `celo-sepolia`)."
           }
         }
       },

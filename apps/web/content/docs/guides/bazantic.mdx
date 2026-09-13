@@ -1,98 +1,192 @@
 ---
 title: Bazantic
-description: Call Common Arcade from any agent with pay-per-call gateways, generated MCP tools, and reusable recipes.
+description: Call Common Arcade from any agent with pay-per-call gateways, generated MCP servers, and published recipes.
 ---
 
 [Bazantic](https://bazantic.com) turns an API into a service agents can
 discover, call and pay for per request, with no signup or API key. Common Arcade
-is listed there as two services, and two published **recipes** package whole
-Arcade tasks as single MCP tools.
+is live there as **two gateways**, each with a generated MCP server, and **two
+published recipes** that package whole Arcade tasks as single MCP tools.
+
+<Callout>
+  Bazantic only fronts Arcade's public, read-only routes. Creating matches,
+  claiming seats and playing still go directly to Arcade with an access key and
+  the realtime protocol. See [Live Matches](/docs/guides/live-matches).
+</Callout>
 
 ---
 
-## Services
+## At a glance
 
-| Service                    | What it answers                                                                    | Spec                                                                                             |
-| -------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| **Common Arcade**          | Game catalog, releases, public lobbies and live matches, results, replays          | [`/bazantic/common-arcade.openapi.json`](/bazantic/common-arcade.openapi.json)                   |
-| **Common Arcade Payments** | Payment networks, and each paid match's pool, payout accounting and settlement txs | [`/bazantic/common-arcade-payments.openapi.json`](/bazantic/common-arcade-payments.openapi.json) |
+| What                    | Where                                                                                                                                                                            |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Common Arcade gateway   | `https://idqnei5alresnbfes5pnwpgv6a.bazgateway.com`                                                                                                                              |
+| Payments gateway        | `https://ga4s6ugwlrh57kwd7ejatxx2ni.bazgateway.com`                                                                                                                              |
+| MCP servers             | Each gateway URL + `/mcp`                                                                                                                                                        |
+| Price                   | 0.01 USDC per call, settled on Base mainnet                                                                                                                                      |
+| Payout audit recipe     | [`audit-a-common-arcade-prize-payout-on-arc`](https://bazantic.com/recipes/audit-a-common-arcade-prize-payout-on-arc)                                                            |
+| Game finder recipe      | [`find-a-common-arcade-game-an-agent-can-play-now`](https://bazantic.com/recipes/find-a-common-arcade-game-an-agent-can-play-now)                                                |
+| Recipe catalog (JSON)   | [`api.bazantic.com/v1/recipes/<handle>`](https://api.bazantic.com/v1/recipes/audit-a-common-arcade-prize-payout-on-arc)                                                          |
+| Gateway specs           | [`/bazantic/common-arcade.openapi.json`](/bazantic/common-arcade.openapi.json), [`/bazantic/common-arcade-payments.openapi.json`](/bazantic/common-arcade-payments.openapi.json) |
+| Definitions in the repo | [`docs/integrations/bazantic`](https://github.com/Arttribute/common-arcade/tree/main/docs/integrations/bazantic)                                                                 |
 
-Both specs are the read-only, credential-free parts of the Arcade APIs, written
-with typed parameters and agent-oriented descriptions. Bazantic generates the
-MCP tools from them, so tool names match the `operationId`s: `listGames`,
-`getGame`, `listGameReleases`, `getRelease`, `listPublicMatches`, `getMatch`,
-`getMatchReplay`, `listGameRecordings`, `getArcadeStatus`, and on the payments
-service `getEconomyConfig`, `getPaidMatch` and `getPaymentServiceHealth`.
+---
 
-Creating matches, claiming seats and playing still go directly to Arcade with
-an access key and the realtime protocol. See
-[Live Matches](/docs/guides/live-matches).
+## Gateways
 
-### Calling a service
+### Common Arcade
 
-Read the gateway URL from the Bazantic listing rather than building it by hand,
-then append the Arcade path:
+`https://idqnei5alresnbfes5pnwpgv6a.bazgateway.com` · upstream
+`https://arcade.agentcommons.io/api/arcade`
+
+The game catalog, releases, public lobbies and live matches, results and
+replays.
+
+| MCP tool             | Route                               | Returns                                                                                      |
+| -------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------- |
+| `getArcadeStatus`    | `GET /v1/status`                    | Platform phase and capabilities                                                              |
+| `listGames`          | `GET /v1/games`                     | Latest manifest of every published game, including seats, cadence, runtime and payment terms |
+| `getGame`            | `GET /v1/games/{gameId}`            | One game's manifest                                                                          |
+| `listGameReleases`   | `GET /v1/games/{gameId}/releases`   | Immutable releases (`rel_…`) with digests                                                    |
+| `getRelease`         | `GET /v1/releases/{releaseId}`      | One release                                                                                  |
+| `listPublicMatches`  | `GET /v1/matches`                   | Public lobbies, running matches and recent results, with joinable seats                      |
+| `getMatch`           | `GET /v1/matches/{matchId}`         | Status, seats, series score and result                                                       |
+| `getMatchReplay`     | `GET /v1/matches/{matchId}/replay`  | Authoritative replay (large for realtime games)                                              |
+| `listGameRecordings` | `GET /v1/games/{gameId}/recordings` | Public gameplay recordings                                                                   |
+
+### Common Arcade Payments
+
+`https://ga4s6ugwlrh57kwd7ejatxx2ni.bazgateway.com` · upstream
+`https://d2scptqzm55h6p.cloudfront.net`
+
+The payment networks, and each [paid match](/docs/guides/payments)'s pool, payout
+accounting and settlement transactions.
+
+| MCP tool                  | Route                               | Returns                                                                            |
+| ------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------- |
+| `getEconomyConfig`        | `GET /v1/economy/config`            | Testnets that can host paid matches                                                |
+| `getPaidMatch`            | `GET /v1/economy/matches/{matchId}` | Terms, stage, escrow deployment, payout allocations and onchain transaction hashes |
+| `getPaymentServiceHealth` | `GET /healthz`                      | Service health                                                                     |
+
+Arcade's own x402 service (`POST /v1/analysis/{network}`) isn't behind a
+Bazantic gateway, because it already charges per call. Call it directly; see
+[x402 paid analysis](/docs/guides/payments#x402-paid-analysis).
+
+### Calling a gateway
+
+Discovery is free. Paid gateway calls settle in **Base mainnet USDC** from a capped grant. This balance is separate from Arcade’s testnet game funds; test HBAR, CELO or USDC cannot pay Bazantic’s mainnet charge.
 
 ```bash
 npm i -g @bazantic/cli
 baz grant create --name arcade --cap 1      # capped spending, approved in a browser
 
-# discovery is free: tools/list over MCP, or a 402 probe
+# free: list the MCP tools (the reply is an SSE stream)
 curl -s -X POST -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
-  <endpointUrl>/mcp
+  https://idqnei5alresnbfes5pnwpgv6a.bazgateway.com/mcp | sed -n 's/^data: //p'
 
-# paid call, settled in USDC
-baz curl <endpointUrl>/v1/games --account arcade --yes --json > games.json
+# free: a correct path answers 402 with the price, a wrong path answers 404
+curl -s -o /dev/null -w '%{http_code}\n' https://idqnei5alresnbfes5pnwpgv6a.bazgateway.com/v1/games
+
+# paid: the payload is .body
+baz curl https://idqnei5alresnbfes5pnwpgv6a.bazgateway.com/v1/games \
+  --account arcade --yes --json > games.json
+baz curl https://ga4s6ugwlrh57kwd7ejatxx2ni.bazgateway.com/v1/economy/matches/mat_b0018dc5-6c0b-4978-a914-305de6f20090 \
+  --account arcade --yes --json > paid-match.json
 ```
+
+The gateway charges even when Arcade returns an error, for example a `404` for an
+unknown match. Check `.body`, not only the status.
 
 ---
 
 ## Recipes
 
-A recipe is a whole task with typed inputs, a fixed prompt, a model and the
-exact tools it may call, published as one MCP tool. Install the catalog into
-Claude Code, Codex or Cursor with `baz recipe install --client claude-code`, or
-browse [bazantic.com/recipes](https://bazantic.com/recipes).
+A recipe is one task with typed inputs, a fixed prompt, a model and the exact
+tools it may call, published as one MCP tool. Each call is paid in USDC.
+
+```bash
+# free: read a recipe's inputs and examples
+curl -s https://api.bazantic.com/v1/recipes/audit-a-common-arcade-prize-payout-on-arc
+
+# wire the whole live catalog into Claude Code, Codex or Cursor
+baz recipe install --client claude-code
+```
 
 ### Audit a Common Arcade prize payout on Arc
 
-**Services:** Common Arcade Payments + Arc (Arc Testnet RPC).
+[`audit-a-common-arcade-prize-payout-on-arc`](https://bazantic.com/recipes/audit-a-common-arcade-prize-payout-on-arc)
+· model `anthropic/claude-sonnet-4.6`
 
-Arcade's record says what a paid match _should_ have paid; the chain says what
-it _did_ pay. The recipe:
+**Uses:** Common Arcade Payments (`getPaidMatch`) and Bazantic's Arc Testnet
+RPC gateway (`eth_chainId`, `eth_getTransactionReceipt`, `eth_getLogs`).
 
-1. Reads the match from **Common Arcade Payments** (`getPaidMatch`): network,
-   escrow contract, pool ID, payout allocations, fee and the ordered settlement
-   transaction hashes.
-2. Confirms Arc Testnet (`eth_chainId` = `0x4cef52`) and fetches every receipt
-   through **Arc** (`eth_getTransactionReceipt`, falling back to `eth_getLogs`).
-3. Decodes the ArcadeEscrow events (`MatchCreated`, `Locked`,
-   `RevenueShared`, `Settled`) and checks each transaction succeeded against
-   the reported contract and pool, the lifecycle order, and that the onchain
-   prize and fee equal the reported winner and fee allocations.
-4. Returns `VERIFIED`, `MISMATCH` or `UNVERIFIABLE` with per-transaction
-   evidence and explorer links.
+Arcade's record says what a paid match should allocate; the chain confirms what the escrow allocated. Settlement creates claimable winnings. It does not prove that a recipient withdrew those winnings into a wallet. Neither service can answer on its own. The recipe:
+
+1. Reads the match from **Common Arcade Payments**: network, escrow contract,
+   pool ID, payout allocations, fee and the ordered settlement transactions.
+2. Stops with `UNVERIFIABLE` if the match isn't on Arc Testnet, isn't settled,
+   or has no transactions.
+3. Confirms the chain (`eth_chainId` = `0x4cef52`, 5042002) and fetches every
+   receipt through **Arc**, falling back to `eth_getLogs` if `Settled` is missing.
+4. Decodes the ArcadeEscrow events and runs seven checks: every transaction
+   succeeded, targets the reported escrow and belongs to the reported pool;
+   the order is `MatchCreated` → `Locked` → `Settled`; `Settled.prize` equals the
+   winner allocation; `Settled.fee` equals the reported fee; and
+   `RevenueShared` creator plus platform fees add up to that fee.
+5. Returns `VERIFIED`, `MISMATCH` (naming the failed check and both values) or
+   `UNVERIFIABLE`, with per-transaction evidence and Arcscan links. The revised repository definition reports `verification_scope: escrow-settlement` and `withdrawals_verified: false`; wallet balances are checked separately in Arcade or Agent Commons.
+
+**Input**
 
 ```json
 { "match_id": "mat_b0018dc5-6c0b-4978-a914-305de6f20090" }
 ```
 
-For that settled blackjack duel, the chain shows a prize of 9750 atomic units
-(0.00975 USDC) and a fee of 250, matching Arcade's accounting, so the verdict
-is `VERIFIED`.
+**Expected result:** `VERIFIED`. That settled blackjack duel's three Arc
+transactions decode to `MatchCreated`, `Locked`, then `RevenueShared` and
+`Settled`, with a prize of 9750 atomic units (0.00975 USDC) and a fee of 250
+(0.00025 USDC), matching Arcade's accounting.
+
+| Event           | topic0                                                               |
+| --------------- | -------------------------------------------------------------------- |
+| `MatchCreated`  | `0x60b0f1b2d8e599672ef1bb94732d0c982bf9cdfcbf09bbf2833d852e8269c482` |
+| `Deposited`     | `0xde53dfbea8834b2d665850d0e7a38c986241a31516b317cc2caf7aef58b8bc0d` |
+| `Locked`        | `0x3223c64d0518f39e3854050c1ea77cb9f25539e39168510c5a0cc7aad992b306` |
+| `RevenueShared` | `0xbc617c6127ed003ef761639281e212043e2ad3dff5fc9a9bdf7a35bc02ac22ee` |
+| `Settled`       | `0xd4b81a0d219e759ca90777b0943ae99ae9d0519532c2d00dbf403170454039b0` |
+| `Voided`        | `0x628aa5a39bfb120b7f81de1e33db15545fe0d6ba9454f7d2b51f50949d0f8e62` |
+
+For every escrow event, `topics[1]` is the pool ID.
 
 ### Find a Common Arcade game an agent can play now
 
-**Service:** Common Arcade.
+[`find-a-common-arcade-game-an-agent-can-play-now`](https://bazantic.com/recipes/find-a-common-arcade-game-an-agent-can-play-now)
+· model `anthropic/claude-haiku-4.5`
+
+**Uses:** Common Arcade (`getArcadeStatus`, `listGames`, `listGameReleases`,
+`listPublicMatches`) plus Payments `getEconomyConfig` in the revised repository definition.
 
 Given a play style, the agent's decision rate and whether it wants paid
 matches, the recipe reads the catalog and the public match feed. It excludes
-preview-only browser games, which can't host a live match, and ranks the rest.
-Each pick comes with its latest release ID, open agent-joinable seats, whether
-paid matches are offered and on which networks, and the exact next steps to
-create or join a match.
+preview-only `browser-presentation` games, which can't host a live match, and
+excludes probe builds. Paid recommendations also require a turn-based authoritative game that supports two players and a creator payout address on a currently enabled payment network. A realtime lobby is not a paid table. It then ranks the rest: an open agent-joinable lobby
+first, turn-based for slower agents, two seats as simplest. Each pick includes:
+
+- the release ID matching the catalog manifest’s digest and version
+- open seats an agent may claim
+- whether paid matches are offered, and on which networks
+- the next steps for the selected flow: Arcade control sessions for free live play, or wallet-signed payment tables for paid games
+
+**Input** (all optional)
+
+| Field                      | Values                          | Default |
+| -------------------------- | ------------------------------- | ------- |
+| `play_style`               | `turn-based`, `realtime`, `any` | `any`   |
+| `max_decisions_per_second` | 0.1–30                          | 1       |
+| `wants_paid_matches`       | `true` / `false`                | `false` |
+| `limit`                    | 1–10                            | 3       |
 
 ```json
 {
@@ -103,5 +197,23 @@ create or join a match.
 }
 ```
 
-Recipe definitions are versioned in the repository under
-[`docs/integrations/bazantic/recipes`](https://github.com/Arttribute/common-arcade/tree/main/docs/integrations/bazantic/recipes).
+**Returns** `platform`, ranked `picks`, `excluded` games with reasons, and up to
+three `watch_now` matches.
+
+---
+
+## Maintaining the listing
+
+Repository recipe changes take effect on Bazantic only after the updated definitions are tested and republished. Merging the web documentation does not update a locked hosted recipe.
+
+The specs, recipe definitions and a with/without-recipe comparison protocol live
+in [`docs/integrations/bazantic`](https://github.com/Arttribute/common-arcade/tree/main/docs/integrations/bazantic).
+
+- **Add a public read route:** add it to the matching spec under
+  `apps/web/public/bazantic/`, deploy the web app, then run
+  `baz gateway resync <slug>` so the paid routes match the MCP tools.
+- **Change a recipe:** published recipes are locked. Run
+  `baz recipe unpublish <handle>`, then `baz recipe update <handle> <file>`, test
+  the draft in the Bazantic dashboard (test runs are free), and
+  `baz recipe publish <handle>`. The handle never changes.
+- **Change prices:** per-method prices are set in the Bazantic dashboard only.

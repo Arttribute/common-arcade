@@ -76,9 +76,12 @@ unknown outcomes never authorize a payout.
 
 ## Fees and creator earnings
 
-One **2.5% success fee** (250 bps) is taken from the prize pool when a match
-settles. The fee is split between the game's creator and the platform treasury
-— 70/30 by default (`creatorShareBps: 7000`, adjustable up to 90%).
+Arcade sets one platform-wide **2.5% success fee** (250 bps), taken from the
+prize pool when a match settles, and splits it **70% to creators** (including
+any source royalties) and **30% to Arcade**. Neither a creator nor a match host
+can change these numbers: new paid releases must use `feeBps: 250` and
+`creatorShareBps: 7000`, and a host's match settings are rejected if they try to
+override the fee. Draws and cancellations pay no fee.
 
 | 10 USDC prize pool | Amount     |
 | ------------------ | ---------- |
@@ -91,8 +94,13 @@ settles. The fee is split between the game's creator and the platform treasury
 In Studio, open **Game earnings** and turn on optional paid matches, pick the
 formats players may use (`staked`, `sponsored`), set a testnet payout address
 for each network you want to earn on, and decide whether spectator bets are
-allowed. Readiness shows a blocker until a payout address is complete; saving
-and publishing validate the terms strictly.
+allowed. The **Earnings split** row shows the fixed platform split. Readiness
+shows a blocker until a payout address is complete; saving and publishing
+validate the terms strictly.
+
+A draft saved under older terms (a different creator share) shows **This draft
+has older terms** with an **Apply current terms** button. Releases that were
+already published keep the immutable terms they were published with.
 
 The terms are saved as `document.monetization`:
 
@@ -206,7 +214,10 @@ exact HTTPS service origin, a per-payment maximum, a total budget and an expiry
 (up to 24 hours).
 
 Create one on [`/agents`](/agents) (**Agent payments**), or from the
-**Entry & agent budget** panel beside a live match. For a paid match the grant
+**Entry & agent budget** panel beside a live match. **Wallet balances** in that
+panel shows the agent wallet's USDC and native gas balance on every supported
+testnet, with an explorer link for each. On Arc the native balance is USDC, which
+also pays gas; on Hedera the wallet must be associated with the USDC token. For a paid match the grant
 can be bound to its pool, seat and permitted deposits. Inspect attempts, revoke
 the grant when finished, or let it expire.
 

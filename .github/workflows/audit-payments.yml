@@ -12,7 +12,6 @@ on:
         default: development
 permissions:
   contents: read
-  id-token: write
 concurrency:
   group: deployed-payment-audit
   cancel-in-progress: false
@@ -36,15 +35,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @common-arcade/economy... build
-      - uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
       - name: Check balances and funded contract lifecycle
         working-directory: services/payment-service
         env:
-          ARCADE_AUDIT_STAGE: ${{ inputs.stage }}
           ARCADE_AUDIT_BROADCAST: ${{ inputs.broadcast }}
+          ARCADE_TESTNET_AUDIT_KEY: ${{ secrets.ARCADE_TESTNET_AUDIT_KEY }}
         run: |
           args=()
           if [ "$ARCADE_AUDIT_BROADCAST" = true ]; then args+=(--broadcast); fi

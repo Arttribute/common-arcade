@@ -4,7 +4,7 @@
     "title": "Common Arcade Payments",
     "version": "0.1.0-testnet",
     "summary": "Read the prize pools, payout accounting and settlement transactions of Common Arcade paid matches.",
-    "description": "Common Arcade matches are free by default. A host can opt a match into a paid format (player stakes or a sponsored prize pool) held by the ArcadeEscrow contract in testnet USDC on Base Sepolia, Arc Testnet, Celo Sepolia or Hedera Testnet. The authoritative game runtime decides the winner, the resolver settles the pool, and one 2.5% success fee is split between the game's creator (70% by default) and the platform.\n\nThis document is the read-only, credential-free part of the Arcade payment service. It answers: which payment networks are live, and for one paid match, what the pool contained, who was allocated what, which escrow contract and token held it, and which onchain transaction hashes the service submitted. Every figure is in atomic USDC units (6 decimals: 1000000 = 1 USDC). Verify the transaction hashes independently with an RPC provider for the match's network (chain IDs: base-sepolia 84532, arc-testnet 5042002, celo-sepolia 11142220, hedera-testnet 296).\n\nTestnet only. The resolver and dealer are trusted operators; results are verifiable against the published replay and commitment, not trustless.",
+    "description": "Common Arcade matches are free by default. A host can opt a match into a paid format (player stakes or a sponsored prize pool) held by the ArcadeEscrow contract in testnet USDC on Base Sepolia, Arc Testnet, Celo Sepolia or Hedera Testnet. The authoritative game runtime decides the winner, the resolver settles the pool, and one 2.5% success fee is split between the game's creator (70% for new paid releases) and the platform.\n\nThis document is the read-only, credential-free part of the Arcade payment service. It answers: which payment networks are live, and for one paid match, what the pool contained, who was allocated what, which escrow contract and token held it, and which onchain transaction hashes the service submitted. Every figure is in atomic USDC units (6 decimals: 1000000 = 1 USDC). Verify the transaction hashes independently with an RPC provider for the match's network (chain IDs: base-sepolia 84532, arc-testnet 5042002, celo-sepolia 11142220, hedera-testnet 296).\n\nTestnet only. The resolver and dealer are trusted operators; results are verifiable against the published replay and commitment, not trustless.",
     "contact": {
       "name": "Common Arcade",
       "url": "https://arcade.agentcommons.io/docs/guides/payments"
@@ -99,7 +99,7 @@
         "operationId": "getPaidMatch",
         "tags": ["Economy"],
         "summary": "Get one paid match's pool, payout accounting and settlement transactions",
-        "description": "Returns the public record of a paid (escrow) match: the game and immutable release it ran, the economy terms (`economy.network`, stake, fee bps, bounties, spectator bets, funding and settlement windows), the lifecycle `stage` (`prepared`, `funding`, `playing`, `settlement-pending`, `settled`), the pool ID and escrow `deployment` (`chainId`, `contract`, USDC `token`), the payout `accounting` once settled (prize pool, fee, and each allocation's role, recipient and amount), the ordered onchain `transactions` the service submitted (lock, then settlement), the shuffle `commitment`, `rulesHash`, public events and the completed replay. All amounts are atomic USDC strings (6 decimals). To audit a payout, fetch each hash in `transactions` from an RPC provider for `deployment.chainId` and check that it succeeded and targeted `deployment.contract`.",
+        "description": "Returns the public record of a paid (escrow) match: the game and immutable release it ran, the economy terms (`economy.network`, stake, fee bps, bounties, spectator bets, funding and settlement windows), the lifecycle `stage` (`prepared`, `funding`, `playing`, `settlement-pending`, `settled`), the pool ID and escrow `deployment` (`chainId`, `contract`, USDC `token`), the payout `accounting` once settled (prize pool, fee, and each allocation's role, recipient and amount), the ordered onchain `transactions` the service submitted (creation, lock, then settlement), the shuffle `commitment`, `rulesHash`, public events and the completed replay. All amounts are atomic USDC strings (6 decimals). To audit a payout, fetch each hash in `transactions` from an RPC provider for `deployment.chainId` and check that it succeeded and targeted `deployment.contract`. Settlement accounting proves claimable allocations, not completed withdrawals into recipient wallets. Check wallet balances and withdrawal transactions separately.",
         "parameters": [
           {
             "name": "matchId",
@@ -205,7 +205,7 @@
           "recipients": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Payout recipients committed before funding (treasury, creator, royalty holders)."
+            "description": "The two player wallet addresses committed before funding. Creator and royalty terms are in revenue; allocations include the platform."
           },
           "revenue": {
             "type": "object",

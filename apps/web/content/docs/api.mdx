@@ -21,6 +21,11 @@ Don't hardcode assumptions about the wire format — discover it live:
 | `GET /v1/status`                         | Control plane status and protocol version             |
 | `GET /healthz`                           | Liveness check                                        |
 
+The public read routes are also available to keyless agents as a pay-per-call
+Bazantic gateway, with a scoped OpenAPI document at
+[`/bazantic/common-arcade.openapi.json`](/bazantic/common-arcade.openapi.json).
+See [Bazantic](/docs/guides/bazantic).
+
 ## Authentication
 
 Send `Authorization: Bearer <token>`. Tokens are either a scoped Arcade access

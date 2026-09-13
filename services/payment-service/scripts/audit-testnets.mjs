@@ -1,5 +1,5 @@
-import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createPublicClient, http, erc20Abi, formatUnits } from 'viem'
 import { NETWORKS } from '@common-arcade/economy'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -18,37 +18,32 @@ try {
     chain: network.chain,
     transport: http(undefined, { timeout: 15000, retryCount: 1 }),
   })
-  const secret = JSON.parse(
-    execFileSync(
-      'aws',
-      [
-        'secretsmanager',
-        'get-secret-value',
-        '--secret-id',
-        `common-arcade/${process.env.ARCADE_AUDIT_STAGE ?? 'development'}/payments`,
-        '--query',
-        'SecretString',
-        '--output',
-        'text',
-      ],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+  const deployment = JSON.parse(
+    await readFile(
+      new URL(
+        `../../../packages/contracts/deployments/${network.id}.json`,
+        import.meta.url,
+      ),
+      'utf8',
     ),
   )
-  const key = secret.resolverKey
-  const account = privateKeyToAccount(key)
+  const key = process.env.ARCADE_TESTNET_AUDIT_KEY
+  const address = deployment.admin
+  if (!deployment.verifiedAt || !/^0x[\da-f]{40}$/i.test(address))
+    throw new Error('A verified testnet deployment is required')
   const [chainId, native, usdc] = await Promise.all([
     reader.getChainId(),
-    reader.getBalance({ address: account.address }),
+    reader.getBalance({ address }),
     reader.readContract({
       address: network.token,
       abi: erc20Abi,
       functionName: 'balanceOf',
-      args: [account.address],
+      args: [address],
     }),
   ])
   Object.assign(report, {
     chainId,
-    address: account.address,
+    address,
     native: formatUnits(native, 18),
     nativeSymbol: network.chain.nativeCurrency.symbol,
     usdc: formatUnits(usdc, 6),
@@ -62,6 +57,16 @@ try {
   } else if (!process.argv.includes('--broadcast'))
     report.status = 'funded-read-only'
   else {
+    if (!key || !/^0x[\da-f]{64}$/i.test(key))
+      throw new Error(
+        'Configure ARCADE_TESTNET_AUDIT_KEY in the protected test environment',
+      )
+    if (
+      privateKeyToAccount(key).address.toLowerCase() !== address.toLowerCase()
+    )
+      throw new Error(
+        'Audit wallet does not match the verified test deployment',
+      )
     const child = spawnSync(
       process.execPath,
       ['scripts/smoke-testnet.mjs', network.id, '--broadcast'],
@@ -85,9 +90,7 @@ try {
   }
 } catch (error) {
   report.status = 'failed'
-  report.reason = error.message?.startsWith('Command failed')
-    ? 'AWS credential or secret access failed'
-    : (error.shortMessage ?? error.message).slice(0, 250)
+  report.reason = (error.shortMessage ?? error.message).slice(0, 250)
   process.exitCode = 1
 }
 await writeFile(

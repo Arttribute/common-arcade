@@ -68,7 +68,12 @@ describe('local one-time realtime tickets', () => {
     let now = 1_800_000_000_000
     const tickets = await authority(() => now)
     const token = await tickets.mint({ ...request, ttlSeconds: 1 })
-    const tampered = `${token.slice(0, -1)}${token.endsWith('x') ? 'y' : 'x'}`
+    const parts = token.split('.')
+    const signature = parts[2]!
+    // Changing the last Base64 character can only change unused padding bits.
+    // The leading character contains data bits, so changing it changes the HMAC.
+    parts[2] = `${signature.startsWith('A') ? 'B' : 'A'}${signature.slice(1)}`
+    const tampered = parts.join('.')
     await expect(
       tickets.redeem(tampered, {
         audience: 'arcade-realtime',
