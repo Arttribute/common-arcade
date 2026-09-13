@@ -920,7 +920,7 @@ export function AgentWalletPanel({
               </DialogPrimitive.Content>
             </DialogPrimitive.Portal>
           </DialogPrimitive.Root>
-          <section aria-label="Test card analysis">
+          <section className="payment-analysis" aria-label="Test card analysis">
             <h3>Test card analysis</h3>
             <p>Uses test USDC from the selected Paid services budget.</p>
             {analysisProblem && <p id={analysisHelpId}>{analysisProblem}</p>}
