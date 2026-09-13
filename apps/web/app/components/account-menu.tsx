@@ -2,14 +2,7 @@
 import { UserAvatar } from './user-avatar'
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import {
-  Bot,
-  ChevronsUpDown,
-  ExternalLink,
-  LogIn,
-  LogOut,
-  UserRound,
-} from 'lucide-react'
+import { Bot, ChevronsUpDown, LogIn, LogOut, UserRound } from 'lucide-react'
 
 type Account = { id: string; name: string }
 export function AccountMenu({
@@ -104,10 +97,6 @@ export function AccountMenu({
         <a href="/agents">
           <Bot size={16} />
           My agents
-        </a>
-        <a href="https://www.agentcommons.io">
-          <ExternalLink size={16} />
-          Open Commons
         </a>
         <button type="button" disabled={busy} onClick={() => void signOut()}>
           <LogOut size={16} />
