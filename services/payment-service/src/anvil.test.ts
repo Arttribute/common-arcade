@@ -23,9 +23,9 @@ import { MatchHost, commandMessage } from './matches.js'
 import { MemoryMatchStore } from './store.js'
 import { createSettlementAdapter } from './escrow.js'
 const rpc = process.env.ARCADE_ANVIL_URL
-it.skipIf(!rpc)(
-  'runs actual ERC20 deposits, blackjack replay, spectators, fee settlement and withdrawals on Anvil',
-  async () => {
+it.skipIf(!rpc).each([false, true])(
+  'openSeats=%s runs actual ERC20 deposits, blackjack replay, spectators, fee settlement and withdrawals on Anvil',
+  async (openSeats) => {
     if (!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(rpc!))
       throw new Error('Integration test permits local Anvil only')
     const reader = createPublicClient({
@@ -102,7 +102,13 @@ it.skipIf(!rpc)(
           args: [accounts[i]!.address, 100_000_000n],
         }),
       )
-    const deployment = { chainId: 31337, contract, token, confirmations: 1 },
+    const deployment = {
+        chainId: 31337,
+        contract,
+        token,
+        confirmations: 1,
+        openSeats,
+      },
       adapter = createSettlementAdapter(
         deployment,
         reader,
@@ -134,7 +140,9 @@ it.skipIf(!rpc)(
       )
     const body = {
       id: randomUUID(),
-      recipients: [accounts[2]!.address, accounts[3]!.address],
+      ...(openSeats
+        ? {}
+        : { recipients: [accounts[2]!.address, accounts[3]!.address] }),
       economy: {
         mode: 'escrow',
         network: 'base-sepolia',
@@ -157,7 +165,19 @@ it.skipIf(!rpc)(
         }),
       }
     }
-    let view = await host.create(body, await auth(2, 'create', body))
+    let view = await host.create(
+      body,
+      await auth(openSeats ? 0 : 2, 'create', body),
+    )
+    if (openSeats) {
+      expect(view.recipients).toEqual([
+        '0x' + '0'.repeat(40),
+        '0x' + '0'.repeat(40),
+      ])
+      await expect(host.start(id, await auth(0, 'start', {}))).rejects.toThrow(
+        'Waiting for both',
+      )
+    }
     const pool = view.pool!
     for (const [payer, op, seat, amount] of [
       [2, 'stake', 'sea_player_1', 1_000_000n],
@@ -178,7 +198,15 @@ it.skipIf(!rpc)(
     }
     let updates = 0
     const stop = host.subscribe(id, () => updates++)
-    await host.start(id, await auth(2, 'start', {}))
+    if (openSeats) {
+      view = await host.view(id)
+      expect(view.funded).toEqual([true, true])
+      expect(view.payments).toHaveLength(5)
+      await expect(host.start(id, await auth(2, 'start', {}))).rejects.toThrow(
+        'Only the table creator',
+      )
+    }
+    await host.start(id, await auth(openSeats ? 0 : 2, 'start', {}))
     const first = {
       actionId: randomUUID(),
       sequence: 0,

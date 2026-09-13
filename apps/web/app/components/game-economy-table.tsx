@@ -1,4 +1,6 @@
 'use client'
+import { hostPaidSession } from '../../lib/paid-session'
+import { PaidSeatJoin } from './paid-seat-join'
 import { PaymentSummary } from './payment-disclosure'
 import './payments.css'
 import { ExternalLink } from 'lucide-react'
@@ -40,6 +42,7 @@ interface Table {
   stage: string
   game?: string
   releaseId?: string
+  published?: boolean
   mode?: string
   runtimeError?: string
   revenue?: {
@@ -49,6 +52,16 @@ interface Table {
   }
   events?: unknown[]
   economy: EconomyConfig
+  payments?: {
+    hash: Hex
+    payer: Address
+    kind: number
+    seat: Hex
+    amount: string
+  }[]
+  host?: Address
+  openSeats?: boolean
+  funded?: boolean[]
   recipients: Address[]
   pool?: Hex
   deployment?: EscrowDeployment
@@ -77,14 +90,19 @@ function provider() {
 }
 export function GameEconomyTable({
   releaseId,
+  matchId,
   initialEconomy,
-}: { releaseId?: string; initialEconomy?: EconomyConfig } = {}) {
+}: {
+  releaseId?: string
+  matchId?: string
+  initialEconomy?: EconomyConfig
+} = {}) {
   const [localReceipts, setLocalReceipts] = useState<
     { operation: string; hash: Hex }[]
   >([])
   const [observation, setObservation] = useState<Observation>()
+  const [other, setOther] = useState('')
   const [account, setAccount] = useState<Address>(),
-    [other, setOther] = useState(''),
     [economy, setEconomy] = useState<EconomyConfig>(
       initialEconomy ?? { mode: 'free' },
     ),
@@ -98,6 +116,8 @@ export function GameEconomyTable({
     [live, setLive] = useState(false)
   const [entryMode, setEntryMode] = useState<'host' | 'join'>('host')
   const creation = useRef<unknown>(null)
+  const [loadingSession, setLoadingSession] = useState(!!matchId)
+  const published = !!releaseId || !!table?.published
   async function request(path: string, body?: unknown) {
     const r = await fetch(service + path, {
       method: body === undefined ? 'GET' : 'POST',
@@ -146,18 +166,20 @@ export function GameEconomyTable({
   useEffect(() => {
     if (!service) return
     request('/v1/economy/config')
-      .then((r) => setNetworks(r.networks))
+      .then((r) => setNetworks(r.openSeatNetworks ?? []))
       .catch(() =>
         setMessage(
-          'Game tables are temporarily unavailable. Please try again later.',
+          'Live sessions are temporarily unavailable. Please try again later.',
         ),
       )
-    const id = new URL(window.location.href).searchParams.get('matchId')
+    const id =
+      matchId ?? new URL(window.location.href).searchParams.get('matchId')
     if (id)
       request(`/v1/economy/matches/${encodeURIComponent(id)}`)
         .then(setTable)
         .catch((e) => setMessage(e.message))
-  }, [])
+        .finally(() => setLoadingSession(false))
+  }, [matchId])
   useEffect(() => {
     if (!table?.id) return
     let stopped = false,
@@ -190,44 +212,85 @@ export function GameEconomyTable({
       socket?.close()
     }
   }, [table?.id])
+  useEffect(() => {
+    if (!table?.openSeats || table.stage !== 'funding') return
+    let cancelled = false
+    const refresh = async () => {
+      try {
+        const next = await request(`/v1/economy/matches/${table.id}`)
+        if (!cancelled)
+          setTable((current) => (current?.stage === 'funding' ? next : current))
+      } catch {
+        /* Keep the last confirmed lobby during temporary network failures. */
+      }
+      if (!cancelled) timer = setTimeout(refresh, 4000)
+    }
+    let timer = setTimeout(refresh, 4000)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [table?.id, table?.stage, table?.openSeats])
+  useEffect(() => {
+    const ethereum = (
+      window as unknown as {
+        ethereum?: {
+          on?: (event: string, listener: (accounts: string[]) => void) => void
+          removeListener?: (
+            event: string,
+            listener: (accounts: string[]) => void,
+          ) => void
+        }
+      }
+    ).ethereum
+    const changed = (accounts: string[]) => {
+      setAccount(accounts[0] as Address | undefined)
+      setObservation(undefined)
+    }
+    try {
+      void provider()
+        .request({ method: 'eth_accounts' })
+        .then((value) => changed(value as string[]))
+        .catch(() => {})
+    } catch {}
+    ethereum?.on?.('accountsChanged', changed)
+    return () => ethereum?.removeListener?.('accountsChanged', changed)
+  }, [])
   async function create() {
-    const address = account ?? (await connect())
-    if (address.toLowerCase() === other.toLowerCase())
-      throw new Error('Use a different wallet for the other player.')
+    if (economy.mode === 'free') {
+      const address = account ?? (await connect())
+      const body = {
+        id: crypto.randomUUID(),
+        ...(releaseId ? { releaseId } : {}),
+        recipients: [address, other],
+        economy,
+      }
+      const next = await request('/v1/economy/matches', {
+        body,
+        auth: await auth(`mat_${body.id}`, 'create', body),
+      })
+      setTable(next)
+      window.history.replaceState(null, '', `?matchId=${next.id}`)
+      return
+    }
     const proposed = {
-      recipients: [address, other],
       economy: economyConfigSchema.parse(economy),
       ...(releaseId ? { releaseId } : {}),
     }
     const previous = creation.current as {
-      recipients: Address[]
+      id: string
       economy: EconomyConfig
       releaseId?: string
     } | null
     if (
       !previous ||
-      JSON.stringify([
-        previous.recipients,
-        previous.economy,
-        previous.releaseId,
-      ]) !==
-        JSON.stringify([
-          proposed.recipients,
-          proposed.economy,
-          proposed.releaseId,
-        ])
+      JSON.stringify([previous.economy, previous.releaseId]) !==
+        JSON.stringify([proposed.economy, proposed.releaseId])
     )
-      creation.current = {
-        id: crypto.randomUUID(),
-        ...(releaseId ? { releaseId } : {}),
-        recipients: [address, other],
-        economy: economyConfigSchema.parse(economy),
-      }
-    const body = creation.current as { id: string }
-    const next = await request('/v1/economy/matches', {
-      body,
-      auth: await auth(`mat_${body.id}`, 'create', body),
-    })
+      creation.current = { id: crypto.randomUUID(), ...proposed }
+    const next = await hostPaidSession(
+      creation.current as Parameters<typeof hostPaidSession>[0],
+    )
     setTable(next)
     creation.current = null
     window.history.replaceState(null, '', `?matchId=${next.id}`)
@@ -240,10 +303,10 @@ export function GameEconomyTable({
         new URL(input, window.location.origin).searchParams.get('matchId') ??
         input
     } catch {
-      // A plain table ID is also accepted.
+      // A plain session ID is also accepted.
     }
     if (!/^mat_[A-Za-z0-9_-]{1,190}$/.test(id))
-      throw new Error('Paste a table invitation link or a valid table ID.')
+      throw new Error('Paste a session invitation link or a valid session ID.')
     const next = await request(`/v1/economy/matches/${encodeURIComponent(id)}`)
     setTable(next)
     window.history.replaceState(null, '', `?matchId=${next.id}`)
@@ -291,6 +354,7 @@ export function GameEconomyTable({
     operation:
       'stake' | 'bounty' | 'bet' | 'withdraw' | 'refund' | 'claimBet' | 'void',
     beneficiary?: Address,
+    joinSeat?: number,
   ) {
     if (!table?.deployment || !table.pool || table.economy.mode !== 'escrow')
       return
@@ -316,22 +380,26 @@ export function GameEconomyTable({
       seat = table.recipients.findIndex(
         (a) => a.toLowerCase() === address.toLowerCase(),
       )
-    if (operation === 'stake' && seat < 0)
-      throw new Error('This wallet is not a player at this table')
+    if (
+      operation === 'stake' &&
+      seat < 0 &&
+      !(table.openSeats && joinSeat !== undefined)
+    )
+      throw new Error('This wallet is not a player at this session')
     const units =
       operation === 'stake'
         ? BigInt(table.economy.stakeUnits)
         : operation === 'bounty' || operation === 'bet'
           ? usdcUnits(amount)
           : 0n
-    if (['stake', 'bounty', 'bet'].includes(operation))
+    if (['stake', 'bounty', 'bet'].includes(operation) && units > 0n)
       await adapter.submit(approvalCall(table.deployment, units))
     const hash = await adapter.submit(
       escrowCall(table.deployment, operation, table.pool, {
         seat: hashArcadeId(
           operation === 'bet'
             ? backSeat
-            : seat === 0
+            : (joinSeat ?? seat) === 0
               ? 'sea_player_1'
               : 'sea_player_2',
         ),
@@ -355,10 +423,17 @@ export function GameEconomyTable({
       !!table?.state &&
       table.state.turn ===
         (seat === 0 ? 'sea_player_1' : seat === 1 ? 'sea_player_2' : '')
+  if (loadingSession) return <p role="status">Opening live session…</p>
+  if (matchId && !table)
+    return (
+      <p role="alert">
+        {message || 'Could not open this session. Reload to try again.'}
+      </p>
+    )
   if (!service)
     return (
       <p role="status">
-        Testnet game tables are not available yet. You can still play games in
+        Testnet live sessions are not available yet. You can still play games in
         the arcade.
       </p>
     )
@@ -401,14 +476,14 @@ export function GameEconomyTable({
               aria-pressed={entryMode === 'host'}
               onClick={() => setEntryMode('host')}
             >
-              Host a table
+              Host a session
             </button>
             <button
               className={entryMode === 'join' ? 'primary' : 'secondary'}
               aria-pressed={entryMode === 'join'}
               onClick={() => setEntryMode('join')}
             >
-              Join a table
+              Join a session
             </button>
           </div>
           {entryMode === 'join' ? (
@@ -421,16 +496,16 @@ export function GameEconomyTable({
                 }}
               >
                 <label>
-                  Table ID or invitation{' '}
+                  Session ID or invitation{' '}
                   <input
                     required
                     value={matchInput}
                     onChange={(e) => setMatchInput(e.target.value)}
-                    placeholder="Paste a table link or ID"
+                    placeholder="Paste a session link or ID"
                   />
                 </label>
                 <button className="secondary" disabled={busy}>
-                  Open table
+                  Open session
                 </button>
               </form>
             </>
@@ -440,7 +515,7 @@ export function GameEconomyTable({
               <p>
                 {economy.mode === 'escrow'
                   ? `${formatUnits(BigInt(economy.stakeUnits), 6)} test USDC per player · ${NETWORKS[economy.network].chain.name}`
-                  : 'Choose your opponent and payment options after connecting.'}
+                  : 'Choose payment options after connecting.'}
               </p>
               {connectButton}
               <small>Connecting does not charge your wallet.</small>
@@ -464,20 +539,21 @@ export function GameEconomyTable({
                 }}
               >
                 <p>
-                  Invite your opponent, then create the table. You will fund
-                  your entry next.
+                  Create your session, then share the link. Players join and pay
+                  for their own seats.
                 </p>
-                <label>
-                  Other player or agent wallet{' '}
-                  <input
-                    required
-                    pattern="0x[0-9a-fA-F]{40}"
-                    value={other}
-                    onChange={(e) => setOther(e.target.value)}
-                    placeholder="0x…"
-                    style={{ width: '100%' }}
-                  />
-                </label>
+                {economy.mode === 'free' && (
+                  <label>
+                    Other player wallet
+                    <input
+                      required
+                      pattern="0x[0-9a-fA-F]{40}"
+                      value={other}
+                      onChange={(event) => setOther(event.target.value)}
+                      placeholder="0x…"
+                    />
+                  </label>
+                )}
                 {initialEconomy ? (
                   <>
                     <div className="payment-terms-summary">
@@ -518,13 +594,9 @@ export function GameEconomyTable({
                       !networks.includes(economy.network))
                   }
                 >
-                  Create table
+                  Host a live session
                 </button>
               </form>
-              <details className="payment-disclosure">
-                <PaymentSummary>Play with a Commons agent</PaymentSummary>
-                <AgentWalletPanel table={table} onWalletSelected={setOther} />
-              </details>{' '}
             </>
           )}
         </>
@@ -541,7 +613,7 @@ export function GameEconomyTable({
             />
           ) : (
             <div className="payment-table-heading">
-              <h2>{table.game ?? 'Game table'}</h2>
+              <h2>{table.game ?? 'Live session'}</h2>
               <p>
                 {table.economy.mode === 'escrow'
                   ? `${formatUnits(BigInt(table.economy.stakeUnits), 6)} test USDC per player · ${NETWORKS[table.economy.network].chain.name}`
@@ -550,8 +622,8 @@ export function GameEconomyTable({
               {table.stage === 'funding' && (
                 <p>
                   {account
-                    ? 'Fund your entry, then the host can start.'
-                    : 'Connect your wallet to fund your entry.'}
+                    ? 'Choose a seat for yourself or your agent.'
+                    : 'Join a seat for yourself or your agent. Spectating is free.'}
                 </p>
               )}
             </div>
@@ -560,7 +632,106 @@ export function GameEconomyTable({
             (table.stage === 'settled' && table.economy.mode === 'escrow')) && (
             <div className="payment-wallet-connection">{connectButton}</div>
           )}
-          {table.stage === 'funding' && account && (
+          {table.economy.mode === 'escrow' &&
+            (!!table.payments?.length || !!localReceipts.length) && (
+              <div
+                className="payment-confirmations"
+                aria-label="Confirmed payments"
+              >
+                {[
+                  ...(table.payments ?? []).map((p) => ({
+                    hash: p.hash,
+                    operation:
+                      p.kind === 0
+                        ? 'Seat entry'
+                        : p.kind === 1
+                          ? 'Prize contribution'
+                          : 'Spectator bet',
+                  })),
+                  ...localReceipts.filter(
+                    (receipt) =>
+                      !table.payments?.some(
+                        (payment) => payment.hash === receipt.hash,
+                      ),
+                  ),
+                ].map((receipt) => (
+                  <p key={receipt.hash}>
+                    {receipt.operation} confirmed ·{' '}
+                    <a
+                      target="_blank"
+                      rel="noreferrer"
+                      href={transactionExplorerUrl(
+                        table.economy.mode === 'escrow'
+                          ? table.economy.network
+                          : '',
+                        receipt.hash,
+                      )}
+                    >
+                      View transaction <ExternalLink size={14} aria-hidden />
+                    </a>
+                  </p>
+                ))}
+              </div>
+            )}
+          {table.stage === 'funding' &&
+            table.openSeats &&
+            table.economy.mode === 'escrow' && (
+              <>
+                <div className="actions">
+                  <button
+                    className="secondary"
+                    onClick={() =>
+                      run(async () => {
+                        await navigator.clipboard.writeText(
+                          window.location.href,
+                        )
+                        setMessage('Invitation link copied')
+                      })
+                    }
+                  >
+                    Copy invitation link
+                  </button>
+                </div>
+                <PaidSeatJoin
+                  table={
+                    table as Table & {
+                      economy: Extract<EconomyConfig, { mode: 'escrow' }>
+                    }
+                  }
+                  account={account}
+                  busy={busy}
+                  onJoin={(index) =>
+                    run(() => transact('stake', undefined, index))
+                  }
+                  onJoined={() =>
+                    run(async () =>
+                      setTable(
+                        await request(`/v1/economy/matches/${table.id}`),
+                      ),
+                    )
+                  }
+                />
+                {account?.toLowerCase() === table.host?.toLowerCase() && (
+                  <button
+                    className="primary"
+                    disabled={busy || !table.funded?.every(Boolean)}
+                    onClick={() =>
+                      run(async () => {
+                        setTable(
+                          await request(
+                            `/v1/economy/matches/${table.id}/start`,
+                            await auth(table.id, 'start', {}),
+                          ),
+                        )
+                      })
+                    }
+                  >
+                    Start game
+                  </button>
+                )}
+              </>
+            )}
+          {table.stage === 'funding' && !table.openSeats && account && (
             <div className="payment-funding">
               {table.economy.mode === 'escrow' && (
                 <p>
@@ -600,7 +771,7 @@ export function GameEconomyTable({
                       })
                     }
                   >
-                    {releaseId
+                    {published
                       ? 'Lock funding and start'
                       : 'Lock funding and deal'}
                   </button>
@@ -608,7 +779,7 @@ export function GameEconomyTable({
               </div>
             </div>
           )}
-          {!releaseId && table.stage === 'playing' && (
+          {!published && table.stage === 'playing' && (
             <div className="actions">
               <button
                 className="primary"
@@ -639,7 +810,7 @@ export function GameEconomyTable({
               }
             />
           )}
-          {releaseId &&
+          {published &&
             table.mode !== 'realtime' &&
             table.stage === 'playing' && (
               <section>
@@ -691,7 +862,7 @@ export function GameEconomyTable({
                     {NETWORKS[table.economy.network].chain.name} · test USDC.
                     {table.accounting?.status === 'refundable'
                       ? ' Refunds return to the wallet that contributed.'
-                      : ' Withdraw your available escrow balance, including any earnings from other tables.'}
+                      : ' Withdraw your available escrow balance, including any earnings from other sessions.'}
                   </p>
                   <div className="actions">
                     {table.accounting?.status !== 'refundable' && (
@@ -754,8 +925,8 @@ export function GameEconomyTable({
               )}
               {table.stage === 'funding' &&
                 (table.economy.bounties || table.economy.spectatorBets) && (
-                  <details className="payment-disclosure">
-                    <PaymentSummary>Support this match</PaymentSummary>
+                  <section className="payment-disclosure">
+                    <h3>Back a player or add to the prize</h3>
                     <p>
                       Contributions close when the host starts. Use test USDC on{' '}
                       {NETWORKS[table.economy.network].chain.name}.
@@ -797,19 +968,33 @@ export function GameEconomyTable({
                           onValueChange={setBackSeat}
                           ariaLabel="Player to back"
                         >
-                          <SelectOption value="sea_player_1" title="Player 1" />
-                          <SelectOption value="sea_player_2" title="Player 2" />
+                          <SelectOption
+                            value="sea_player_1"
+                            title="Player 1"
+                            disabled={!!table.openSeats && !table.funded?.[0]}
+                          />
+                          <SelectOption
+                            value="sea_player_2"
+                            title="Player 2"
+                            disabled={!!table.openSeats && !table.funded?.[1]}
+                          />
                         </Select>
                         <button
                           className="secondary"
-                          disabled={busy}
+                          disabled={
+                            busy ||
+                            (!!table.openSeats &&
+                              !table.funded?.[
+                                backSeat === 'sea_player_1' ? 0 : 1
+                              ])
+                          }
                           onClick={() => run(() => transact('bet'))}
                         >
                           Bet {amount} test USDC
                         </button>
                       </div>
                     )}
-                  </details>
+                  </section>
                 )}
             </>
           )}
@@ -831,13 +1016,13 @@ export function GameEconomyTable({
             <PaymentSummary>Session & payment details</PaymentSummary>
             <div className="payment-details-body">
               <div>
-                <strong>{table.game ?? 'Game table'}</strong> ·{' '}
+                <strong>{table.game ?? 'Live session'}</strong> ·{' '}
                 {table.economy.mode === 'free'
                   ? 'Free play'
                   : `${NETWORKS[table.economy.network].chain.name} · ${formatUnits(BigInt(table.economy.stakeUnits), 6)} test USDC per seat`}
                 <p>
                   <a href={`?matchId=${table.id}`}>
-                    Share this table with players and spectators
+                    Share this session with players and spectators
                   </a>
                 </p>
               </div>
@@ -853,8 +1038,8 @@ export function GameEconomyTable({
                   if (!service)
                     return (
                       <p role="status">
-                        Testnet game tables are not available yet. You can still
-                        play games in the arcade.
+                        Testnet live sessions are not available yet. You can
+                        still play games in the arcade.
                       </p>
                     )
                   return (
@@ -928,7 +1113,7 @@ export function GameEconomyTable({
                   breakdownOnly
                 />
               )}
-              {releaseId && ended && (
+              {published && ended && (
                 <details>
                   <PaymentSummary>Public game events</PaymentSummary>
                   <pre className="payment-event-data">
@@ -998,11 +1183,11 @@ export function GameEconomyTable({
                 <>
                   <details className="payment-disclosure">
                     <PaymentSummary>
-                      Expired table or missing refund?
+                      Expired session or missing refund?
                     </PaymentSummary>
                     <p>
                       If funding or play runs past its deadline, cancel the
-                      expired table, then claim your contribution. Refunds
+                      expired session, then claim your contribution. Refunds
                       always return to the contributing wallet.
                     </p>
                     <div className="actions">
@@ -1010,7 +1195,7 @@ export function GameEconomyTable({
                         disabled={busy || table.stage === 'settled'}
                         onClick={() => run(() => transact('void'))}
                       >
-                        Cancel expired table
+                        Cancel expired session
                       </button>
                       <button
                         className="primary"
@@ -1030,15 +1215,15 @@ export function GameEconomyTable({
                 </details>
               )}
               <small role="status">
-                {live ? 'Live table connected' : 'Reconnecting…'}
+                {live ? 'Live session connected' : 'Reconnecting…'}
               </small>
             </div>
           </details>
-          {!ended && (
+          {!ended && (!table.openSeats || table.stage !== 'funding') && (
             <>
               <details className="payment-disclosure">
                 <PaymentSummary>Play with a Commons agent</PaymentSummary>
-                <AgentWalletPanel table={table} onWalletSelected={setOther} />
+                <AgentWalletPanel table={table} />
               </details>{' '}
             </>
           )}

@@ -998,9 +998,11 @@ export function AgentWalletPanel({
             grant?.policy.arcade?.matchId === table.id &&
             !grant.revoked_at && (
               <div className="actions">
-                <button disabled={busy} onClick={() => run(deposit)}>
-                  Have agent stake
-                </button>
+                {table.stage === 'funding' && (
+                  <button disabled={busy} onClick={() => run(deposit)}>
+                    Join with this budget
+                  </button>
+                )}
                 <button
                   disabled={busy || table.stage !== 'playing'}
                   onClick={() => run(play)}

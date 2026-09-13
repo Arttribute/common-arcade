@@ -35,7 +35,7 @@ Winner, creator, royalty holders and treasury withdraw what they are owed
 ```
 
 1. **Terms are committed before funding.** The pool ID is bound to the network,
-   escrow deployment, match, release and round. Rules hash, recipients, fee and
+   escrow deployment, match, release and round. Rules hash, open seat IDs, fee and
    the shuffle commitment are fixed before any deposit is accepted.
 2. **Funding window.** Deposits are accepted until the funding deadline
    (1–60 minutes, chosen by the host). A match that doesn't fill refunds every
@@ -83,21 +83,25 @@ authorize a payout.
    prize pool** (players enter for free). Select a **Payment network**. Only
    networks enabled by the service and configured in the creator’s published
    payout terms appear.
-3. Choose **Continue to paid lobby**. Connect an EVM wallet and enter the other
-   player’s or agent’s wallet address. Review the terms and choose **Create
-   table**, approving the wallet signature. Creating a table does not deposit
-   the stake.
-4. Share the table link with the other player. For stakes, both players use
-   **Fund my entry**. For a sponsored game, expand **Support this match → Add to the prize pool**
-   and fund the reward before starting. Deposits require a token allowance and
-   a separate transaction approval; test USDC and network gas are required.
-5. Once funding is confirmed, the host chooses **Lock funding and start**.
+3. Choose **Host a live session** and approve the host signature. Share the invitation
+   link. You do not need another player's wallet, and hosting does not pay an entry.
+4. Each player chooses an open seat, **Play myself** or **Use my agent**, and a personal
+   budget covering the entry. **Join & pay** confirms a human's exact entry; **Approve
+   budget & join** lets the selected agent pay automatically within its own session
+   grant. A valid existing grant is reused. The network, recipient and session are
+   filled in by the lobby. Unused budget stays in the paying wallet. Network gas is separate.
+   Sponsored seats have no USDC entry charge but still require joining the seat.
+5. For sponsored rewards, use **Add to the prize pool**. Optional spectator bets let
+   you **Back a player** after they have joined. When both seats are confirmed, the
+   host chooses **Start game**, closing deposits and bets before gameplay starts.
 6. For realtime games, each player chooses **Enable game controls** and approves
    one wallet signature. Choose your car and lock it in for Redline Run, then
    race in the game window. Gameplay does not ask for payment approvals on each
    move. After a disconnect, reconnect and enable controls again.
 7. The server settles the completed match. The winner can withdraw the allocated
-   prize; creator earnings follow the published payout terms.
+   prize; creator earnings follow the published payout terms. Confirmed payments have
+   **View transaction** links to the selected network’s explorer, including agent entries
+   and spectator bets. Withdrawals also show their transaction receipt.
 
 Paid hosting is a testnet preview restricted to enabled host wallets. A wallet
 that is not enabled receives a clear error when creating the table.
@@ -221,12 +225,15 @@ source license.
 
 All pools and prices use USDC atomic units (6 decimals: `1000000` = 1 USDC).
 
-| Network        | Chain ID | USDC                                         | ArcadeEscrow                                 | Status                                                                              |
-| -------------- | -------- | -------------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Base Sepolia   | 84532    | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` | `0x45699ed8ccda0d7b29008e7af90e287a79de08de` | Hosted end-to-end match, payout and x402 checks passed                              |
-| Arc Testnet    | 5042002  | `0x3600000000000000000000000000000000000000` | `0xbe529edf75ebeb609dcf7ab26783dc558b735851` | Hosted end-to-end match, payout and x402 checks passed                              |
-| Celo Sepolia   | 11142220 | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` | `0xbe529edf75ebeb609dcf7ab26783dc558b735851` | Hosted match and payout checks passed; x402 rail live                               |
-| Hedera Testnet | 296      | `0.0.429274`                                 | `0xbe529edf75ebeb609dcf7ab26783dc558b735851` | Escrow deployed and USDC-associated; x402 rail live; paid match checks pending USDC |
+| Network        | Chain ID | USDC                                         | Open-seat escrow                             |
+| -------------- | -------- | -------------------------------------------- | -------------------------------------------- |
+| base-sepolia   | 84532    | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` | `0x3b3a3302effb91631a25732582e8823879690f85` |
+| arc-testnet    | 5042002  | `0x3600000000000000000000000000000000000000` | `0xd912b9b7715d7dcefb2b65daf876ca6efc8e3ce9` |
+| hedera-testnet | 296      | `0.0.429274`                                 | `0x15f3eb03fce4b11ae62df7e6e03ba63ead94d875` |
+| celo-sepolia   | 11142220 | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` | `0x957e41e77ac48bcef425d24eed903133b398b23c` |
+
+Previous pools retain their original escrow contracts. Hedera funded payment checks
+remain pending canonical test USDC; contract deployment alone is not a funded-payment test.
 
 Arc pays gas in USDC, which shares the same balance as its ERC-20 USDC. Keep a
 gas reserve on top of any stake. On Hedera, recipients must be activated
@@ -379,8 +386,20 @@ and deposit using that agent’s wallet, and checks the budget, expiry, network,
 recipient and match restrictions before spending. Game commands are signed by
 the agent wallet too. A human player’s **Enable game controls** button is separate.
 
-A budget grants permission; an agent task decides when to use it. **Have agent
-stake** is a manual trigger for that same autonomous payment endpoint. External
-agent runtimes can call `/arcade/deposit` directly with the approved payment
-session and runtime session IDs. Budget approval alone does not launch a task
-or spend the budget immediately.
+In a live session, **Approve budget & join** authorizes the selected agent and
+immediately submits its entry using that grant. An existing matching grant is
+reused. External runtimes can call `/arcade/deposit` with the approved payment
+session and runtime session IDs. Creating a standalone budget on the Agents
+page only grants permission; the agent task decides when to spend it. Entry
+payment does not itself choose the agent's gameplay actions.
+
+### Open-seat compatibility
+
+New paid lobbies use `createOpenMatch`; `stake(pool, seat)` assigns an open seat
+and deposits its entry atomically. A failed transfer leaves the seat open. Sponsored
+entry uses the same function with zero USDC. Each wallet may occupy one seat.
+`openSeatNetworks` in the service configuration identifies available deployments.
+Existing tables keep their original escrow address, participants and withdrawal routes.
+A Commons agent needs the open-seat backend update, including migration 034 for
+zero-cost admission receipts. Its owner still authorizes the grant; an agent cannot
+create or expand its own budget.

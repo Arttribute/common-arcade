@@ -459,3 +459,27 @@ details[open] > .payment-summary > .payment-summary-chevron {
   border-radius: 14px;
   margin-block: 16px;
 }
+
+.paid-seat-join {
+  display: grid;
+  gap: 16px;
+}
+.paid-lobby-seats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.paid-seat-join p {
+  margin: 0;
+  color: var(--ink-muted);
+  line-height: 1.5;
+}
+.paid-lobby-seats .paid-player-card {
+  display: grid;
+  gap: 12px;
+}
+@media (max-width: 480px) {
+  .paid-lobby-seats {
+    grid-template-columns: 1fr;
+  }
+}

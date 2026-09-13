@@ -15,6 +15,7 @@ import {
 export interface PoolTerms {
   id: Hex
   rulesHash: Hex
+  openSeats?: boolean
   recipients: Address[]
   seatIds: string[]
   fundingDeadline: number
@@ -34,8 +35,24 @@ export interface MatchSettlementAdapter {
     resultHash: Hex,
   ): Promise<Hex | undefined>
   inspect(id: Hex): Promise<unknown>
+  blockNumber?(): Promise<bigint>
+  seats?(
+    id: Hex,
+    fromBlock?: string,
+  ): Promise<{
+    recipients: Address[]
+    funded: boolean[]
+    payments?: {
+      hash: Hex
+      payer: Address
+      kind: number
+      seat: Hex
+      amount: string
+    }[]
+  }>
   accounting?(id: Hex): Promise<SettlementAccounting | undefined>
 }
+const resolverQueues = new Map<string, Promise<unknown>>()
 /** All calls reconcile contract state before submission; a lost HTTP receipt never authorizes another payout. */
 export function createSettlementAdapter(
   deployment: EscrowDeployment,
@@ -50,41 +67,47 @@ export function createSettlementAdapter(
       functionName: 'getMatch',
       args: [id],
     })
-  let pending = Promise.resolve()
+  const queueKey = `${deployment.chainId}:${wallet.account?.address.toLowerCase()}`
   async function send(
-    functionName: 'createMatch' | 'lock' | 'settle' | 'voidMatch',
+    functionName:
+      'createMatch' | 'createOpenMatch' | 'lock' | 'settle' | 'voidMatch',
     args: readonly unknown[],
   ) {
-    const operation = pending.then(async () => {
-      if (
-        !wallet.account ||
-        (await reader.getChainId()) !== deployment.chainId ||
-        (await wallet.getChainId()) !== deployment.chainId
-      )
-        throw new Error('Resolver account or chain mismatch')
-      const request = {
-        address: deployment.contract,
-        abi: arcadeEscrowAbi,
-        functionName,
-        args,
-        account: wallet.account,
-        chain: wallet.chain,
-      } as Parameters<typeof wallet.writeContract>[0]
-      await reader.simulateContract(
-        request as Parameters<typeof reader.simulateContract>[0],
-      )
-      const hash = await wallet.writeContract(request)
-      const receipt = await reader.waitForTransactionReceipt({
-        hash,
-        confirmations: deployment.confirmations ?? 2,
-      })
-      if (receipt.status !== 'success')
-        throw new Error(`Escrow transaction reverted: ${hash}`)
-      return hash
-    })
-    pending = operation.then(
-      () => undefined,
-      () => undefined,
+    const operation = (resolverQueues.get(queueKey) ?? Promise.resolve()).then(
+      async () => {
+        if (
+          !wallet.account ||
+          (await reader.getChainId()) !== deployment.chainId ||
+          (await wallet.getChainId()) !== deployment.chainId
+        )
+          throw new Error('Resolver account or chain mismatch')
+        const request = {
+          address: deployment.contract,
+          abi: arcadeEscrowAbi,
+          functionName,
+          args,
+          account: wallet.account,
+          chain: wallet.chain,
+        } as Parameters<typeof wallet.writeContract>[0]
+        await reader.simulateContract(
+          request as Parameters<typeof reader.simulateContract>[0],
+        )
+        const hash = await wallet.writeContract(request)
+        const receipt = await reader.waitForTransactionReceipt({
+          hash,
+          confirmations: deployment.confirmations ?? 2,
+        })
+        if (receipt.status !== 'success')
+          throw new Error(`Escrow transaction reverted: ${hash}`)
+        return hash
+      },
+    )
+    resolverQueues.set(
+      queueKey,
+      operation.then(
+        () => undefined,
+        () => undefined,
+      ),
     )
     return operation
   }
@@ -98,7 +121,9 @@ export function createSettlementAdapter(
         // A durable prepared record is written before create; recover through inspect instead of creating twice.
         throw new Error('Pool already exists; recover the prepared match')
       }
-      return send('createMatch', [
+      if (t.openSeats && !deployment.openSeats)
+        throw new Error('Open seats are unavailable on this deployment')
+      return send(t.openSeats ? 'createOpenMatch' : 'createMatch', [
         t.id,
         {
           token: deployment.token,
@@ -116,7 +141,7 @@ export function createSettlementAdapter(
           royalties: t.royalties ?? [],
         },
         t.seatIds.map(hashArcadeId),
-        t.recipients,
+        ...(t.openSeats ? [] : [t.recipients]),
       ])
     },
     async lock(id) {
@@ -164,6 +189,77 @@ export function createSettlementAdapter(
             ])
           : ([0n, ''] as const)
       return settlementAccounting({ ...match, winningShares, winnerRecipient })
+    },
+    blockNumber: () => reader.getBlockNumber({ cacheTime: 0 }),
+    async seats(id, fromBlock) {
+      // Read all seat ownership at one confirmed block, never a browser assertion.
+      const head = await reader.getBlockNumber({ cacheTime: 0 })
+      const blockNumber = head - BigInt((deployment.confirmations ?? 2) - 1)
+      const seatIds = await reader.readContract({
+        address: deployment.contract,
+        abi: arcadeEscrowAbi,
+        functionName: 'getSeats',
+        args: [id],
+        blockNumber,
+      })
+      const values = await Promise.all(
+        seatIds.map(async (seat) =>
+          Promise.all([
+            reader.readContract({
+              address: deployment.contract,
+              abi: arcadeEscrowAbi,
+              functionName: 'recipient',
+              args: [id, seat],
+              blockNumber,
+            }),
+            reader.readContract({
+              address: deployment.contract,
+              abi: arcadeEscrowAbi,
+              functionName: 'staked',
+              args: [id, seat],
+              blockNumber,
+            }),
+          ]),
+        ),
+      )
+      const payments: {
+        hash: Hex
+        payer: Address
+        kind: number
+        seat: Hex
+        amount: string
+      }[] = []
+      if (fromBlock) {
+        for (
+          let start = BigInt(fromBlock);
+          start <= blockNumber;
+          start += 500n
+        ) {
+          const logs = await reader.getContractEvents({
+            address: deployment.contract,
+            abi: arcadeEscrowAbi,
+            eventName: 'Deposited',
+            args: { matchId: id },
+            fromBlock: start,
+            toBlock: start + 499n < blockNumber ? start + 499n : blockNumber,
+            strict: true,
+          })
+          payments.push(
+            ...logs.map((log) => ({
+              hash: log.transactionHash,
+              payer: log.args.payer,
+              kind: log.args.kind,
+              seat: log.args.seatId,
+              amount: log.args.amount.toString(),
+            })),
+          )
+        }
+      }
+      return {
+        recipients: values.map((v) => v[0]),
+        funded: values.map((v) => v[1]),
+        payments,
+      }
     },
     inspect: read,
   }

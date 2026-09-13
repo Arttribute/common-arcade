@@ -311,6 +311,108 @@ export const arcadeEscrowAbi = [
   },
   {
     type: 'function',
+    name: 'createOpenMatch',
+    inputs: [
+      {
+        name: 'id',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'terms',
+        type: 'tuple',
+        internalType: 'struct ArcadeEscrow.Terms',
+        components: [
+          {
+            name: 'token',
+            type: 'address',
+            internalType: 'contract IERC20',
+          },
+          {
+            name: 'resolver',
+            type: 'address',
+            internalType: 'address',
+          },
+          {
+            name: 'treasury',
+            type: 'address',
+            internalType: 'address',
+          },
+          {
+            name: 'fundingDeadline',
+            type: 'uint64',
+            internalType: 'uint64',
+          },
+          {
+            name: 'settlementDeadline',
+            type: 'uint64',
+            internalType: 'uint64',
+          },
+          {
+            name: 'feeBps',
+            type: 'uint16',
+            internalType: 'uint16',
+          },
+          {
+            name: 'stake',
+            type: 'uint256',
+            internalType: 'uint256',
+          },
+          {
+            name: 'bounties',
+            type: 'bool',
+            internalType: 'bool',
+          },
+          {
+            name: 'betting',
+            type: 'bool',
+            internalType: 'bool',
+          },
+          {
+            name: 'rulesHash',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 'creator',
+            type: 'address',
+            internalType: 'address',
+          },
+          {
+            name: 'creatorShareBps',
+            type: 'uint16',
+            internalType: 'uint16',
+          },
+          {
+            name: 'royalties',
+            type: 'tuple[]',
+            internalType: 'struct ArcadeEscrow.RoyaltyShare[]',
+            components: [
+              {
+                name: 'recipient',
+                type: 'address',
+                internalType: 'address',
+              },
+              {
+                name: 'bps',
+                type: 'uint16',
+                internalType: 'uint16',
+              },
+            ],
+          },
+        ],
+      },
+      {
+        name: 'seatIds',
+        type: 'bytes32[]',
+        internalType: 'bytes32[]',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     name: 'fundBounty',
     inputs: [
       {
@@ -506,6 +608,25 @@ export const arcadeEscrowAbi = [
   },
   {
     type: 'function',
+    name: 'openSeats',
+    inputs: [
+      {
+        name: '',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [
+      {
+        name: '',
+        type: 'bool',
+        internalType: 'bool',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     name: 'outcomePool',
     inputs: [
       {
@@ -640,6 +761,30 @@ export const arcadeEscrowAbi = [
   },
   {
     type: 'function',
+    name: 'registeredSeat',
+    inputs: [
+      {
+        name: '',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: '',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [
+      {
+        name: '',
+        type: 'bool',
+        internalType: 'bool',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     name: 'renounceOwnership',
     inputs: [],
     outputs: [],
@@ -649,6 +794,30 @@ export const arcadeEscrowAbi = [
     type: 'function',
     name: 'resolvers',
     inputs: [
+      {
+        name: '',
+        type: 'address',
+        internalType: 'address',
+      },
+    ],
+    outputs: [
+      {
+        name: '',
+        type: 'bool',
+        internalType: 'bool',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'seated',
+    inputs: [
+      {
+        name: '',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
       {
         name: '',
         type: 'address',

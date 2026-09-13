@@ -64,6 +64,9 @@ contract ArcadeEscrow is Ownable2Step, ReentrancyGuard {
     mapping(address => mapping(address => uint256)) public claimable;
     mapping(address => bool) public allowedTokens;
     mapping(address => bool) public resolvers;
+    mapping(bytes32 => bool) public openSeats;
+    mapping(bytes32 => mapping(bytes32 => bool)) public registeredSeat;
+    mapping(bytes32 => mapping(address => bool)) public seated;
     bool public paused;
     uint16 public constant MAX_FEE_BPS = 1000;
 
@@ -131,7 +134,24 @@ contract ArcadeEscrow is Ownable2Step, ReentrancyGuard {
     function createMatch(bytes32 id, Terms calldata terms, bytes32[] calldata seatIds, address[] calldata recipients)
         external
     {
-        if (paused || !resolvers[msg.sender] || terms.resolver != msg.sender) revert Unauthorized();
+        _createMatch(id, terms, seatIds, recipients, false);
+    }
+
+    /// @notice Create a lobby whose players claim and fund their own seats.
+    function createOpenMatch(bytes32 id, Terms calldata terms, bytes32[] calldata seatIds) external {
+        _createMatch(id, terms, seatIds, new address[](seatIds.length), true);
+    }
+
+    function _createMatch(
+        bytes32 id,
+        Terms calldata terms,
+        bytes32[] calldata seatIds,
+        address[] memory recipients,
+        bool open
+    ) private {
+        if (paused || !resolvers[msg.sender] || terms.resolver != msg.sender) {
+            revert Unauthorized();
+        }
         if (
             accounts[id].status != Status.Absent || id == bytes32(0) || terms.rulesHash == bytes32(0)
                 || !allowedTokens[address(terms.token)] || terms.treasury != owner() || terms.feeBps > MAX_FEE_BPS
@@ -148,12 +168,14 @@ contract ArcadeEscrow is Ownable2Step, ReentrancyGuard {
         }
         if (totalRoyaltyBps > 10000) revert InvalidTerms();
         for (uint256 i; i < seatIds.length; ++i) {
-            if (seatIds[i] == bytes32(0) || recipients[i] == address(0) || recipient[id][seatIds[i]] != address(0)) {
+            if (seatIds[i] == bytes32(0) || (!open && recipients[i] == address(0)) || registeredSeat[id][seatIds[i]]) {
                 revert InvalidTerms();
             }
+            registeredSeat[id][seatIds[i]] = true;
             recipient[id][seatIds[i]] = recipients[i];
             seats[id].push(seatIds[i]);
         }
+        openSeats[id] = open;
         accounts[id].terms = terms;
         accounts[id].status = Status.Funding;
         emit MatchCreated(id, address(terms.token), terms.rulesHash, terms.resolver);
@@ -161,12 +183,22 @@ contract ArcadeEscrow is Ownable2Step, ReentrancyGuard {
 
     function stake(bytes32 id, bytes32 seatId) external nonReentrant {
         MatchAccount storage m = _funding(id);
-        if (recipient[id][seatId] != msg.sender || staked[id][seatId] || m.terms.stake == 0) revert InvalidDeposit();
+        if (openSeats[id]) {
+            if (!registeredSeat[id][seatId] || recipient[id][seatId] != address(0) || seated[id][msg.sender]) {
+                revert InvalidDeposit();
+            }
+            // Assignment and payment are atomic: a failed transfer leaves the seat open.
+            recipient[id][seatId] = msg.sender;
+            seated[id][msg.sender] = true;
+        } else if (recipient[id][seatId] != msg.sender || m.terms.stake == 0) {
+            revert InvalidDeposit();
+        }
+        if (staked[id][seatId]) revert InvalidDeposit();
         staked[id][seatId] = true;
         ++m.paidSeats;
         m.prizePool += m.terms.stake;
         refundable[id][msg.sender] += m.terms.stake;
-        _receive(m.terms.token, m.terms.stake);
+        if (m.terms.stake != 0) _receive(m.terms.token, m.terms.stake);
         emit Deposited(id, msg.sender, 0, seatId, m.terms.stake);
     }
 
@@ -196,7 +228,7 @@ contract ArcadeEscrow is Ownable2Step, ReentrancyGuard {
         _resolver(m);
         if (
             m.status != Status.Funding || block.timestamp >= m.terms.fundingDeadline
-                || (m.terms.stake != 0 && m.paidSeats != seats[id].length)
+                || ((m.terms.stake != 0 || openSeats[id]) && m.paidSeats != seats[id].length)
         ) revert WrongPhase();
         m.status = Status.Locked;
         emit Locked(id);

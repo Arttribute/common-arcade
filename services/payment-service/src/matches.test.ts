@@ -236,3 +236,54 @@ describe('blackjack match lifecycle', () => {
     expect((await host.view(id)).state).toBeNull()
   })
 })
+
+it('pins existing sessions to their original escrow during a deployment rotation', async () => {
+  const store = new MemoryMatchStore()
+  const old = {
+    deployment: { chainId: 84532, contract: alice.address, token: fan.address },
+    create: async () => `0x${'11'.repeat(32)}` as const,
+    inspect: async () => ({ status: 0 }),
+    lock: async () => undefined,
+    settle: async () => undefined,
+  } satisfies MatchSettlementAdapter
+  const next = {
+    ...old,
+    deployment: { ...old.deployment, contract: bob.address, openSeats: true },
+  }
+  const body = {
+    id: randomUUID(),
+    recipients: [alice.address, bob.address],
+    economy: {
+      mode: 'escrow',
+      network: 'base-sepolia',
+      stakeUnits: '100',
+      bounties: false,
+      spectatorBets: false,
+      feeBps: 250,
+      fundingSeconds: 600,
+      settlementSeconds: 3600,
+    },
+  }
+  const id = `mat_${body.id}`
+  await new MatchHost(store, { 'base-sepolia': old }, domain).create(
+    body,
+    await auth(alice, id, 'create', body),
+  )
+  const record = (await store.get<TableRecord>(id))!
+  const rotated = new MatchHost(
+    store,
+    {
+      'base-sepolia': next,
+      'base-sepolia:legacy': old,
+      [`base-sepolia:${alice.address.toLowerCase()}`]: old,
+    },
+    domain,
+  )
+  expect((await rotated.view(id)).deployment?.contract).toBe(alice.address)
+  delete record.deploymentContract // Record written by the previous production worker.
+  await store.put(id, record)
+  expect((await rotated.view(id)).deployment?.contract).toBe(alice.address)
+  await expect(
+    new MatchHost(store, { 'base-sepolia': next }, domain).view(id),
+  ).rejects.toThrow('Original escrow')
+})

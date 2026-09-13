@@ -20,7 +20,7 @@ import {
   type EconomyConfig,
 } from '@common-arcade/economy'
 import type { Replay, ActionSubmission } from '@common-arcade/protocol'
-import { verifyMessage, type Address, type Hex } from 'viem'
+import { verifyMessage, zeroAddress, type Address, type Hex } from 'viem'
 import { z } from 'zod'
 import type { MatchStore } from './store.js'
 import type { MatchSettlementAdapter } from './escrow.js'
@@ -35,13 +35,25 @@ export const createTableSchema = z
       .string()
       .regex(/^rel_[A-Za-z0-9_-]{1,190}$/)
       .optional(),
-    recipients: z.tuple([address, address]),
+    recipients: z.tuple([address, address]).optional(),
     economy: economyConfigSchema.default({ mode: 'free' }),
   })
   .strict()
 export interface TableRecord {
   id: string
   requestHash: Hex
+  host?: Address
+  openSeats?: boolean
+  deploymentContract?: Address
+  funded?: boolean[]
+  fundingBlock?: string
+  payments?: {
+    hash: Hex
+    payer: Address
+    kind: number
+    seat: Hex
+    amount: string
+  }[]
   recipients: Address[]
   economy: EconomyConfig
   release?: StudioRelease
@@ -77,8 +89,14 @@ export function commandMessage(
 }
 export class MatchHost {
   configuredNetworks() {
-    return Object.keys(this.adapters)
+    return Object.keys(this.adapters).filter((key) => !key.includes(':'))
   }
+  openSeatNetworks() {
+    return this.configuredNetworks().filter(
+      (id) => this.adapters[id]?.deployment.openSeats,
+    )
+  }
+  private lobbyReadAt = new Map<string, number>()
   private closing = false
   private starting = new Set<string>()
   private runtimes = new Map<string, AuthoritativeMatch<unknown, unknown>>()
@@ -140,7 +158,20 @@ export class MatchHost {
   }
   private adapter(record: TableRecord) {
     if (record.economy.mode === 'free') return undefined
-    const adapter = this.adapters[record.economy.network]
+    const network = record.economy.network
+    const primary = this.adapters[network]
+    const adapter = record.deploymentContract
+      ? primary?.deployment.contract.toLowerCase() ===
+        record.deploymentContract.toLowerCase()
+        ? primary
+        : this.adapters[`${network}:${record.deploymentContract.toLowerCase()}`]
+      : (this.adapters[`${network}:legacy`] ?? primary)
+    if (
+      !record.deploymentContract &&
+      primary?.deployment.openSeats &&
+      !this.adapters[`${network}:legacy`]
+    )
+      throw new Error('Original escrow deployment is required for this session')
     if (!adapter) throw new Error('Testnet escrow deployment is not configured')
     return adapter
   }
@@ -150,9 +181,17 @@ export class MatchHost {
     if (body.economy.mode === 'escrow' && body.economy.feeBps !== 250)
       throw new Error('The platform fee is 250 basis points')
     await this.verify(id, 'create', body, auth)
-    if (body.recipients[0].toLowerCase() !== auth.address.toLowerCase())
+    if (!body.recipients && body.economy.mode !== 'escrow')
+      throw new Error('Open lobbies require a paid session')
+    if (
+      body.recipients &&
+      body.recipients[0].toLowerCase() !== auth.address.toLowerCase()
+    )
       throw new Error('Creator must own first seat')
-    if (body.recipients[0].toLowerCase() === body.recipients[1].toLowerCase())
+    if (
+      body.recipients &&
+      body.recipients[0].toLowerCase() === body.recipients[1].toLowerCase()
+    )
       throw new Error('Use two distinct player wallets')
     if (
       body.economy.mode === 'escrow' &&
@@ -167,6 +206,11 @@ export class MatchHost {
         throw new Error('Payment worker is restarting; try again shortly')
       let record = await this.store.get<TableRecord>(id)
       const requestHash = hashArcadeId(JSON.stringify(body))
+      if (
+        record?.host &&
+        record.host.toLowerCase() !== auth.address.toLowerCase()
+      )
+        throw new Error('Session belongs to another host')
       if (record && record.requestHash !== requestHash)
         throw new Error('Match ID already bound to different terms')
       if (!record) {
@@ -185,7 +229,15 @@ export class MatchHost {
           requestHash,
           releaseDigest: release?.digest ?? blackjackGame.releaseDigest,
           ...(release ? { release, revenue } : {}),
-          recipients: body.recipients,
+          host: auth.address,
+          openSeats: !body.recipients,
+          recipients: body.recipients ?? [zeroAddress, zeroAddress],
+          ...(body.economy.mode === 'escrow'
+            ? {
+                deploymentContract:
+                  this.adapters[body.economy.network]?.deployment.contract,
+              }
+            : {}),
           economy: body.economy,
           seed,
           commitment: hashArcadeId(JSON.stringify([id, seed])),
@@ -213,6 +265,10 @@ export class MatchHost {
           actions: {},
         }
         const adapter = this.adapter(record)
+        if (record.openSeats && !adapter?.deployment.openSeats)
+          throw new Error(
+            'Open paid sessions are not available on this network yet',
+          )
         if (adapter)
           record.pool = poolId(
             adapter.deployment.chainId,
@@ -220,6 +276,8 @@ export class MatchHost {
             id,
             release?.digest ?? blackjackGame.releaseDigest,
           )
+        if (record.openSeats && adapter?.blockNumber)
+          record.fundingBlock = (await adapter.blockNumber()).toString()
         await this.store.put(id, record) // Commitment/terms survive a lost deployment receipt.
       }
       if (
@@ -244,6 +302,7 @@ export class MatchHost {
                 creator: record.revenue?.creator,
                 creatorShareBps: record.revenue?.creatorShareBps,
                 royalties: record.revenue?.royalties,
+                openSeats: record.openSeats,
                 recipients: record.recipients,
                 seatIds: ['sea_player_1', 'sea_player_2'],
                 fundingDeadline: record.fundingDeadline,
@@ -321,9 +380,15 @@ export class MatchHost {
       const record = await this.require(id)
       if (this.closing)
         throw new Error('Payment worker is restarting; try again shortly')
-      if (record.recipients[0]!.toLowerCase() !== auth.address.toLowerCase())
+      if (
+        (record.host ?? record.recipients[0]!).toLowerCase() !==
+        auth.address.toLowerCase()
+      )
         throw new Error('Only the table creator can start')
       if (record.stage !== 'funding') return this.viewRecord(record)
+      await this.refreshSeats(record)
+      if (record.openSeats && !record.funded?.every(Boolean))
+        throw new Error('Waiting for both players to join their seats')
       if (Date.now() / 1000 >= record.fundingDeadline)
         throw new Error('Funding expired; claim refunds')
       // The 0.5-vCPU preview task also serves payment/facilitator requests.
@@ -343,6 +408,7 @@ export class MatchHost {
           if (adapter) {
             const hash = await adapter.lock(record.pool!)
             if (hash) record.transactions.push(hash)
+            await this.refreshSeats(record)
           }
         } catch (error) {
           this.runtimes.delete(id)
@@ -537,8 +603,36 @@ export class MatchHost {
       seat === 0 ? 'sea_player_1' : 'sea_player_2',
     )
   }
+  private async refreshSeats(record: TableRecord) {
+    if (!record.openSeats || record.stage !== 'funding') return
+    const adapter = this.adapter(record)
+    if (!adapter?.seats || !record.pool)
+      throw new Error('Seat reader unavailable')
+    const seats = await adapter.seats(record.pool, record.fundingBlock)
+    if (seats.recipients.length !== 2 || seats.funded.length !== 2)
+      throw new Error('Invalid onchain roster')
+    if (
+      JSON.stringify([record.recipients, record.funded, record.payments]) !==
+      JSON.stringify([seats.recipients, seats.funded, seats.payments])
+    ) {
+      record.recipients = seats.recipients
+      record.funded = seats.funded
+      record.payments = seats.payments
+      await this.store.put(record.id, record)
+      this.broadcast(record)
+    }
+  }
   async view(id: string) {
     const record = await this.require(id)
+    if (record.openSeats && record.stage === 'funding')
+      return this.exclusive(id, async () => {
+        const latest = await this.require(id)
+        if (Date.now() - (this.lobbyReadAt.get(id) ?? 0) >= 2000) {
+          await this.refreshSeats(latest)
+          this.lobbyReadAt.set(id, Date.now())
+        }
+        return this.viewRecord(latest)
+      })
     if (
       record.stage !== 'settled' ||
       record.accounting ||
@@ -560,6 +654,7 @@ export class MatchHost {
       game: record.release?.document.title ?? 'Blackjack duel',
       mode: record.release?.manifest.spec.mode ?? 'turn-based',
       runtimeError: record.runtimeError,
+      published: !!record.release,
       releaseId: record.release?.id ?? blackjackGame.releaseId,
       releaseDigest: record.releaseDigest,
       revenue: record.revenue,
@@ -570,6 +665,10 @@ export class MatchHost {
           (event) => event.visibility === 'public',
         ) ?? [],
       economy: record.economy,
+      host: record.host ?? record.recipients[0],
+      openSeats: record.openSeats ?? false,
+      funded: record.funded,
+      payments: record.payments,
       recipients: record.recipients,
       commitment: record.commitment,
       rulesHash: record.rulesHash,

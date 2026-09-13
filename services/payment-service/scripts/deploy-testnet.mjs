@@ -6,6 +6,7 @@ import {
   erc20Abi,
   formatEther,
   parseAbi,
+  keccak256,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { NETWORKS } from '@common-arcade/economy'
@@ -15,6 +16,11 @@ import { NETWORKS } from '@common-arcade/economy'
 const networkId = process.argv[2]
 const network = NETWORKS[networkId]
 const broadcast = process.argv.includes('--broadcast')
+const revision = process.argv
+  .find((arg) => arg.startsWith('--revision='))
+  ?.split('=')[1]
+if (revision && !/^[a-z0-9-]{1,40}$/.test(revision))
+  throw new Error('Invalid deployment revision')
 try {
   if (!network?.testnet)
     throw new Error(
@@ -72,7 +78,7 @@ try {
       ? JSON.parse(artifact.metadata)
       : artifact.metadata
   const directory = new URL(
-    '../../../packages/contracts/deployments/',
+    `../../../packages/contracts/deployments/${revision ? revision + '/' : ''}`,
     import.meta.url,
   )
   const recordUrl = new URL(`${networkId}.json`, directory)
@@ -91,7 +97,13 @@ try {
     throw new Error(
       'Existing deployment record has different network/administrator',
     )
+  const bytecodeHash = keccak256(artifact.bytecode.object)
+  if (record?.bytecodeHash && record.bytecodeHash !== bytecodeHash)
+    throw new Error(
+      'Revision is already bound to different bytecode; use a new revision',
+    )
   record ??= {
+    ...(revision ? { revision, bytecodeHash } : {}),
     network: networkId,
     chainId: network.chain.id,
     admin: account.address,
@@ -203,6 +215,7 @@ try {
           contract: record.contract,
           treasury: account.address,
           rpcUrl,
+          ...(revision === 'open-seats-v2' ? { openSeats: true } : {}),
         },
       },
       null,

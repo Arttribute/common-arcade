@@ -40,6 +40,12 @@ export class PaymentStack extends Stack {
         'utf8',
       ),
     )
+    const legacyDeployments = JSON.parse(
+      readFileSync(
+        resolve(root, 'packages/contracts/deployments/testnet-legacy.json'),
+        'utf8',
+      ),
+    )
     const treasury = '0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab'
     const celoEnabled = Boolean(deployments['celo-sepolia'])
     const vpc = props.vpcName
@@ -104,6 +110,7 @@ export class PaymentStack extends Stack {
         PORT: '4021',
         ARCADE_PAYMENT_DATA_DIR: '/data',
         ARCADE_ESCROW_DEPLOYMENTS: JSON.stringify(deployments),
+        ARCADE_ESCROW_LEGACY_DEPLOYMENTS: JSON.stringify(legacyDeployments),
         ARCADE_REGISTRY_URL: props.registryUrl.replace(/\/$/, ''),
         ARCADE_PAYMENT_ORIGINS: props.corsOrigins,
         ARCADE_PAYMENT_CREATORS: `${treasury},0x9AE39751dD3ABc21f7ebB1d278D9b178B0837ca5`,
