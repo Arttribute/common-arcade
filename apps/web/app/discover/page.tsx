@@ -5,7 +5,7 @@ import { Header } from '../components/header'
 export const dynamic = 'force-dynamic'
 
 async function games(): Promise<{
-  games: (GameManifest & { isFeatured?: boolean })[]
+  games: (GameManifest & { isFeatured?: boolean; publishedAt?: string })[]
   online: boolean
 }> {
   const api = process.env.ARCADE_API_URL ?? 'http://localhost:4100'
@@ -14,12 +14,13 @@ async function games(): Promise<{
     if (!response.ok) throw new Error(`Catalog returned ${response.status}`)
     const body = (await response.json()) as {
       games: GameManifest[]
-      catalog?: Record<string, { isFeatured: boolean }>
+      catalog?: Record<string, { isFeatured: boolean; publishedAt?: string }>
     }
     return {
       games: body.games.map((game) => ({
         ...game,
         isFeatured: body.catalog?.[game.metadata.id]?.isFeatured === true,
+        publishedAt: body.catalog?.[game.metadata.id]?.publishedAt,
       })),
       online: true,
     }

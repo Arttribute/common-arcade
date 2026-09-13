@@ -533,6 +533,14 @@ export function createApp(options: ControlApiOptions = {}) {
 
   app.get('/v1/games', async (context) => {
     const releases = await publishedReleases(store)
+    // Discovery orders by when a game first went public, not its latest revision.
+    const firstPublishedAt = new Map<string, string>()
+    for (const { release } of releases) {
+      const gameId = release.manifest.metadata.id
+      const earliest = firstPublishedAt.get(gameId)
+      if (release.publishedAt && (!earliest || release.publishedAt < earliest))
+        firstPublishedAt.set(gameId, release.publishedAt)
+    }
     const games = releases
       .map(({ release }) => release.manifest)
       .filter(
@@ -546,6 +554,7 @@ export function createApp(options: ControlApiOptions = {}) {
       catalog: await catalogMetadata(
         store,
         games.map((game) => game.metadata.id),
+        firstPublishedAt,
       ),
       nextCursor: null,
     })
@@ -1213,7 +1222,7 @@ function openApiDocument(serverUrl: string) {
         get: {
           summary: 'Discover published games',
           description:
-            'Canonical manifests remain unchanged. Separate catalog metadata is keyed by game ID and contains the curated isFeatured flag.',
+            'Canonical manifests remain unchanged. Separate catalog metadata is keyed by game ID and contains the curated isFeatured flag and publishedAt, when the game first went public.',
           responses: {
             '200': {
               description: 'Published games and catalog metadata',
@@ -1229,7 +1238,13 @@ function openApiDocument(serverUrl: string) {
                         additionalProperties: {
                           type: 'object',
                           required: ['isFeatured'],
-                          properties: { isFeatured: { type: 'boolean' } },
+                          properties: {
+                            isFeatured: { type: 'boolean' },
+                            publishedAt: {
+                              type: 'string',
+                              format: 'date-time',
+                            },
+                          },
                         },
                       },
                       nextCursor: { type: ['string', 'null'] },
