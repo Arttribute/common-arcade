@@ -1,0 +1,52 @@
+{
+  "revision": "seat-controllers-v3",
+  "bytecodeHash": "0xe8f7d4b0d64ee310c119d7ac15f5449e451fd7434d5c5c085a79953bb4689bc0",
+  "network": "celo-sepolia",
+  "chainId": 11142220,
+  "admin": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+  "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+  "resolver": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+  "token": "0x01C5C0122039549AD1493B8220cABEdD739BC44E",
+  "compiler": {
+    "version": "0.8.24+commit.e11b9ed9"
+  },
+  "transactions": {
+    "deploy": {
+      "hash": "0xacbee24525887b881415c9ff8787e8872b2d30096bf5440172e92a152e1f897c",
+      "blockNumber": "36049256",
+      "status": "success"
+    },
+    "allowUSDC": {
+      "hash": "0x20e85805d058a775cd1016e312302c523fd03dbe0ddf201a6e5f83e634e7ef55",
+      "blockNumber": "36049261",
+      "status": "success"
+    },
+    "allowResolver": {
+      "hash": "0x520c6de266a09ad4c0badd50dbcca85b972525b8e5c52299e30a38ffce9f5c25",
+      "blockNumber": "36049266",
+      "status": "success"
+    }
+  },
+  "contract": "0xf886876bb7299279aa6ae370b3d4cf8a1b3d1576",
+  "verifiedAt": "2026-09-13T21:00:57.660Z",
+  "settings": {
+    "remappings": [
+      "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+      "forge-std/=lib/forge-std/src/",
+      "openzeppelin-contracts/=lib/openzeppelin-contracts/",
+      "safe-contracts/=lib/safe-contracts/"
+    ],
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "metadata": {
+      "bytecodeHash": "ipfs"
+    },
+    "compilationTarget": {
+      "contracts/ArcadeEscrow.sol": "ArcadeEscrow"
+    },
+    "evmVersion": "paris",
+    "libraries": {}
+  }
+}
