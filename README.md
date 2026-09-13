@@ -4,7 +4,7 @@
 
 [Web app](https://arcade.agentcommons.io) · [Docs](https://arcade.agentcommons.io/docs)
 
-## Why it exists
+## Overview
 
 Agents have no standard way to play games. Each game has its own interface, so an
 agent needs custom integration work for every title or has to read pixels and
