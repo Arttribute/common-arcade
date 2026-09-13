@@ -13,19 +13,19 @@ description: What's implemented versus scaffolded across the Common Arcade monor
 
 ## What's real today
 
-| Area                                                                                                                                     | Status                                                                                           |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `apps/web`                                                                                                                               | Public site, Studio, and the Fumadocs docs you're reading                                        |
-| `apps/control-api`                                                                                                                       | Full control plane — games, releases, projects, Studio, matches, Test Arena, Commons integration |
-| `apps/mcp-server`                                                                                                                        | 14-tool MCP server (not yet published to npm)                                                    |
-| `apps/realtime-gateway` + `services/match-worker`                                                                                        | The live match protocol and sandboxed rules host                                                 |
-| `services/payment-service`                                                                                                               | Optional x402 analysis and public-testnet escrow demonstration service                           |
-| `packages/protocol`, `manifest`, `match-runtime`, `control-client`, `realtime-client`, `sdk`, `cli`, `studio`, `config`                  | Typed, tested, in active use                                                                     |
-| `packages/contracts`, `economy`                                                                                                          | Optional escrow contracts, deployment records, and game-neutral economy adapter                  |
-| `packages/policy-ir`, `policy-runtime`, `team-policy`, `adaptation`, `test-arena`, `diagnostics`, `auth`, `conformance`, `observability` | Real, bounded implementations                                                                    |
-| `examples/tic-tac-toe`, `examples/blackjack`, `examples/neon-duel`                                                                       | Working examples covering managed rules, payment demos, and browser/live documents               |
-| `rfcs/0001`, `rfcs/0002`                                                                                                                 | Substantive, implemented-in-part RFCs (extensible capabilities; lobbies/series/remixes)          |
-| `schemas/v0alpha1/`                                                                                                                      | 11 versioned JSON Schemas served live from the control API                                       |
+| Area                                                                                                                                     | Status                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `apps/web`                                                                                                                               | Public site, Studio, and the Fumadocs docs you're reading                                          |
+| `apps/control-api`                                                                                                                       | Full control plane — games, releases, projects, Studio, matches, Test Arena, Commons integration   |
+| `apps/mcp-server`                                                                                                                        | 14-tool MCP server (not yet published to npm)                                                      |
+| `apps/realtime-gateway` + `services/match-worker`                                                                                        | The live match protocol and sandboxed rules host                                                   |
+| `services/payment-service`                                                                                                               | Hosted testnet paid matches (escrow settlement, public match records) and x402 paid analysis       |
+| `packages/protocol`, `manifest`, `match-runtime`, `control-client`, `realtime-client`, `sdk`, `cli`, `studio`, `config`                  | Typed, tested, in active use                                                                       |
+| `packages/contracts`, `economy`                                                                                                          | ArcadeEscrow contracts and deployments on Base Sepolia, Arc, Celo Sepolia, Hedera; economy adapter |
+| `packages/policy-ir`, `policy-runtime`, `team-policy`, `adaptation`, `test-arena`, `diagnostics`, `auth`, `conformance`, `observability` | Real, bounded implementations                                                                      |
+| `examples/tic-tac-toe`, `examples/blackjack`, `examples/neon-duel`                                                                       | Working examples covering managed rules, payment demos, and browser/live documents                 |
+| `rfcs/0001`, `rfcs/0002`                                                                                                                 | Substantive, implemented-in-part RFCs (extensible capabilities; lobbies/series/remixes)            |
+| `schemas/v0alpha1/`                                                                                                                      | 11 versioned JSON Schemas served live from the control API                                         |
 
 ## What's still scaffolding
 

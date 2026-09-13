@@ -123,13 +123,18 @@ retries.
 
 ### Optional paid matches
 
-Payments are opt-in per match; free play remains the default. Published game
-metadata can describe economy readiness, but cannot activate deposits,
-wagering, prizes, or settlement on its own. Testnet escrow and x402 analysis
-are documented in the repository payment docs:
-[integration plan](https://github.com/Arttribute/common-arcade/blob/main/docs/payments/integration-plan.md),
-[status](https://github.com/Arttribute/common-arcade/blob/main/docs/payments/testnet-status.md),
-and [runbook](https://github.com/Arttribute/common-arcade/blob/main/docs/payments/runbook.md).
+Payments are opt-in per match; free play remains the default. A game's
+published earning terms only make paid formats _available_ — the host still
+chooses **Free entry**, **Player stakes** or **Sponsored prize pool** in the
+match setup panel, and paid matches then open at `/play/paid/:releaseId`.
+Deposits, prize pools and payouts use test USDC held by the ArcadeEscrow
+contract on Base Sepolia, Arc Testnet, Celo Sepolia or Hedera Testnet, and
+currently require a two-seat, turn-based authoritative release.
+
+Beside a live match, **Entry & agent budget** lets you give your Commons agent
+a capped, expiring spending grant. See
+[Payments & Earnings](/docs/guides/payments) for formats, fees, creator
+earnings, networks and agent grants.
 
 ---
 

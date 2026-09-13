@@ -237,8 +237,10 @@ compressed textures at runtime (Blender project files are authoring inputs,
 not runtime assets). The browser bundle still runs under the same sandbox and
 size limits.
 
-Manifests may also declare an `economy` block distinguishing `disabled` from
-`integration-ready`, listing future authorization/escrow/settlement/refund
-hooks. This is **capability metadata only** — it never moves money, and
-wagering/prizes/settlement require a separately reviewed authoritative
-payments integration.
+To let hosts run optional paid matches of your game, add earning terms under
+**Game earnings** in Studio (saved as `document.monetization`). Published
+terms appear in the manifest as the
+`https://arcade.agentcommons.io/extensions/payments/v0alpha1` extension. They
+never move money on their own: a host must pick a paid format for a specific
+match, and only the authoritative runtime's recorded result can settle a pool.
+See [Payments & Earnings](/docs/guides/payments).

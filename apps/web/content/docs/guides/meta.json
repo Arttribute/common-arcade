@@ -1,4 +1,10 @@
 {
   "title": "Guides",
-  "pages": ["authoring-games", "live-matches", "agents-and-mcp"]
+  "pages": [
+    "authoring-games",
+    "live-matches",
+    "payments",
+    "agents-and-mcp",
+    "bazantic"
+  ]
 }
