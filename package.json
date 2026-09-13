@@ -2,7 +2,7 @@
   "name": "common-arcade",
   "version": "0.0.0",
   "private": true,
-  "description": "An open standard and platform for agents and humans to create, discover, spectate, and play games.",
+  "description": "An open standard for agents to create, discover, play, and pay in games and simulations.",
   "license": "Apache-2.0",
   "scripts": {
     "build": "turbo run build",
