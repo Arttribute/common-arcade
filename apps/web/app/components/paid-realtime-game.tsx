@@ -7,6 +7,8 @@ export function PaidRealtimeGame({
   table,
   account,
   authorize,
+  publicState,
+  controllerReady = false,
 }: {
   service: string
   table: {
@@ -14,9 +16,12 @@ export function PaidRealtimeGame({
     releaseId?: string
     stage: string
     runtimeError?: string
+    published?: boolean
   }
   account?: string
   authorize: () => Promise<{ token: string }>
+  publicState?: JsonValue
+  controllerReady?: boolean
 }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const socket = useRef<WebSocket | undefined>(undefined)
@@ -38,14 +43,16 @@ export function PaidRealtimeGame({
     frame.current?.contentWindow?.postMessage(
       {
         type: 'arcade.authoritative-state',
-        state: observation.current?.visibleState ?? null,
+        state: observation.current?.visibleState ?? publicState ?? null,
         observation: observation.current,
         match: {
           id: table.id,
           status:
             table.stage === 'playing' && !table.runtimeError
               ? 'running'
-              : 'completed',
+              : table.stage === 'funding'
+                ? 'lobby'
+                : 'completed',
         },
         mode: active ? 'control' : 'spectate',
         controllerKind: 'human',
@@ -59,6 +66,7 @@ export function PaidRealtimeGame({
     table.id,
     table.stage,
     table.runtimeError,
+    publicState,
   ])
   useEffect(() => {
     setState('idle')
@@ -72,6 +80,11 @@ export function PaidRealtimeGame({
       inFlight.current = false
     }
   }, [table.id, account])
+  useEffect(() => {
+    if (controllerReady && table.stage === 'playing') void connect()
+    // Reconnects are explicit after a failure; rerenders never request signatures.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controllerReady, table.stage, table.id, account])
   function flush() {
     if (
       inFlight.current ||
@@ -235,39 +248,76 @@ export function PaidRealtimeGame({
     }
   }
   return (
-    <section className="paid-realtime-game" aria-label="Live paid game">
-      <div className="actions">
-        <button
-          className="primary"
-          disabled={
-            !account ||
-            state !== 'idle' ||
-            table.stage !== 'playing' ||
-            !!table.runtimeError
-          }
-          onClick={() => void connect()}
-        >
-          {state === 'connecting'
-            ? 'Enabling controls…'
-            : active
-              ? 'Game controls enabled'
-              : 'Enable game controls'}
-        </button>
-        <p className="field-hint">
-          Approve one wallet signature to control your player. Gameplay moves do
-          not request payments.
-        </p>
-      </div>
+    <div className="live-stage-view" aria-label="Live game">
+      {controllerReady && state === 'idle' && table.stage === 'playing' && (
+        <div className="actions">
+          <button
+            className="primary"
+            disabled={
+              !account ||
+              state !== 'idle' ||
+              table.stage !== 'playing' ||
+              !!table.runtimeError
+            }
+            onClick={() => void connect()}
+          >
+            Reconnect game controls
+          </button>
+        </div>
+      )}
       {(error || table.runtimeError) && (
         <p role="status">{table.runtimeError ?? error}</p>
       )}
-      <iframe
-        ref={frame}
-        src={`/api/arcade/v1/studio/releases/${encodeURIComponent(table.releaseId ?? '')}/preview`}
-        title="Live paid game"
-        sandbox="allow-scripts"
-        onLoad={render}
-      />
+      {table.published === false ? (
+        <section className="blackjack-live-stage" aria-label="Blackjack table">
+          <h2>Blackjack duel</h2>
+          {table.stage === 'funding' ? (
+            <p>Take a seat to play. Cards are dealt when the game starts.</p>
+          ) : (
+            <div className="blackjack-hands">
+              {[0, 1].map((seat) => {
+                const view = (current?.visibleState ?? publicState) as
+                  | {
+                      hands?: Record<string, number[]>
+                      totals?: Record<string, number>
+                    }
+                  | undefined
+                const id = `sea_player_${seat + 1}`
+                return (
+                  <section key={id}>
+                    <h3>Player {seat + 1}</h3>
+                    <div className="blackjack-cards">
+                      {view?.hands?.[id]?.map((card, i) => (
+                        <span key={i}>
+                          {card === 1
+                            ? 'A'
+                            : card === 11
+                              ? 'J'
+                              : card === 12
+                                ? 'Q'
+                                : card === 13
+                                  ? 'K'
+                                  : card}
+                        </span>
+                      ))}
+                    </div>
+                    <p>Total: {view?.totals?.[id] ?? '—'}</p>
+                  </section>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      ) : (
+        <iframe
+          ref={frame}
+          className="live-game-frame"
+          src={`/api/arcade/v1/studio/releases/${encodeURIComponent(table.releaseId ?? '')}/preview`}
+          title="Live authoritative game"
+          sandbox="allow-scripts"
+          onLoad={render}
+        />
+      )}
       {active && current && (
         <details className="payment-disclosure">
           <summary>Game controls</summary>
@@ -287,6 +337,6 @@ export function PaidRealtimeGame({
           </div>
         </details>
       )}
-    </section>
+    </div>
   )
 }

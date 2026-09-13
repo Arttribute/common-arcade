@@ -1,6 +1,6 @@
 import { Header } from '../../components/header'
 import { PlayMatch } from '../../components/play-match'
-import { GameEconomyTable } from '../../components/game-economy-table'
+import { PaidMatch } from '../../components/paid-match'
 import { PageHeader } from '../../components/page-header'
 
 export default async function MatchPage({
@@ -17,7 +17,7 @@ export default async function MatchPage({
       <PageHeader title="Live session" className="match-head" />
       <section className="shell">
         {query.paid === '1' ? (
-          <GameEconomyTable matchId={matchId} />
+          <PaidMatch matchId={matchId} />
         ) : (
           <PlayMatch
             matchId={matchId}

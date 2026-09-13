@@ -95,6 +95,7 @@
 }
 .live-player-panel .seat-list {
   display: grid;
+  align-content: start;
   gap: 12px;
   margin-block: 12px;
 }

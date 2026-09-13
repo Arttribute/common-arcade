@@ -83,34 +83,33 @@ authorize a payout.
    prize pool** (players enter for free). Select a **Payment network**. Only
    networks enabled by the service and configured in the creator’s published
    payout terms appear.
-3. Choose **Host a live session** and approve the host signature. Share the invitation
-   link. You do not need another player's wallet, and hosting does not pay an entry.
-4. Each player chooses an open seat, **Play myself** or **Use my agent**, and a personal
-   budget covering the entry. **Join & pay** confirms a human's exact entry; **Approve
-   budget & join** lets the selected agent pay automatically within its own session
-   grant. A valid existing grant is reused. The network, recipient and session are
-   filled in by the lobby. Unused budget stays in the paying wallet. Network gas is separate.
-   Sponsored seats have no USDC entry charge but still require joining the seat.
-5. For sponsored rewards, use **Add to the prize pool**. Optional spectator bets let
-   you **Back a player** after they have joined. When both seats are confirmed, the
-   host chooses **Start game**, closing deposits and bets before gameplay starts.
-6. For realtime games, each player chooses **Enable game controls** and approves
-   one wallet signature. Choose your car and lock it in for Redline Run, then
-   race in the game window. Gameplay does not ask for payment approvals on each
-   move. After a disconnect, reconnect and enable controls again.
-7. The server settles the completed match. The winner can withdraw the allocated
-   prize; creator earnings follow the published payout terms. Confirmed payments have
-   **View transaction** links to the selected network’s explorer, including agent entries
-   and spectator bets. Withdrawals also show their transaction receipt.
+3. Choose **Host a live session**. The live game opens immediately, with the same
+   player sidebar as free games. Hosting and watching require no payment-wallet
+   connection or signature. Share the invitation link.
+4. In an open player card, choose **Take seat** to play yourself, or **Assign**
+   to use the selected Commons agent. A human confirms the displayed entry stake
+   in that card. The wallet batches the token allowance and deposit when it supports
+   atomic calls; other wallets may require a token allowance first. Existing
+   allowances are reused.
+5. For an agent, approve its game budget in the seat card. The agent's own wallet
+   pays and starts its game policy on the match worker. No human wallet signature
+   is requested. A valid grant is reused; unused budget stays in the agent wallet.
+   Agent play continues if the browser closes. Network fees are separate.
+6. Optional bets and sponsored prize contributions live in the spectator card.
+   Human spectators confirm their own payment; a Commons agent can use its own
+   approved budget. New sessions start automatically ten seconds after both seats
+   are confirmed, closing funding. The host may also choose **Start game**.
+7. New escrow deployments bind a game-only controller key during the seat claim,
+   so controls connect without another wallet signature. Older pools and recovery
+   on another device still offer **Resume my controls** using the paying wallet.
+   Gameplay never authorizes transfers. The host can end an unstarted lobby;
+   confirmed contributions become refundable.
+8. The server settles the result. Claim winnings or refunds from the session
+   sidebar. Confirmed agent entries link to the network's transaction explorer.
 
-Paid hosting is a testnet preview restricted to enabled host wallets. A wallet
-that is not enabled receives a clear error when creating the table.
-
-The preview worker runs one paid realtime table at a time. If it is busy, wait
-for that match to finish before starting yours.
-
-Paid tables currently run one two-player match. Free live sessions’ round,
-visibility and invitation settings do not apply to this separate paid lobby.
+The deployed service determines supported networks. Paid sessions currently run
+one two-player match and are shared by invitation link. The preview worker still
+runs one paid realtime game at a time.
 
 ### Why are paid formats unavailable?
 
