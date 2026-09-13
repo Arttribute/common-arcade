@@ -15,6 +15,8 @@ import {
   preparePaymentBudget,
   type ReviewedPaymentBudget,
 } from '../../lib/payment-budget'
+import { AgentNetworkBalances } from './agent-network-balances'
+import { parseAgentBalance } from '../../lib/agent-balances'
 import { AgentSelect } from './agent-select'
 import { Select, SelectOption } from './ui/select'
 export interface AgentTableContext {
@@ -249,14 +251,15 @@ export function AgentWalletPanel({
     }
   }, [agentId])
   useEffect(() => {
-    if (!walletId) return
+    if (!walletId || !wallet) return
     let cancelled = false
     setBalance('')
-    api<{ usdc: string }>(
+    api<{ address: string; chainId: string; usdc: string; native: string }>(
       `wallets/${walletId}/balance?chainId=${config.chain.id}`,
     )
       .then((r) => {
-        if (!cancelled) setBalance(r.usdc)
+        const parsed = parseAgentBalance(r, wallet.address, config.chain.id)
+        if (!cancelled) setBalance(parsed.usdc)
       })
       .catch(() => {
         if (!cancelled) setBalance('Unavailable')
@@ -264,7 +267,7 @@ export function AgentWalletPanel({
     return () => {
       cancelled = true
     }
-  }, [walletId, config.chain.id])
+  }, [walletId, wallet?.address, config.chain.id])
   useEffect(() => {
     if (table?.economy.mode === 'escrow' && table.pool && table.deployment) {
       setKind('arcade')
@@ -469,6 +472,16 @@ export function AgentWalletPanel({
         </a>
       ) : (
         <>
+          <div className="field">
+            <span className="field-label">Agent</span>
+            <AgentSelect
+              agents={agents}
+              value={agentId}
+              onChange={setAgentId}
+              disabled={busy}
+            />
+          </div>
+          {wallet && <AgentNetworkBalances key={wallet.id} wallet={wallet} />}
           <DialogPrimitive.Root
             open={budgetOpen}
             onOpenChange={(open) => {
@@ -555,7 +568,7 @@ export function AgentWalletPanel({
                     <p className="field-hint" role="status">
                       {wallets.length
                         ? 'This agent has no active wallet that can make payments. Activate one in Commons.'
-                        : 'Looking up this agent’s wallet…'}
+                        : 'No payment wallet yet. Create one in Commons to fund this agent.'}
                     </p>
                   ))}
                 <div className="payment-budget-editor">

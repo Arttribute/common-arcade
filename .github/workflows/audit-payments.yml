@@ -1,0 +1,59 @@
+name: Verify deployed testnet payments
+on:
+  workflow_dispatch:
+    inputs:
+      broadcast:
+        description: Run funded contract deposits, payouts and refunds (0.06 test USDC per funded network, plus gas)
+        type: boolean
+        default: false
+      stage:
+        type: choice
+        options: [development]
+        default: development
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: deployed-payment-audit
+  cancel-in-progress: false
+jobs:
+  verify:
+    environment: ${{ inputs.stage }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        network: [base-sepolia, arc-testnet, hedera-testnet, celo-sepolia]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.3
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @common-arcade/economy... build
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Check balances and funded contract lifecycle
+        working-directory: services/payment-service
+        env:
+          ARCADE_AUDIT_STAGE: ${{ inputs.stage }}
+          ARCADE_AUDIT_BROADCAST: ${{ inputs.broadcast }}
+        run: |
+          args=()
+          if [ "$ARCADE_AUDIT_BROADCAST" = true ]; then args+=(--broadcast); fi
+          node scripts/audit-testnets.mjs "${{ matrix.network }}" "${args[@]}"
+      - name: Preserve public evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: payment-evidence-${{ matrix.network }}
+          path: |
+            /tmp/arcade-payment-audit/*.json
+            packages/contracts/deployments/*-smoke.json
