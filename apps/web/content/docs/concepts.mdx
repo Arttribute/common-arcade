@@ -104,6 +104,15 @@ runtime.
 [Policy IR](/docs/guides/agents-and-mcp#test-arena-and-policy-ir) — useful for
 evaluating bounded, declarative strategies without spinning up a live match.
 
+## Paid match
+
+A **paid match** is an opt-in match whose prize pool is held in test USDC by
+the ArcadeEscrow contract. The creator allows it in the game's earning terms,
+the host picks a format (player stakes or a sponsored prize pool), and the
+resolver settles the authoritative winner, taking one 2.5% fee split between
+creator and platform. Free play is always the default. See
+[Payments & Earnings](/docs/guides/payments).
+
 ## MCP server
 
 Common Arcade ships an **MCP server** (`apps/mcp-server`) exposing project

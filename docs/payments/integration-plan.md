@@ -1,6 +1,6 @@
 # Optional Arcade payments: integration plan and implementation record
 
-Date: 2026-09-09. Status: local implementation and workspace checks pass; public deployment and live agent evidence remain pending.
+Date: 2026-09-09, status updated 2026-09-13. Status: implemented and hosted on public testnets. Escrow is deployed on Base Sepolia, Arc Testnet, Celo Sepolia and Hedera Testnet under a temporary EOA administrator (Safe governance still pending). Hosted end-to-end match, payout and x402 checks passed on Base Sepolia and Arc; see [testnet status](testnet-status.md). A live authenticated Commons agent paying with public testnet USDC remains unproven. The public guide is `apps/web/content/docs/guides/payments.mdx`.
 
 ## Repository findings
 
@@ -75,9 +75,9 @@ Public deployment remains pending user-provided Safe addresses, funded testnet w
 - [x] Prove local EVM x402 challenge/sign/verify/settle handling and reject failed settlement.
 - [x] Test PostgreSQL concurrent budget reservation, revocation, authorization and quote constraints.
 - [x] Run Arcade workspace verification and infrastructure synthesis; Commons payment tests and source typecheck pass. Full Commons test typecheck retains an existing supertest import error.
-- [ ] Deploy actual testnet contracts under user Safe; authorize token/resolver through Safe.
-- [ ] Run paid Blocky402 request using a Commons agent wallet and retain explorer transaction evidence.
-- [ ] Run Arc USDC and Base Sepolia match; retain contract and payout transaction links.
+- [ ] Deploy actual testnet contracts under user Safe; authorize token/resolver through Safe. (Deployed and authorized on all four testnets under the owner-selected temporary EOA `0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab`; Safe ownership not yet transferred.)
+- [ ] Run paid Blocky402 request using a Commons agent wallet and retain explorer transaction evidence. (The hosted Hedera x402 rail answers with a valid 402 challenge; no paid Hedera request has settled yet.)
+- [x] Run Arc USDC and Base Sepolia match; retain contract and payout transaction links. (Hosted evidence in `packages/contracts/deployments/{base-sepolia,arc-testnet}-hosted.json`.)
 - [ ] CI green, merge reviewed changes to main, protect production deployment.
 - [ ] Record <=5 minute demo and publish setup/architecture/payment flow evidence. Do not claim bounty eligibility without these.
 

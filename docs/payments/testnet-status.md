@@ -1,5 +1,16 @@
 # Testnet deployment status — 2026-09-10
 
+> **Update 2026-09-13.** `GET /v1/economy/config` on the hosted endpoint lists
+> all four networks (base-sepolia, arc-testnet, hedera-testnet, celo-sepolia).
+> `POST /v1/analysis/{network}` returns a valid x402 v2 challenge on every one
+> of them (10 atomic USDC units per unseen card). The settled Arc match
+> `mat_b0018dc5-6c0b-4978-a914-305de6f20090` is publicly readable at
+> `/v1/economy/matches/:id`. Its three transactions decode onchain to
+> `MatchCreated`, `Locked` and `Settled` (prize 9750, fee 250), matching the
+> reported accounting. Celo and Hedera paid-match checks are still unfunded.
+> Public user documentation now lives at
+> [`/docs/guides/payments`](https://arcade.agentcommons.io/docs/guides/payments).
+
 Temporary administrator, deployer, treasury and resolver:
 `0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab`.
 The supplied key was checked against this address. The hosted worker receives
