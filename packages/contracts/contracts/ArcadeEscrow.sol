@@ -67,6 +67,8 @@ contract ArcadeEscrow is Ownable2Step, ReentrancyGuard {
     mapping(bytes32 => bool) public openSeats;
     mapping(bytes32 => mapping(bytes32 => bool)) public registeredSeat;
     mapping(bytes32 => mapping(address => bool)) public seated;
+    // Gameplay authority only. Recipients, refunds and winnings always stay with the payer.
+    mapping(bytes32 => mapping(bytes32 => address)) public controller;
     bool public paused;
     uint16 public constant MAX_FEE_BPS = 1000;
 
@@ -77,6 +79,7 @@ contract ArcadeEscrow is Ownable2Step, ReentrancyGuard {
     error NothingToClaim();
     event MatchCreated(bytes32 indexed matchId, address indexed token, bytes32 rulesHash, address resolver);
     event Deposited(bytes32 indexed matchId, address indexed payer, uint8 kind, bytes32 seatId, uint256 amount);
+    event ControllerAssigned(bytes32 indexed matchId, bytes32 indexed seatId, address controller);
     event Locked(bytes32 indexed matchId);
     event Settled(bytes32 indexed matchId, bytes32 indexed winner, bytes32 resultHash, uint256 prize, uint256 fee);
     event Voided(bytes32 indexed matchId);
@@ -182,6 +185,24 @@ contract ArcadeEscrow is Ownable2Step, ReentrancyGuard {
     }
 
     function stake(bytes32 id, bytes32 seatId) external nonReentrant {
+        _stake(id, seatId, msg.sender);
+    }
+
+    /// @notice Claim, fund and authorize a game-only key in the same transaction.
+    function stakeWithController(bytes32 id, bytes32 seatId, address gameController) external nonReentrant {
+        if (gameController == address(0)) revert InvalidTerms();
+        _stake(id, seatId, gameController);
+    }
+
+    /// @notice Recover controls on another device without moving the seat or its funds.
+    function setController(bytes32 id, bytes32 seatId, address gameController) external {
+        if (recipient[id][seatId] != msg.sender || !staked[id][seatId]) revert Unauthorized();
+        if (gameController == address(0)) revert InvalidTerms();
+        controller[id][seatId] = gameController;
+        emit ControllerAssigned(id, seatId, gameController);
+    }
+
+    function _stake(bytes32 id, bytes32 seatId, address gameController) private {
         MatchAccount storage m = _funding(id);
         if (openSeats[id]) {
             if (!registeredSeat[id][seatId] || recipient[id][seatId] != address(0) || seated[id][msg.sender]) {
@@ -199,6 +220,8 @@ contract ArcadeEscrow is Ownable2Step, ReentrancyGuard {
         m.prizePool += m.terms.stake;
         refundable[id][msg.sender] += m.terms.stake;
         if (m.terms.stake != 0) _receive(m.terms.token, m.terms.stake);
+        controller[id][seatId] = gameController;
+        emit ControllerAssigned(id, seatId, gameController);
         emit Deposited(id, msg.sender, 0, seatId, m.terms.stake);
     }
 

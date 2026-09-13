@@ -4,12 +4,13 @@ Independent Hono/Node process, outside the Lambda control plane. WebSocket
 spectators receive public snapshots; signed HTTP commands submit game moves.
 Authoritative realtime Studio games run on the worker's own clock. A signed,
 one-use gameplay ticket opens a private seat-bound WebSocket connection, so
-human gameplay requires one wallet signature instead of a signature per move. Completed replay files are public; private shoes/checkpoints
+new seat-controller deployments bind a browser game key in the entry transaction.
+Legacy pools can still authorize a gameplay connection with their paying wallet. Completed replay files are public; private shoes/checkpoints
 remain on a persistent volume. Exactly one worker may own the file store.
 
 From the root, build with `pnpm --filter @common-arcade/payment-service... build`,
 then run `pnpm --filter @common-arcade/payment-service dev`. In another terminal,
-run `pnpm dev:web` and open `/play/blackjack`. No configured chains means free mode.
+run `pnpm dev:web` and host from a published game. Free games use the normal control plane.
 Copy `.env.example` to `.env` for Docker Compose; local shell dev requires exporting
 the variables. Compose binds to localhost; place an HTTPS/WebSocket reverse proxy
 in front for a public testnet preview. Persist and back up the encrypted host disk.

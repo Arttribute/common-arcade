@@ -204,6 +204,30 @@ export const arcadeEscrowAbi = [
   },
   {
     type: 'function',
+    name: 'controller',
+    inputs: [
+      {
+        name: '',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: '',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [
+      {
+        name: '',
+        type: 'address',
+        internalType: 'address',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     name: 'createMatch',
     inputs: [
       {
@@ -835,6 +859,29 @@ export const arcadeEscrowAbi = [
   },
   {
     type: 'function',
+    name: 'setController',
+    inputs: [
+      {
+        name: 'id',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'seatId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'gameController',
+        type: 'address',
+        internalType: 'address',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     name: 'setPaused',
     inputs: [
       {
@@ -918,6 +965,29 @@ export const arcadeEscrowAbi = [
         name: 'seatId',
         type: 'bytes32',
         internalType: 'bytes32',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'stakeWithController',
+    inputs: [
+      {
+        name: 'id',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'seatId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'gameController',
+        type: 'address',
+        internalType: 'address',
       },
     ],
     outputs: [],
@@ -1036,6 +1106,31 @@ export const arcadeEscrowAbi = [
         type: 'uint256',
         indexed: false,
         internalType: 'uint256',
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'ControllerAssigned',
+    inputs: [
+      {
+        name: 'matchId',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'seatId',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'controller',
+        type: 'address',
+        indexed: false,
+        internalType: 'address',
       },
     ],
     anonymous: false,

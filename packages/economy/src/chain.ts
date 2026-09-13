@@ -22,6 +22,7 @@ export interface EscrowDeployment {
   contract: Address
   token: Address
   openSeats?: boolean
+  seatControllers?: boolean
   confirmations?: number
 }
 /** Wallet-agnostic boundary: humans, agent key custody, and Safe can submit the same calls. */
@@ -55,17 +56,29 @@ export function escrowCall(
   operation:
     'stake' | 'bounty' | 'bet' | 'refund' | 'claimBet' | 'void' | 'withdraw',
   id: Hex,
-  options: { seat?: Hex; amount?: bigint; beneficiary?: Address } = {},
+  options: {
+    seat?: Hex
+    amount?: bigint
+    beneficiary?: Address
+    controller?: Address
+  } = {},
 ): ContractCall {
   let data: Hex
   switch (operation) {
     case 'stake':
       if (!options.seat) throw new Error('Seat required')
-      data = encodeFunctionData({
-        abi: arcadeEscrowAbi,
-        functionName: 'stake',
-        args: [id, options.seat],
-      })
+      data =
+        options.controller && deployment.seatControllers
+          ? encodeFunctionData({
+              abi: arcadeEscrowAbi,
+              functionName: 'stakeWithController',
+              args: [id, options.seat, options.controller],
+            })
+          : encodeFunctionData({
+              abi: arcadeEscrowAbi,
+              functionName: 'stake',
+              args: [id, options.seat],
+            })
       break
     case 'bounty':
       if (!options.amount || options.amount < 0n)

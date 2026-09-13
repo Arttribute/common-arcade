@@ -1,0 +1,66 @@
+name: Deploy testnet seat controllers
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type deploy to deploy the reviewed seat-controllers-v3 escrow on the four configured testnets
+        required: true
+        type: string
+      resume_run:
+        description: Previous run ID whose pending deployment receipts must be reconciled
+        required: false
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: deploy-testnet-seat-controllers
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main' && inputs.confirm == 'deploy'
+    environment: development
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        network: [base-sepolia, arc-testnet, hedera-testnet, celo-sepolia]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Require receipt reconciliation for retries
+        env:
+          ATTEMPT: ${{ github.run_attempt }}
+        run: test "$ATTEMPT" = 1
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.3
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.5.1
+      - run: bash packages/contracts/setup.sh
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @common-arcade/economy... build
+      - run: forge build --root packages/contracts
+      - uses: actions/download-artifact@v4
+        if: inputs.resume_run != ''
+        with:
+          name: seat-controller-${{ matrix.network }}
+          path: packages/contracts/deployments/seat-controllers-v3
+          run-id: ${{ inputs.resume_run }}
+          github-token: ${{ github.token }}
+      - name: Deploy and verify escrow
+        env:
+          ARCADE_TESTNET_ADMIN: '0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab'
+          ARCADE_DEPLOYER_KEY: ${{ secrets.ARCADE_TESTNET_AUDIT_KEY }}
+        run: node services/payment-service/scripts/deploy-testnet.mjs "${{ matrix.network }}" --revision=seat-controllers-v3 --broadcast
+      - name: Preserve receipts including pending transactions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seat-controller-${{ matrix.network }}
+          path: packages/contracts/deployments/seat-controllers-v3/${{ matrix.network }}.json

@@ -188,6 +188,7 @@ export function createGridPlacementGame(
       return { state: nextState, events }
     },
     serializeState,
+    projectSpectatorState: serializeState,
     projectObservation(state, seatId) {
       const seatIndex = state.seats.indexOf(seatId)
       const legalActions =
