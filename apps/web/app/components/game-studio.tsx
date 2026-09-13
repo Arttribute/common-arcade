@@ -14,6 +14,7 @@ import { AgentComputerPanel } from './agent-computer-panel'
 import { ThumbnailField } from './thumbnail-field'
 import { StudioCodeEditor } from './studio-code-editor'
 import { ZOOM_MAX, ZOOM_MIN, usePreviewZoom } from './preview-zoom'
+import { ExternalAgentDialog } from './external-agent-dialog'
 import { ProjectSwitcher } from './project-switcher'
 import { SwitchField } from './ui/switch'
 import { CheckboxField } from './ui/checkbox'
@@ -64,6 +65,7 @@ import {
   Upload,
   Users,
   X,
+  SquareTerminal,
 } from 'lucide-react'
 import {
   AnnotationLayer,
@@ -1492,6 +1494,27 @@ export function GameStudio({
               {liveReadiness.liveReady ? 'Live-ready' : 'Preview only'}
             </span>
             <div className="studio-toolbar-end">
+              {project && canEdit ? (
+                <ExternalAgentDialog
+                  signedIn={!!user}
+                  project={{
+                    id: project.id,
+                    title: project.document.title,
+                    revision: project.revision,
+                  }}
+                  trigger={
+                    <button
+                      type="button"
+                      className="ac-button ac-button-secondary studio-external-agent-button"
+                      title="Build with Claude Code, Codex or your own agent"
+                      aria-label="Build with your own agent"
+                    >
+                      <SquareTerminal size={14} aria-hidden />
+                      Your agent
+                    </button>
+                  }
+                />
+              ) : null}
               {user ? (
                 <>
                   {canEdit ? (

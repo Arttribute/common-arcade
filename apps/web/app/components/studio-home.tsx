@@ -5,10 +5,11 @@ import { GameArtwork } from './game-artwork'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowUpRight, ChevronRight, Plus } from 'lucide-react'
+import { ArrowUpRight, ChevronRight, Plus, SquareTerminal } from 'lucide-react'
 import { emptyBrowserDocument, type StudioProject } from '@common-arcade/studio'
 import { ArcadeComposer, useArcadeIdentity } from './studio-composer'
 import { arcade } from '../../lib/api'
+import { ExternalAgentDialog } from './external-agent-dialog'
 
 export function StudioHome() {
   const identity = useArcadeIdentity(),
@@ -91,6 +92,15 @@ export function StudioHome() {
           </p>
         )}
         {error && <p role="alert">{error}</p>}
+        <ExternalAgentDialog
+          signedIn={!!identity.user}
+          trigger={
+            <button type="button" className="studio-external-agent-trigger">
+              <SquareTerminal size={14} aria-hidden />
+              Build with Claude Code, Codex or your own agent
+            </button>
+          }
+        />
         {!identity.user && !identity.loading && (
           <a
             className="ac-button ac-button-primary"

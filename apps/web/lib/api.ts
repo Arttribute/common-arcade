@@ -1,4 +1,5 @@
 import { ControlClient } from '@common-arcade/control-client'
+import { errorMessage } from './error-message'
 export class ArcadeApiError extends Error {
   constructor(
     message: string,
@@ -33,10 +34,7 @@ export async function arcade<T>(
     )
   }
   if (!response.ok)
-    throw new ArcadeApiError(
-      result.detail ?? result.error ?? 'Request failed. Please retry.',
-      response.status,
-    )
+    throw new ArcadeApiError(errorMessage(result), response.status)
   return result as T
 }
 
