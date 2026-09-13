@@ -114,6 +114,7 @@ export default async function GamePage({
               license={customRelease?.distribution?.license}
               paymentTerms={document.monetization}
               paidMatchSupported={paidMatchSupported}
+              gameMode={game.spec.mode}
               paymentUnavailableReason={paymentUnavailableReason}
             />
           </div>

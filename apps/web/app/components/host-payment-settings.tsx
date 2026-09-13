@@ -13,14 +13,17 @@ export function HostPaymentSettings({
   terms,
   supported,
   unavailableReason,
+  gameMode = 'turn-based',
 }: {
   value: EconomyConfig
   onChange: (value: EconomyConfig) => void
   terms?: GameMonetization
   supported: boolean
   unavailableReason?: string
+  gameMode?: string
 }) {
   const [networks, setNetworks] = useState<string[]>()
+  const [gameModes, setGameModes] = useState<string[]>(['turn-based'])
   useEffect(() => {
     const controller = new AbortController()
     const origin = process.env.NEXT_PUBLIC_ARCADE_PAYMENTS_URL
@@ -34,8 +37,12 @@ export function HostPaymentSettings({
         return response.json()
       })
       .then((result) => {
-        if (!controller.signal.aborted)
+        if (!controller.signal.aborted) {
           setNetworks(Array.isArray(result.networks) ? result.networks : [])
+          setGameModes(
+            Array.isArray(result.gameModes) ? result.gameModes : ['turn-based'],
+          )
+        }
       })
       .catch(() => {
         if (!controller.signal.aborted) setNetworks([])
@@ -51,7 +58,10 @@ export function HostPaymentSettings({
       terms.payouts[network],
   )
   const enabled =
-    supported && terms?.mode === 'revenue-share' && available.length > 0
+    supported &&
+    gameModes.includes(gameMode) &&
+    terms?.mode === 'revenue-share' &&
+    available.length > 0
   const mode =
     value.mode === 'free'
       ? 'free'
@@ -124,10 +134,12 @@ export function HostPaymentSettings({
         <p className="studio-help">
           {!supported
             ? (unavailableReason ??
-              'Paid hosting currently requires a supported two-player, turn-based live game.')
+              'Paid hosting currently requires a supported two-player turn-based or realtime live game.')
             : networks === undefined
               ? 'Checking payment networks…'
-              : 'No payment network is currently available for this release.'}
+              : !gameModes.includes(gameMode)
+                ? 'The payment service is being updated for this game mode. Please try again shortly.'
+                : 'No payment network is currently available for this release.'}
         </p>
       )}
       <p className="studio-help">

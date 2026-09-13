@@ -28,6 +28,7 @@ import {
   type EscrowDeployment,
 } from '@common-arcade/economy'
 import { AgentWalletPanel } from './agent-wallet-panel'
+import { PaidRealtimeGame } from './paid-realtime-game'
 import { PaidSessionResult } from './paid-session-result'
 import { Select, SelectOption } from './ui/select'
 import { EconomySettings } from './economy-settings'
@@ -39,6 +40,8 @@ interface Table {
   stage: string
   game?: string
   releaseId?: string
+  mode?: string
+  runtimeError?: string
   revenue?: {
     creator: Address
     creatorShareBps: number
@@ -623,44 +626,62 @@ export function GameEconomyTable({
               </button>
             </div>
           )}
-          {releaseId && table.stage === 'playing' && (
-            <section>
-              <h2>{table.game}</h2>
-              {table.stage === 'playing' && seat >= 0 && (
-                <button disabled={busy} onClick={() => run(observe)}>
-                  Read my observation and legal actions
-                </button>
-              )}
-              {observation && (
-                <>
+          {table.mode === 'realtime' && table.stage === 'playing' && (
+            <PaidRealtimeGame
+              service={service}
+              table={table}
+              account={account}
+              authorize={async () =>
+                request(
+                  `/v1/economy/matches/${table.id}/realtime-session`,
+                  await auth(table.id, 'realtime-session', {}),
+                )
+              }
+            />
+          )}
+          {releaseId &&
+            table.mode !== 'realtime' &&
+            table.stage === 'playing' && (
+              <section>
+                <h2>{table.game}</h2>
+                {table.stage === 'playing' && seat >= 0 && (
+                  <button disabled={busy} onClick={() => run(observe)}>
+                    Read my observation and legal actions
+                  </button>
+                )}
+                {observation && (
+                  <>
+                    <pre
+                      style={{
+                        whiteSpace: 'pre-wrap',
+                        overflowWrap: 'anywhere',
+                      }}
+                    >
+                      {JSON.stringify(observation.visibleState, null, 2)}
+                    </pre>
+                    {observation.legalActions.map((payload, index) => (
+                      <button
+                        key={index}
+                        disabled={
+                          busy || observation.stateSequence !== table.sequence
+                        }
+                        onClick={() => run(() => submitPayload(payload))}
+                      >
+                        {JSON.stringify(payload)}
+                      </button>
+                    ))}
+                  </>
+                )}
+                <details>
+                  <PaymentSummary>Public game events</PaymentSummary>
                   <pre
                     style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
                   >
-                    {JSON.stringify(observation.visibleState, null, 2)}
+                    {JSON.stringify(table.events, null, 2)}
                   </pre>
-                  {observation.legalActions.map((payload, index) => (
-                    <button
-                      key={index}
-                      disabled={
-                        busy || observation.stateSequence !== table.sequence
-                      }
-                      onClick={() => run(() => submitPayload(payload))}
-                    >
-                      {JSON.stringify(payload)}
-                    </button>
-                  ))}
-                </>
-              )}
-              <details>
-                <PaymentSummary>Public game events</PaymentSummary>
-                <pre
-                  style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
-                >
-                  {JSON.stringify(table.events, null, 2)}
-                </pre>
-              </details>
-            </section>
-          )}
+                </details>
+              </section>
+            )}
           {table.economy.mode === 'escrow' && (
             <>
               {table.stage === 'settled' && account && (

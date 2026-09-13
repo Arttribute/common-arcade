@@ -64,12 +64,12 @@ export function releaseLoader(registry: string) {
       throw new Error('Published earning terms mismatch')
     if (
       !assessLiveReadiness(release.document).liveReady ||
-      release.manifest.spec.mode !== 'turn-based' ||
+      !['turn-based', 'realtime'].includes(release.manifest.spec.mode) ||
       release.manifest.spec.seats.min > 2 ||
       release.manifest.spec.seats.max < 2
     )
       throw new Error(
-        'Paid preview currently supports two-seat turn-based authoritative games',
+        'Paid hosting supports two-player turn-based or realtime authoritative games',
       )
     return release
   }

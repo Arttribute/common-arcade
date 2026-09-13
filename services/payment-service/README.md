@@ -1,8 +1,10 @@
-# Arcade payment and blackjack preview service
+# Arcade payment preview service
 
 Independent Hono/Node process, outside the Lambda control plane. WebSocket
-spectators receive authoritative snapshots; signed HTTP commands submit
-turn-based moves. Completed replay files are public; private shoes/checkpoints
+spectators receive public snapshots; signed HTTP commands submit game moves.
+Authoritative realtime Studio games run on the worker's own clock. A signed,
+one-use gameplay ticket opens a private seat-bound WebSocket connection, so
+human gameplay requires one wallet signature instead of a signature per move. Completed replay files are public; private shoes/checkpoints
 remain on a persistent volume. Exactly one worker may own the file store.
 
 From the root, build with `pnpm --filter @common-arcade/payment-service... build`,

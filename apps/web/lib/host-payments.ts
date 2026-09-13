@@ -6,8 +6,8 @@ import {
 
 /** Discovery only; the payment service validates the pinned release before funding. */
 export function paidHostingUnavailable(game: GameManifest): string | undefined {
-  if (game.spec.mode !== 'turn-based')
-    return 'Entry stakes and prize pools are not available for this game mode yet. Paid hosting currently supports two-player, turn-based games.'
+  if (!['turn-based', 'realtime'].includes(game.spec.mode))
+    return 'Entry stakes and prize pools are not available for this game mode yet. Paid hosting supports two-player turn-based and realtime games.'
   if (game.spec.seats.min > 2 || game.spec.seats.max < 2)
     return 'This release cannot run a two-player match. Paid hosting currently requires two players.'
   if (
