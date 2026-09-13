@@ -1,5 +1,4 @@
-import { paymentProvider } from './browser-wallets'
-import { createWalletClient, custom } from 'viem'
+import { connectedPaymentWallet } from './browser-wallets'
 import { economyConfigSchema, type EconomyConfig } from '@common-arcade/economy'
 
 export const paymentService =
@@ -17,9 +16,10 @@ export async function hostPaidSession(input: {
     economy: economyConfigSchema.parse(input.economy),
   }
   if (!paymentService) throw new Error('Paid sessions are unavailable')
-  const wallet = createWalletClient({ transport: custom(paymentProvider()) })
-  const [address] = await wallet.requestAddresses()
-  if (!address) throw new Error('Connect a wallet to host this session')
+  const wallet = await connectedPaymentWallet(
+    body.economy.mode === 'escrow' ? body.economy.network : undefined,
+  )
+  const address = wallet.account.address
   const expiresAt = Date.now() + 60000
   const signature = await wallet.signMessage({
     account: address,

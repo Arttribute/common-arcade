@@ -1,4 +1,13 @@
-import type { EIP1193Provider } from 'viem'
+import {
+  createWalletClient,
+  custom,
+  type EIP1193Provider,
+  type WalletClient,
+  type Transport,
+  type Chain,
+  type Account,
+} from 'viem'
+import { NETWORKS, type PaymentNetwork } from '@common-arcade/economy'
 
 export type BrowserWallet = {
   id: string
@@ -95,4 +104,31 @@ export function paymentProvider() {
       'Open MetaMask, Coinbase Wallet, or another EVM browser wallet to continue.',
     )
   return wallet.provider
+}
+
+/** Keep signatures, approvals and transfers on the session's selected network. */
+export async function connectedPaymentWallet(
+  network?: PaymentNetwork,
+): Promise<WalletClient<Transport, Chain | undefined, Account>> {
+  const provider = paymentProvider()
+  const chain = network ? NETWORKS[network].chain : undefined
+  const wallet = createWalletClient({ transport: custom(provider), chain })
+  await wallet.requestAddresses()
+  if (chain && (await wallet.getChainId()) !== chain.id) {
+    try {
+      await wallet.switchChain({ id: chain.id })
+    } catch (error) {
+      let cause = error as { code?: number; cause?: unknown } | undefined
+      let unknownChain = false
+      for (let n = 0; cause && n < 6; n++, cause = cause.cause as typeof cause)
+        if (cause.code === 4902) unknownChain = true
+      if (!unknownChain) throw error
+      await wallet.addChain({ chain })
+      await wallet.switchChain({ id: chain.id })
+    }
+  }
+  // Some smart wallets expose a different account after changing chains.
+  const [account] = await wallet.getAddresses()
+  if (!account) throw new Error('Connect a wallet to continue')
+  return createWalletClient({ transport: custom(provider), chain, account })
 }

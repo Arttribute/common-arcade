@@ -1,6 +1,9 @@
 'use client'
 import { BrowserWalletPicker, useBrowserWallet } from './browser-wallet-picker'
-import { paymentProvider as provider } from '../../lib/browser-wallets'
+import {
+  paymentProvider as provider,
+  connectedPaymentWallet,
+} from '../../lib/browser-wallets'
 import { hostPaidSession } from '../../lib/paid-session'
 import { PaidSeatJoin } from './paid-seat-join'
 import { PaymentSummary } from './payment-disclosure'
@@ -140,12 +143,12 @@ export function GameEconomyTable({
     return address!
   }
   async function auth(id: string, operation: string, body: unknown) {
-    const address = account ?? (await connect()),
+    const wallet = await connectedPaymentWallet(
+      table?.economy.mode === 'escrow' ? table.economy.network : undefined,
+    )
+    const address = wallet.account.address,
       expiresAt = Date.now() + 60000
-    const wallet = createWalletClient({
-      transport: custom(provider()),
-      account: address,
-    })
+    setAccount(address)
     const signature = await wallet.signMessage({
       message: JSON.stringify({
         domain: service,
@@ -346,20 +349,10 @@ export function GameEconomyTable({
   ) {
     if (!table?.deployment || !table.pool || table.economy.mode !== 'escrow')
       return
-    const address = account ?? (await connect()),
-      config = NETWORKS[table.economy.network],
-      wallet = createWalletClient({
-        account: address,
-        chain: config.chain,
-        transport: custom(provider()),
-      })
-    try {
-      await wallet.switchChain({ id: config.chain.id })
-    } catch (error) {
-      if ((error as { code?: number }).code === 4902)
-        await wallet.addChain({ chain: config.chain })
-      else throw error
-    }
+    const config = NETWORKS[table.economy.network]
+    const wallet = await connectedPaymentWallet(table.economy.network)
+    const address = wallet.account.address
+    setAccount(address)
     const adapter = createViemAdapter(
         table.deployment,
         wallet,
