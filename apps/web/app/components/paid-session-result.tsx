@@ -45,7 +45,6 @@ export function PaidSessionResult({
     >
       {!breakdownOnly && (
         <>
-          <span className="eyebrow">SESSION ENDED</span>
           <h2>
             {winner
               ? `Player ${winner} wins`

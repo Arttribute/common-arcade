@@ -8,7 +8,6 @@ export default function Page() {
         className="shell page-heading"
         style={{ paddingTop: 40, paddingBottom: 80 }}
       >
-        <div className="eyebrow">TESTNET PLAYGROUND</div>
         <h1>
           <span className="page-title">Blackjack duel</span>
         </h1>

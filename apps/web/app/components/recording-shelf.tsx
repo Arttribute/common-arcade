@@ -6,8 +6,9 @@ import {
   type AnnotationGeometry,
   type CanvasRecording,
 } from '@agent-commons/ui'
-import { X } from 'lucide-react'
+import { Play, X } from 'lucide-react'
 import { arcade } from '../../lib/api'
+import { FilePicker } from './ui/field'
 
 type RecordingSummary = {
   id: string
@@ -145,53 +146,55 @@ export function RecordingShelf({
   }
   return (
     <section className="recording-shelf">
-      <h3>{gameId ? 'Watch play sessions' : 'Recordings'}</h3>
+      <div className="recording-shelf-heading">
+        <h3>{gameId ? 'Watch play sessions' : 'Recordings'}</h3>
+        <FilePicker
+          accept=".json,.gz,application/json,application/gzip"
+          label="Open a file"
+          onFile={(file) =>
+            void decodeRecording(
+              new Blob([file], {
+                type: file.name.endsWith('.gz')
+                  ? 'application/gzip'
+                  : 'application/json',
+              }),
+            )
+              .then((recording) => setSelected({ recording }))
+              .catch((cause) => setError(cause.message))
+          }
+        />
+      </div>
       {error && (
-        <p role="alert" className="studio-help">
+        <p role="alert" className="recording-shelf-note">
           {error}
         </p>
       )}
-      {recordings.map((r) => (
-        <button
-          className="recording-shelf-item"
-          key={r.id}
-          onClick={() => void open(r.id)}
-        >
-          <span>▷ {r.title}</span>
-          <small>
-            Revision {r.revision} · {Math.round(r.durationMs / 1000)}s ·{' '}
-            {r.public ? 'Shared' : 'Private'}
-          </small>
-        </button>
-      ))}
-      {!recordings.length && (
-        <p className="studio-help">
+      {recordings.length ? (
+        <div className="recording-shelf-list">
+          {recordings.map((r) => (
+            <button
+              className="recording-shelf-item"
+              key={r.id}
+              onClick={() => void open(r.id)}
+            >
+              <Play size={13} aria-hidden />
+              <span>
+                <strong>{r.title}</strong>
+                <small>
+                  Revision {r.revision} · {Math.round(r.durationMs / 1000)}s ·{' '}
+                  {r.public ? 'Shared' : 'Private'}
+                </small>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="recording-shelf-note">
           {gameId
-            ? 'No shared recordings yet.'
+            ? 'No shared recordings yet. Open a recording file to watch one.'
             : 'Record an interaction to keep a replay with this project.'}
         </p>
       )}
-      <label className="studio-help">
-        Open a recording file
-        <input
-          type="file"
-          accept=".json,.gz,application/json,application/gzip"
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file)
-              void decodeRecording(
-                new Blob([file], {
-                  type: file.name.endsWith('.gz')
-                    ? 'application/gzip'
-                    : 'application/json',
-                }),
-              )
-                .then((recording) => setSelected({ recording }))
-                .catch((e) => setError(e.message))
-            e.target.value = ''
-          }}
-        />
-      </label>
       {selected && (
         <AnnotatedRecording
           selected={selected}

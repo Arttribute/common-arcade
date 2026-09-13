@@ -116,7 +116,6 @@ export default async function GamePage({
         </aside>
         <article className="game-store-story">
           <header className="game-store-heading">
-            <span className="eyebrow">Common Arcade</span>
             <h1>
               <span>{game.metadata.title}</span>
             </h1>
@@ -213,7 +212,7 @@ export default async function GamePage({
             <summary>Game details & compatibility</summary>
             <section className="contract-grid">
               <article>
-                <span>MODE</span>
+                <span>Mode</span>
                 <strong>{game.spec.mode}</strong>
                 <p>
                   {game.spec.seats.min}–{game.spec.seats.max} seats · spectators{' '}
@@ -221,7 +220,7 @@ export default async function GamePage({
                 </p>
               </article>
               <article>
-                <span>RUNTIME</span>
+                <span>Runtime</span>
                 <strong>{game.spec.runtime.type}</strong>
                 <p>
                   {browserGame
@@ -230,7 +229,7 @@ export default async function GamePage({
                 </p>
               </article>
               <article>
-                <span>AGENT CONTRACT</span>
+                <span>Agent contract</span>
                 <strong>{game.spec.policy.tiers.join(', ')}</strong>
                 <p>
                   {game.spec.policy.maxDecisionsPerSecond} decisions/s ·{' '}
@@ -241,7 +240,7 @@ export default async function GamePage({
             {isBrowserGame(document) && document.capabilities ? (
               <section className="capability-contract">
                 <div>
-                  <span className="panel-label">WORLD</span>
+                  <span className="capability-label">World</span>
                   <strong>{document.capabilities.world.persistence}</strong>
                   <p>
                     {document.capabilities.world.cadence} ·{' '}
@@ -249,7 +248,7 @@ export default async function GamePage({
                   </p>
                 </div>
                 <div>
-                  <span className="panel-label">PRESENTATION</span>
+                  <span className="capability-label">Presentation</span>
                   <strong>
                     {document.capabilities.presentation.dimension} ·{' '}
                     {document.capabilities.presentation.engine}
@@ -266,7 +265,7 @@ export default async function GamePage({
                   </p>
                 </div>
                 <div>
-                  <span className="panel-label">TEAMS</span>
+                  <span className="capability-label">Teams</span>
                   <strong>
                     {document.capabilities.teams.enabled
                       ? `${document.capabilities.teams.maxTeams} teams · ${document.capabilities.teams.control}`
@@ -279,7 +278,7 @@ export default async function GamePage({
                   </p>
                 </div>
                 <div>
-                  <span className="panel-label">ECONOMY</span>
+                  <span className="capability-label">Economy</span>
                   <strong>{document.capabilities.economy.payments}</strong>
                   <p>
                     {document.capabilities.economy.payments ===
@@ -292,9 +291,7 @@ export default async function GamePage({
             ) : null}
             <section className="manifest-block">
               <details>
-                <summary className="panel-label">
-                  View the agent contract
-                </summary>
+                <summary>View the agent contract</summary>
                 <pre>{JSON.stringify(game, null, 2)}</pre>
               </details>
             </section>

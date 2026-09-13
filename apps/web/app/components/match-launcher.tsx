@@ -7,6 +7,9 @@ import { useRouter } from 'next/navigation'
 import { Select, SelectOption } from './ui/select'
 import { arcade, browserControlClient } from '../../lib/api'
 import { Dialog } from './ui/dialog'
+import { Tab, Tabs } from './ui/tabs'
+import { CheckboxField } from './ui/checkbox'
+import { Field, Input } from './ui/field'
 import { Play } from 'lucide-react'
 import { HostPaymentSettings } from './host-payment-settings'
 import { economyConfigSchema, type EconomyConfig } from '@common-arcade/economy'
@@ -193,22 +196,19 @@ export function MatchLauncher({
       }
     >
       <div className="launch-card agent-launcher" ref={setup}>
-        <div className="agent-launcher-tabs" role="tablist">
-          <button
-            role="tab"
-            aria-selected={mode === 'commons'}
-            onClick={() => setMode('commons')}
-          >
+        <Tabs
+          value={mode}
+          onValueChange={(next) => setMode(next as typeof mode)}
+          ariaLabel="How to play"
+          className="agent-launcher-tabs"
+        >
+          <Tab value="commons">
             <Users size={13} /> Play together
-          </button>
-          <button
-            role="tab"
-            aria-selected={mode === 'external'}
-            onClick={() => setMode('external')}
-          >
+          </Tab>
+          <Tab value="external">
             <Code2 size={13} /> Connect an agent
-          </button>
-        </div>
+          </Tab>
+        </Tabs>
         {mode === 'commons' ? (
           <div className="agent-launcher-copy">
             {!showHost ? (
@@ -314,14 +314,16 @@ export function MatchLauncher({
                         </Select>
                       </div>
                       {joinPolicy === 'invite-only' ? (
-                        <label className="match-setup-wide">
-                          Invited Commons IDs
-                          <input
+                        <Field
+                          label="Invited Commons IDs"
+                          className="match-setup-wide"
+                        >
+                          <Input
                             value={invites}
                             onChange={(event) => setInvites(event.target.value)}
                             placeholder="user_one, agent_owner_two"
                           />
-                        </label>
+                        </Field>
                       ) : null}
                       <div className="field">
                         <span className="field-label">Rounds</span>
@@ -388,26 +390,16 @@ export function MatchLauncher({
                       </div>
                       <fieldset className="controller-options">
                         <legend>Who can play?</legend>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={allowHumans}
-                            onChange={(event) =>
-                              setAllowHumans(event.target.checked)
-                            }
-                          />
-                          Humans
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={allowAgents}
-                            onChange={(event) =>
-                              setAllowAgents(event.target.checked)
-                            }
-                          />
-                          Agents
-                        </label>
+                        <CheckboxField
+                          checked={allowHumans}
+                          onCheckedChange={setAllowHumans}
+                          label="Humans"
+                        />
+                        <CheckboxField
+                          checked={allowAgents}
+                          onCheckedChange={setAllowAgents}
+                          label="Agents"
+                        />
                       </fieldset>
                     </div>
                   </details>
@@ -415,7 +407,7 @@ export function MatchLauncher({
                 {signedIn ? (
                   <div className="match-launch-actions">
                     <button
-                      className="primary"
+                      className="primary match-launch-primary"
                       disabled={
                         busy ||
                         (economy.mode === 'free' &&
@@ -436,7 +428,7 @@ export function MatchLauncher({
                   </div>
                 ) : (
                   <a
-                    className="primary"
+                    className="primary match-launch-primary"
                     href={`/api/auth/login?next=/games/${encodeURIComponent(gameId)}`}
                   >
                     Sign in with Commons

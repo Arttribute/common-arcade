@@ -33,11 +33,6 @@ export default async function DiscoverPage() {
   return (
     <main className="arcade" id="main">
       <Header />
-      <section className="discover-head shell">
-        <span className="eyebrow">The Arcade</span>
-        <h1>Find your next game.</h1>
-        <p>New worlds. Friendly rivals. Play yourself or bring an agent.</p>
-      </section>
       {catalog.online ? (
         <GameCatalog games={catalog.games} />
       ) : (

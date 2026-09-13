@@ -4,13 +4,21 @@ import { CreatorEconomySettings } from './creator-economy-settings'
 import { AccountMenu } from './account-menu'
 import { Brand } from './brand'
 import {
-  CopilotSessions,
+  CopilotReview,
+  CopilotSessionList,
   CopilotSettings,
+  copilotSessionTitle,
   useProjectCopilot,
 } from './copilot-sessions'
 import { AgentComputerPanel } from './agent-computer-panel'
 import { ThumbnailField } from './thumbnail-field'
 import { StudioCodeEditor } from './studio-code-editor'
+import { ProjectSwitcher } from './project-switcher'
+import { SwitchField } from './ui/switch'
+import { CheckboxField } from './ui/checkbox'
+import { Field, Input, Textarea } from './ui/field'
+import { Select, SelectOption } from './ui/select'
+import { Tab, Tabs } from './ui/tabs'
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -33,7 +41,6 @@ import {
   Wallet,
   Film,
   Gamepad2,
-  History,
   Loader2,
   MapPin,
   Maximize2,
@@ -52,7 +59,6 @@ import {
   Settings2,
   Share2,
   SkipForward,
-  Sparkles,
   Square,
   Upload,
   Users,
@@ -500,7 +506,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
   const approvalDraft = useRef(currentDraft.current)
   const [view, setView] = useState<'preview' | 'code' | 'test'>('preview')
   const [right, setRight] = useState<
-    'copilot' | 'notes' | 'history' | 'settings'
+    'copilot' | 'sessions' | 'notes' | 'history' | 'settings'
   >('copilot')
   const [elapsed, setElapsed] = useState(0)
   const [pendingPrompt, setPendingPrompt] = useState('')
@@ -1393,8 +1399,17 @@ export function GameStudio({ projectId }: { projectId: string }) {
               <ArrowLeft size={16} />
             </Link>
             <span className="studio-divider" />
-            <Gamepad2 size={18} />
-            <span className="studio-project-title">{title}</span>
+            <ProjectSwitcher
+              current={project ?? undefined}
+              projects={projects}
+              disabled={!user || !!busy || dirty}
+              disabledReason={
+                dirty
+                  ? 'Save your changes before switching project.'
+                  : 'Sign in to open your projects.'
+              }
+              onCreate={() => router.push('/studio')}
+            />
             <span className="studio-saved">
               {busy ? (
                 <Loader2 size={12} className="spin" />
@@ -1628,19 +1643,20 @@ export function GameStudio({ projectId }: { projectId: string }) {
                     <Share2 size={13} />
                     Publishing & remixes
                   </div>
-                  <label>
-                    License
-                    <select
+                  <Field label="License">
+                    <Select
+                      ariaLabel="License"
                       value={
                         document.distribution?.license ??
                         defaultGameDistribution.license
                       }
-                      onChange={(event) =>
+                      disabled={!canEdit}
+                      onValueChange={(license) =>
                         update({
                           distribution: {
                             ...(document.distribution ??
                               defaultGameDistribution),
-                            license: event.target.value as
+                            license: license as
                               | 'all-rights-reserved'
                               | 'cc-by-4.0'
                               | 'cc-by-sa-4.0'
@@ -1649,78 +1665,84 @@ export function GameStudio({ projectId }: { projectId: string }) {
                         })
                       }
                     >
-                      <option value="all-rights-reserved">
-                        All rights reserved
-                      </option>
-                      <option value="cc-by-4.0">CC BY 4.0</option>
-                      <option value="cc-by-sa-4.0">CC BY-SA 4.0</option>
-                      <option value="cc0-1.0">CC0 1.0</option>
-                    </select>
-                  </label>
-                  <label>
-                    Remixing
-                    <select
+                      <SelectOption
+                        value="all-rights-reserved"
+                        title="All rights reserved"
+                      />
+                      <SelectOption value="cc-by-4.0" title="CC BY 4.0" />
+                      <SelectOption value="cc-by-sa-4.0" title="CC BY-SA 4.0" />
+                      <SelectOption value="cc0-1.0" title="CC0 1.0" />
+                    </Select>
+                  </Field>
+                  <Field label="Remixing">
+                    <Select
+                      ariaLabel="Remixing"
                       value={
                         document.distribution?.remixing ??
                         defaultGameDistribution.remixing
                       }
-                      onChange={(event) =>
+                      disabled={!canEdit}
+                      onValueChange={(remixing) =>
                         update({
                           distribution: {
                             ...(document.distribution ??
                               defaultGameDistribution),
-                            remixing: event.target.value as
-                              'disabled' | 'allowed',
+                            remixing: remixing as 'disabled' | 'allowed',
                           },
                         })
                       }
                     >
-                      <option value="disabled">Disabled</option>
-                      <option value="allowed">Allow attributed remixes</option>
-                    </select>
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={document.distribution?.commercialUse ?? false}
-                      onChange={(event) =>
-                        update({
-                          distribution: {
-                            ...(document.distribution ??
-                              defaultGameDistribution),
-                            commercialUse: event.target.checked,
-                          },
-                        })
-                      }
-                    />{' '}
-                    Allow remixes to earn money
-                  </label>
-                  <label>
-                    Royalty from new remixes
-                    <select
-                      value={
+                      <SelectOption value="disabled" title="Disabled" />
+                      <SelectOption
+                        value="allowed"
+                        title="Allow attributed remixes"
+                      />
+                    </Select>
+                  </Field>
+                  <CheckboxField
+                    checked={document.distribution?.commercialUse ?? false}
+                    disabled={!canEdit}
+                    label="Allow remixes to earn money"
+                    onCheckedChange={(commercialUse) =>
+                      update({
+                        distribution: {
+                          ...(document.distribution ?? defaultGameDistribution),
+                          commercialUse,
+                        },
+                      })
+                    }
+                  />
+                  <Field label="Royalty from new remixes">
+                    <Select
+                      ariaLabel="Royalty from new remixes"
+                      value={String(
                         document.distribution?.revenueShareBps ??
-                        defaultGameDistribution.revenueShareBps
-                      }
-                      onChange={(event) =>
+                          defaultGameDistribution.revenueShareBps,
+                      )}
+                      disabled={!canEdit}
+                      onValueChange={(value) =>
                         update({
                           distribution: {
                             ...(document.distribution ??
                               defaultGameDistribution),
-                            revenueShareBps: Number(event.target.value),
+                            revenueShareBps: Number(value),
                           },
                         })
                       }
                     >
                       {[0, 500, 1000, 2000, 3000, 5000].map((bps) => (
-                        <option key={bps} value={bps}>
-                          {bps === 0
-                            ? 'Free remixes · no new royalty'
-                            : `${bps / 100}% of remaining creator earnings`}
-                        </option>
+                        <SelectOption
+                          key={bps}
+                          value={String(bps)}
+                          title={
+                            bps === 0
+                              ? 'Free remixes · no new royalty'
+                              : `${bps / 100}% of remaining creator earnings`
+                          }
+                        />
                       ))}
-                    </select>
-                  </label>
+                    </Select>
+                  </Field>
                   <p className="studio-help">
                     Remixes are isolated projects with immutable source
                     attribution. Choose 0% for free remixes. Royalties come from
@@ -1736,31 +1758,30 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       <Users size={13} />
                       Team access
                     </div>
-                    <label>
-                      Commons user ID
-                      <input
+                    <Field label="Commons user ID">
+                      <Input
                         value={collaboratorId}
                         onChange={(event) =>
                           setCollaboratorId(event.target.value)
                         }
                         placeholder="user_…"
                       />
-                    </label>
-                    <label>
-                      Permission
-                      <select
+                    </Field>
+                    <Field label="Permission">
+                      <Select
+                        ariaLabel="Permission"
                         value={collaboratorPermission}
-                        onChange={(event) =>
+                        onValueChange={(permission) =>
                           setCollaboratorPermission(
-                            event.target.value as typeof collaboratorPermission,
+                            permission as typeof collaboratorPermission,
                           )
                         }
                       >
-                        <option value="test">Can test</option>
-                        <option value="comment">Can comment</option>
-                        <option value="edit">Can edit</option>
-                      </select>
-                    </label>
+                        <SelectOption value="test" title="Can test" />
+                        <SelectOption value="comment" title="Can comment" />
+                        <SelectOption value="edit" title="Can edit" />
+                      </Select>
+                    </Field>
                     <button
                       className="studio-access-add"
                       disabled={!collaboratorId.trim() || !!busy}
@@ -1821,66 +1842,38 @@ export function GameStudio({ projectId }: { projectId: string }) {
                 ) : null}
               </div>
               <div hidden={workspaceGroup !== 'project'}>
-                <div className="studio-project-switch">
-                  <Folder size={14} />
-                  <select
-                    aria-label="Open project"
-                    value={project?.id ?? ''}
-                    disabled={!!busy || dirty}
-                    onChange={(e) => {
-                      const p = projects.find((p) => p.id === e.target.value)
-                      if (p) router.push(`/studio/${p.id}`)
-                    }}
-                  >
-                    <option value="">New game</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.document.title}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    aria-label="Create new game"
-                    disabled={!user || !!busy || dirty}
-                    onClick={() => {
-                      router.push('/studio')
-                    }}
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
                 <div className="studio-section">
                   <div className="studio-section-label">
                     <Settings2 size={13} />
                     Game properties
                   </div>
-                  <label>
-                    Name
-                    <input
+                  <Field label="Name">
+                    <Input
                       value={document.title}
                       maxLength={100}
+                      disabled={!canEdit}
                       onChange={(e) => update({ title: e.target.value })}
                     />
-                  </label>
-                  <label>
-                    Description
-                    <textarea
+                  </Field>
+                  <Field label="Description">
+                    <Textarea
                       rows={3}
                       maxLength={1000}
                       value={document.description}
+                      disabled={!canEdit}
                       onChange={(e) => update({ description: e.target.value })}
                     />
-                  </label>
+                  </Field>
                   {!isBrowserGame(document) && (
                     <>
                       {' '}
                       <div className="studio-field-pair">
-                        <label>
-                          Board
-                          <select
-                            value={document.boardSize}
-                            onChange={(e) => {
-                              const n = Number(e.target.value)
+                        <Field label="Board">
+                          <Select
+                            ariaLabel="Board"
+                            value={String(document.boardSize)}
+                            onValueChange={(value) => {
+                              const n = Number(value)
                               update({
                                 boardSize: n,
                                 winLength: Math.min(
@@ -1893,34 +1886,39 @@ export function GameStudio({ projectId }: { projectId: string }) {
                             }}
                           >
                             {[3, 4, 5, 6, 7, 8].map((n) => (
-                              <option key={n} value={n}>
-                                {n} × {n}
-                              </option>
+                              <SelectOption
+                                key={n}
+                                value={String(n)}
+                                title={`${n} × ${n}`}
+                              />
                             ))}
-                          </select>
-                        </label>
-                        <label>
-                          In a row
-                          <select
-                            value={document.winLength}
-                            onChange={(e) =>
-                              update({ winLength: Number(e.target.value) })
+                          </Select>
+                        </Field>
+                        <Field label="In a row">
+                          <Select
+                            ariaLabel="In a row"
+                            value={String(document.winLength)}
+                            onValueChange={(value) =>
+                              update({ winLength: Number(value) })
                             }
                           >
                             {Array.from(
                               { length: document.boardSize - 2 },
                               (_, i) => i + 3,
                             ).map((n) => (
-                              <option key={n}>{n}</option>
+                              <SelectOption
+                                key={n}
+                                value={String(n)}
+                                title={String(n)}
+                              />
                             ))}
-                          </select>
-                        </label>
+                          </Select>
+                        </Field>
                       </div>
                       <div className="studio-field-pair">
                         {[0, 1].map((i) => (
-                          <label key={i}>
-                            Player {i + 1}
-                            <input
+                          <Field key={i} label={`Player ${i + 1}`}>
+                            <Input
                               value={
                                 !isBrowserGame(document)
                                   ? document.marks[i]
@@ -1938,28 +1936,26 @@ export function GameStudio({ projectId }: { projectId: string }) {
                                 update({ marks })
                               }}
                             />
-                          </label>
+                          </Field>
                         ))}
                       </div>
                       <div className="studio-field-pair">
-                        <label>
-                          Accent
-                          <input
+                        <Field label="Accent">
+                          <Input
                             type="color"
                             value={document.accent}
                             onChange={(e) => update({ accent: e.target.value })}
                           />
-                        </label>
-                        <label>
-                          Canvas
-                          <input
+                        </Field>
+                        <Field label="Canvas">
+                          <Input
                             type="color"
                             value={document.background}
                             onChange={(e) =>
                               update({ background: e.target.value })
                             }
                           />
-                        </label>
+                        </Field>
                       </div>
                     </>
                   )}
@@ -2001,14 +1997,13 @@ export function GameStudio({ projectId }: { projectId: string }) {
                           />
                         </label>
                       ))}
-                      <label>
-                        Scenario seed
-                        <input
+                      <Field label="Scenario seed">
+                        <Input
                           value={seed}
                           onChange={(e) => setSeed(e.target.value)}
                           maxLength={200}
                         />
-                      </label>
+                      </Field>
                       <p className="studio-help">
                         Commons agents choose a bounded play policy. Every move
                         uses the same game rules.
@@ -2022,13 +2017,13 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       <Bot size={13} />
                       Test Arena seats
                     </div>
-                    <label>
-                      Players
-                      <select
-                        value={browserControllers.length}
+                    <Field label="Players">
+                      <Select
+                        ariaLabel="Players"
+                        value={String(browserControllers.length)}
                         disabled={!!browserRun}
-                        onChange={(event) => {
-                          const count = Number(event.target.value)
+                        onValueChange={(value) => {
+                          const count = Number(value)
                           setBrowserControllers((current) =>
                             Array.from(
                               { length: count },
@@ -2053,12 +2048,14 @@ export function GameStudio({ projectId }: { projectId: string }) {
                           },
                           (_, index) => (document.play?.seats.min ?? 1) + index,
                         ).map((count) => (
-                          <option value={count} key={count}>
-                            {count}
-                          </option>
+                          <SelectOption
+                            value={String(count)}
+                            key={count}
+                            title={String(count)}
+                          />
                         ))}
-                      </select>
-                    </label>
+                      </Select>
+                    </Field>
                     <div className="studio-controller-list">
                       {browserControllers.map((controller, index) => (
                         <div
@@ -2099,21 +2096,20 @@ export function GameStudio({ projectId }: { projectId: string }) {
                               {controller.policyMemory.preferredDefense}
                             </small>
                           ) : null}
-                          <select
-                            aria-label={`${controller.label} controller`}
+                          <Select
+                            ariaLabel={`${controller.label} controller`}
                             value={controller.kind}
                             disabled={!!browserRun}
-                            onChange={(event) =>
+                            onValueChange={(kind) =>
                               setBrowserControllers((current) =>
                                 current.map((candidate, candidateIndex) =>
                                   candidateIndex === index
                                     ? {
                                         ...candidate,
-                                        kind: event.target.value as
-                                          'human' | 'agent',
+                                        kind: kind as 'human' | 'agent',
                                         agentId: undefined,
                                         strategy:
-                                          event.target.value === 'human'
+                                          kind === 'human'
                                             ? 'Human controlled.'
                                             : 'Play to win, adapt to the opponent, and use only legal actions.',
                                       }
@@ -2122,9 +2118,9 @@ export function GameStudio({ projectId }: { projectId: string }) {
                               )
                             }
                           >
-                            <option value="human">Human</option>
-                            <option value="agent">Agent</option>
-                          </select>
+                            <SelectOption value="human" title="Human" />
+                            <SelectOption value="agent" title="Agent" />
+                          </Select>
                           {controller.kind === 'agent' ? (
                             <>
                               <AgentSelect
@@ -2147,7 +2143,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                                   )
                                 }
                               />
-                              <textarea
+                              <Textarea
                                 rows={2}
                                 aria-label={`${controller.label} coaching`}
                                 value={controller.strategy}
@@ -2312,14 +2308,15 @@ export function GameStudio({ projectId }: { projectId: string }) {
                         : `${browserRun?.step ?? 0} / 200 decisions.`}
                     </p>
                     {browserRuns.length ? (
-                      <label>
-                        Session history
-                        <select
+                      <Field label="Session history">
+                        <Select
+                          ariaLabel="Session history"
+                          placeholder="Choose a prior session"
                           value={browserRun?.id ?? ''}
                           disabled={!!busy}
-                          onChange={(event) => {
+                          onValueChange={(id) => {
                             const selected = browserRuns.find(
-                              (run) => run.id === event.target.value,
+                              (run) => run.id === id,
                             )
                             if (selected)
                               void task('resume playtest', () =>
@@ -2327,17 +2324,20 @@ export function GameStudio({ projectId }: { projectId: string }) {
                               )
                           }}
                         >
-                          <option value="">Choose a prior session</option>
                           {browserRuns.map((run) => (
-                            <option key={run.id} value={run.id}>
-                              {new Date(run.createdAt).toLocaleString()} ·{' '}
-                              {run.preview?.decisions
-                                ? `${run.preview.decisions} recorded decisions · ${run.preview.samples} samples`
-                                : `${run.step} moves`}
-                            </option>
+                            <SelectOption
+                              key={run.id}
+                              value={run.id}
+                              title={new Date(run.createdAt).toLocaleString()}
+                              hint={
+                                run.preview?.decisions
+                                  ? `${run.preview.decisions} recorded decisions · ${run.preview.samples} samples`
+                                  : `${run.step} moves`
+                              }
+                            />
                           ))}
-                        </select>
-                      </label>
+                        </Select>
+                      </Field>
                     ) : null}
                   </div>
                 )}
@@ -2345,14 +2345,12 @@ export function GameStudio({ projectId }: { projectId: string }) {
               <div hidden={workspaceGroup !== 'recordings'}>
                 {project && (
                   <div className="studio-section">
-                    <label className="studio-help">
-                      <input
-                        type="checkbox"
-                        checked={shareRecordings}
-                        onChange={(e) => setShareRecordings(e.target.checked)}
-                      />
-                      Share new recordings with spectators
-                    </label>
+                    <SwitchField
+                      checked={shareRecordings}
+                      onCheckedChange={setShareRecordings}
+                      label="Share recordings"
+                      hint="New recordings become visible to spectators."
+                    />
                     <RecordingShelf
                       projectId={project.id}
                       refresh={recordingsRefresh}
@@ -2424,26 +2422,11 @@ export function GameStudio({ projectId }: { projectId: string }) {
           rightOpen && (
             <>
               <div className="studio-tabs">
-                <button
-                  onClick={() => setRight('copilot')}
-                  className={right === 'copilot' ? 'is-active' : ''}
-                >
-                  <Sparkles size={13} />
-                  Copilot
-                </button>
-                <button
-                  onClick={() => setRight('notes')}
-                  className={right === 'notes' ? 'is-active' : ''}
-                >
-                  <MessageSquare size={13} />
-                  Notes {visibleNotes.length || ''}
-                </button>
-                <button
-                  aria-label="Revision history"
-                  title="Revision history"
-                  onClick={() => {
-                    setRight('history')
-                    if (project)
+                <Tabs
+                  value={right}
+                  onValueChange={(next) => {
+                    setRight(next as typeof right)
+                    if (next === 'history' && project)
                       void task('history', async () =>
                         setHistory(
                           (
@@ -2454,31 +2437,62 @@ export function GameStudio({ projectId }: { projectId: string }) {
                         ),
                       )
                   }}
-                  className={right === 'history' ? 'is-active' : ''}
+                  variant="underline"
+                  ariaLabel="Assistant panel"
                 >
-                  <History size={14} />
-                </button>
-                <button
-                  aria-label="Copilot settings"
-                  title="Copilot settings"
-                  className={`copilot-settings-toggle ${right === 'settings' ? 'is-active' : ''}`}
-                  onClick={() => setRight('settings')}
-                >
-                  <Settings size={14} />
-                </button>
+                  <Tab value="copilot">Copilot</Tab>
+                  <Tab value="sessions">Sessions</Tab>
+                  <Tab value="notes" count={visibleNotes.length}>
+                    Notes
+                  </Tab>
+                  <Tab value="history">Revisions</Tab>
+                </Tabs>
+                <div className="studio-tabs-actions">
+                  <button
+                    type="button"
+                    title="New conversation"
+                    aria-label="New conversation"
+                    disabled={!!busy || copilot.loading || !copilotId}
+                    onClick={() => {
+                      setRight('copilot')
+                      void copilot.create()
+                    }}
+                  >
+                    <Plus size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Copilot settings"
+                    title="Copilot settings"
+                    aria-pressed={right === 'settings'}
+                    onClick={() =>
+                      setRight(right === 'settings' ? 'copilot' : 'settings')
+                    }
+                  >
+                    <Settings size={15} />
+                  </button>
+                </div>
               </div>
               {right === 'settings' ? (
                 <CopilotSettings
                   copilot={copilot}
                   busy={!!busy}
                   onComputer={() => setComputerOpen(true)}
-                  onBack={() => setRight('copilot')}
+                />
+              ) : right === 'sessions' ? (
+                <CopilotSessionList
+                  copilot={copilot}
+                  agentId={copilotId}
+                  busy={!!busy}
+                  onOpen={() => setRight('copilot')}
                 />
               ) : right === 'copilot' ? (
                 <div className="studio-copilot">
-                  <CopilotSessions
+                  <p className="copilot-session-name" title="Open conversation">
+                    {copilotSessionTitle(copilot)}
+                  </p>
+                  <CopilotReview
                     copilot={copilot}
-                    agentId={copilotId}
                     projectId={projectId}
                     busy={!!busy}
                     dirty={dirty}
@@ -2652,7 +2666,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       }}
                     >
                       <strong>Note on this revision</strong>
-                      <textarea
+                      <Textarea
                         autoFocus
                         aria-label="Annotation text"
                         placeholder="What would you like to change?"
@@ -2824,15 +2838,18 @@ export function GameStudio({ projectId }: { projectId: string }) {
                       ? `${run.steps} decisions · ${run.status}`
                       : 'No run started'}
                   </span>
-                  <select
-                    aria-label="Filter diagnostics"
+                  <Select
+                    ariaLabel="Filter diagnostics"
                     value={logFilter}
-                    onChange={(e) => setLogFilter(e.target.value)}
+                    onValueChange={setLogFilter}
                   >
-                    <option value="all">All events</option>
-                    <option value="policy">Observations & decisions</option>
-                    <option value="runtime">Actions & state</option>
-                  </select>
+                    <SelectOption value="all" title="All events" />
+                    <SelectOption
+                      value="policy"
+                      title="Observations & decisions"
+                    />
+                    <SelectOption value="runtime" title="Actions & state" />
+                  </Select>
                   <button
                     aria-label={
                       logsExpanded ? 'Restore preview' : 'Expand test logs'

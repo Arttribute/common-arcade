@@ -351,13 +351,6 @@ main.arcade:has(> .app-sidebar.is-collapsed) {
     gap: 12px;
   }
 }
-.copilot-session-controls {
-  padding: 12px;
-  border-bottom: 1px solid var(--line);
-  display: grid;
-  gap: 8px;
-  flex-shrink: 0;
-}
 .chat-session-toolbar,
 .copilot-permissions {
   display: flex;
@@ -383,19 +376,6 @@ main.arcade:has(> .app-sidebar.is-collapsed) {
   background: transparent;
   border-radius: var(--radius-sm);
   color: var(--ink-muted);
-}
-.copilot-computer-permission {
-  font-size: 11px;
-  color: var(--ink-muted);
-}
-.copilot-computer-permission label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-}
-.copilot-computer-permission p {
-  margin: 6px 0 0;
 }
 .copilot-error {
   padding: 8px 12px;
@@ -440,27 +420,6 @@ main.arcade:has(> .app-sidebar.is-collapsed) {
   .studio-home-create {
     padding: 36px 20px;
   }
-}
-
-.copilot-session-controls .chat-session-toolbar {
-  padding: 0;
-  border: 0;
-}
-.copilot-session-controls .ui-select-trigger {
-  display: flex;
-  justify-content: space-between;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  background: var(--paper);
-  color: var(--ink);
-}
-.copilot-session-controls svg {
-  flex-shrink: 0;
-}
-.copilot-session-controls .ui-select-trigger > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .studio-workspace .studio-message.user {
   background: var(--message-user);
@@ -531,9 +490,6 @@ main.arcade:has(> .app-sidebar.is-collapsed) {
   justify-content: center;
   padding-inline: 0;
 }
-.studio-tabs .copilot-settings-toggle {
-  margin-left: auto;
-}
 .copilot-settings {
   gap: 12px;
   padding: 20px 16px;
@@ -547,55 +503,9 @@ main.arcade:has(> .app-sidebar.is-collapsed) {
   font-size: 12px;
   color: var(--ink-muted);
 }
-.copilot-settings-back {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--ink-muted);
-  font-size: 12px;
-}
-.copilot-settings-computer {
-  border-top: 1px solid var(--line);
-  margin-top: 8px;
-  padding-top: 16px;
-}
-.copilot-settings-computer h3 {
-  font-size: 14px;
-  margin: 0 0 12px;
-  color: var(--ink);
-}
-.copilot-settings-computer details {
-  margin-block: 12px;
-}
-.copilot-open-computer {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  color: var(--ink);
-  font-size: 12px;
-}
 .studio-workspace .ac-canvas-toolbar > .studio-back {
   display: inline-flex;
   flex-shrink: 0;
-}
-.copilot-settings-computer input[type='checkbox'] {
-  width: 16px;
-  height: 16px;
-  min-height: 16px;
-  margin: 0;
-  padding: 0;
-  flex: 0 0 16px;
-  accent-color: var(--accent);
-}
-.copilot-settings-computer label {
-  font-size: 12px;
 }
 .arcade .discover-head h1 {
   font-size: clamp(28px, 3.2vw, 40px);

@@ -1,16 +1,10 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  History,
-  Plus,
-  ShieldCheck,
-  Monitor,
-  Check,
-  X,
-  ArrowLeft,
-} from 'lucide-react'
+import { MessageSquare, ShieldCheck, Monitor, Check, X } from 'lucide-react'
 import { arcade, ArcadeApiError } from '../../lib/api'
 import { Select, SelectOption } from './ui/select'
+import { SwitchField } from './ui/switch'
+import { Field } from './ui/field'
 
 type Message = { role: 'user' | 'assistant'; text: string; sessionId?: string }
 type Conversation = {
@@ -230,9 +224,79 @@ export function useProjectCopilot(
   }
 }
 
-export function CopilotSessions({
+/** The title shown above the conversation — the open session's own name. */
+export function copilotSessionTitle(
+  copilot: ReturnType<typeof useProjectCopilot>,
+) {
+  if (!copilot.sessionId) return 'New conversation'
+  const session = copilot.sessions.find(
+    (candidate) => candidate.sessionId === copilot.sessionId,
+  )
+  return session?.title || 'Game conversation'
+}
+
+/**
+ * Past conversations, as their own tab beside Notes and Revisions.
+ *
+ * This used to be a <select> pinned above the chat, which spent a whole row of
+ * the panel on a control that is used once a session — and put a border
+ * between the heading and the first message.
+ */
+export function CopilotSessionList({
   copilot,
   agentId,
+  busy,
+  onOpen,
+}: {
+  copilot: ReturnType<typeof useProjectCopilot>
+  agentId: string
+  busy: boolean
+  onOpen: () => void
+}) {
+  const disabled = busy || copilot.loading
+  const sessions = copilot.sessions.filter(
+    (session) => session.agentId === agentId,
+  )
+  return (
+    <div className="copilot-session-list">
+      {sessions.length === 0 ? (
+        <p className="copilot-session-empty">
+          Past conversations about this game will be listed here.
+        </p>
+      ) : (
+        sessions.map((session) => (
+          <button
+            key={session.sessionId}
+            type="button"
+            className="copilot-session-row"
+            aria-current={session.sessionId === copilot.sessionId}
+            disabled={disabled}
+            onClick={() => {
+              void copilot.choose(session.sessionId)
+              onOpen()
+            }}
+          >
+            <MessageSquare size={14} aria-hidden />
+            <span>
+              <strong>{session.title || 'Game conversation'}</strong>
+              <small>{new Date(session.createdAt).toLocaleString()}</small>
+            </span>
+            {session.sessionId === copilot.sessionId ? (
+              <Check size={15} aria-hidden />
+            ) : null}
+          </button>
+        ))
+      )}
+    </div>
+  )
+}
+
+/**
+ * Everything the Copilot needs to say above the conversation: job status,
+ * errors, and any change waiting to be approved.
+ */
+export function CopilotReview({
+  copilot,
   projectId,
   busy,
   dirty,
@@ -240,7 +304,6 @@ export function CopilotSessions({
   onReviewing,
 }: {
   copilot: ReturnType<typeof useProjectCopilot>
-  agentId: string
   projectId: string
   busy: boolean
   dirty: boolean
@@ -275,42 +338,6 @@ export function CopilotSessions({
   }
   return (
     <>
-      <div className="copilot-session-controls">
-        <div className="chat-session-toolbar">
-          <History size={16} aria-hidden />
-          <Select
-            ariaLabel="Game conversation history"
-            value={copilot.sessionId || '__current__'}
-            disabled={disabled}
-            onValueChange={(id) =>
-              void copilot.choose(id === '__current__' ? '' : id)
-            }
-          >
-            {!copilot.sessionId && (
-              <SelectOption value="__current__" title="Current conversation" />
-            )}
-            {copilot.sessions
-              .filter((session) => session.agentId === agentId)
-              .map((session) => (
-                <SelectOption
-                  key={session.sessionId}
-                  value={session.sessionId}
-                  title={session.title || 'Game conversation'}
-                  hint={new Date(session.createdAt).toLocaleString()}
-                />
-              ))}
-          </Select>
-          <button
-            type="button"
-            title="New conversation"
-            aria-label="New conversation"
-            disabled={disabled || !agentId}
-            onClick={() => void copilot.create()}
-          >
-            <Plus size={16} />
-          </button>
-        </div>
-      </div>
       {copilot.jobError && (
         <p className="copilot-error" role="status">
           {copilot.jobError} You can continue this conversation.
@@ -374,79 +401,66 @@ export function CopilotSettings({
   copilot,
   busy,
   onComputer,
-  onBack,
 }: {
   copilot: ReturnType<typeof useProjectCopilot>
   busy: boolean
   onComputer: () => void
-  onBack: () => void
 }) {
   const disabled = busy || copilot.loading
   return (
-    <section
-      className="copilot-settings copilot-session-controls"
-      aria-label="Copilot settings"
-    >
-      <button type="button" className="copilot-settings-back" onClick={onBack}>
-        <ArrowLeft size={14} /> Back to Copilot
-      </button>
-      <h2>Copilot settings</h2>
-      <span className="copilot-settings-label">Game editing</span>
-      <div className="copilot-permissions">
-        <ShieldCheck size={16} aria-hidden />
-        <Select
-          ariaLabel="Copilot editing permissions"
-          value={copilot.approvalMode}
-          disabled={disabled}
-          onValueChange={(mode) =>
-            copilot.setApprovalMode(mode as ApprovalMode)
-          }
-        >
-          <SelectOption
-            value="manual"
-            title="Review edits"
-            hint="Approve game changes before they are saved"
-          />
-          <SelectOption
-            value="automatic"
-            title="Auto-approve edits"
-            hint="Copilot can save changes directly"
-          />
-          <SelectOption
-            value="read-only"
-            title="Discuss only"
-            hint="Discuss the game without changing its saved files"
-          />
-        </Select>
-      </div>
-      <div className="copilot-settings-computer copilot-computer-permission">
-        <h3>Agent computer</h3>
-        <label>
-          <input
-            type="checkbox"
-            checked={copilot.computerEnabled}
-            disabled={disabled || copilot.approvalMode === 'read-only'}
-            onChange={(event) =>
-              copilot.setComputerEnabled(event.target.checked)
+    <section className="copilot-settings" aria-label="Copilot settings">
+      <Field
+        label="Game editing"
+        hint="Applies to the files this game is built from, not to the conversation."
+      >
+        <div className="copilot-permissions">
+          <ShieldCheck size={16} aria-hidden />
+          <Select
+            ariaLabel="Copilot editing permissions"
+            value={copilot.approvalMode}
+            disabled={disabled}
+            onValueChange={(mode) =>
+              copilot.setApprovalMode(mode as ApprovalMode)
             }
-          />
-          Request a computer for this run
-        </label>
-        <details>
-          <summary>How access works</summary>
-          <p>
-            This asks Commons to prepare the agent’s computer. Computer tools
-            follow its Commons permissions; game revisions follow the editing
-            mode above.
-          </p>
-        </details>
+          >
+            <SelectOption
+              value="manual"
+              title="Review edits"
+              hint="Approve game changes before they are saved"
+            />
+            <SelectOption
+              value="automatic"
+              title="Auto-approve edits"
+              hint="Copilot can save changes directly"
+            />
+            <SelectOption
+              value="read-only"
+              title="Discuss only"
+              hint="Discuss the game without changing its saved files"
+            />
+          </Select>
+        </div>
+      </Field>
+      <div className="copilot-settings-group">
+        <h3>Agent computer</h3>
+        <SwitchField
+          checked={copilot.computerEnabled}
+          disabled={disabled || copilot.approvalMode === 'read-only'}
+          onCheckedChange={copilot.setComputerEnabled}
+          label="Request a computer"
+          hint="Asks Commons to prepare the agent’s computer for this run."
+        />
+        <p className="copilot-settings-note">
+          Computer tools follow the agent’s Commons permissions; game revisions
+          follow the editing mode above.
+        </p>
         <button
           type="button"
-          className="copilot-open-computer"
+          className="ui-button"
           aria-label="Open agent computer"
           onClick={onComputer}
         >
-          <Monitor size={16} /> Open computer
+          <Monitor size={14} aria-hidden /> Open computer
         </button>
       </div>
     </section>

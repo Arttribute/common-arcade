@@ -8,6 +8,7 @@ import { legacyGameCovers } from '../lib/legacy-game-covers'
 import { GameArtwork } from './game-artwork'
 import type { GameManifest } from '@common-arcade/protocol'
 import { arcade, browserControlClient } from '../../lib/api'
+import { Tab, Tabs } from './ui/tabs'
 
 export function LiveFeed() {
   const [covers, setCovers] = useState<Record<string, string>>({})
@@ -108,7 +109,12 @@ export function LiveFeed() {
           <Radio size={14} /> {liveCount} live · {lobbyCount} open lobb
           {lobbyCount === 1 ? 'y' : 'ies'}
         </span>
-        <div className="live-filters" aria-label="Filter sessions">
+        <Tabs
+          value={filter}
+          onValueChange={(value) => setFilter(value as typeof filter)}
+          ariaLabel="Filter sessions"
+          className="live-filters"
+        >
           {(
             [
               'all',
@@ -117,11 +123,7 @@ export function LiveFeed() {
               ...(signedIn ? ['mine' as const] : []),
             ] as const
           ).map((value) => (
-            <button
-              key={value}
-              aria-pressed={filter === value}
-              onClick={() => setFilter(value)}
-            >
+            <Tab key={value} value={value}>
               {value === 'all'
                 ? 'All sessions'
                 : value === 'lobby'
@@ -129,9 +131,9 @@ export function LiveFeed() {
                   : value === 'mine'
                     ? 'Your sessions'
                     : 'Watch live'}
-            </button>
+            </Tab>
           ))}
-        </div>
+        </Tabs>
         <small>{online ? 'Updated live' : 'Reconnecting…'}</small>
       </div>
       {!online ? (
@@ -169,7 +171,7 @@ export function LiveFeed() {
                 </strong>
               </div>
               <div className="live-card-body">
-                <span className="card-kicker">
+                <span className="live-card-mode">
                   {match.mode} · {match.visibility ?? 'unlisted'}
                   {ownIds.has(match.id) ? ' · Your session' : ''}
                 </span>

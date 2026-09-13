@@ -989,27 +989,6 @@ button:disabled {
   color: var(--ink-subtle);
   font-size: 10px;
 }
-.studio-project-switch {
-  display: flex;
-  align-items: center;
-  margin: 16px;
-  padding: 4px 8px;
-  background: var(--sunken);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  gap: 4px;
-}
-.studio-project-switch select {
-  border: 0;
-  background: transparent;
-  padding: 5px;
-}
-.studio-project-switch > button {
-  background: transparent;
-  border: 0;
-  display: flex;
-  padding: 4px;
-}
 .studio-section {
   padding: 18px 17px;
   border-top: 1px solid var(--sunken);

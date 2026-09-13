@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { Search, Users } from 'lucide-react'
 import { legacyGameCovers } from '../lib/legacy-game-covers'
 import { GameArtwork } from './game-artwork'
+import { Tab, Tabs } from './ui/tabs'
+import { Select, SelectOption } from './ui/select'
 
 export function GameCatalog({
   games: catalog,
@@ -36,6 +38,47 @@ export function GameCatalog({
   const featured = games.filter((game) => game.isFeatured)
   return (
     <div className="catalog shell">
+      <div className="catalog-heading">
+        <h1>Explore the arcade</h1>
+      </div>
+      <div className="catalog-toolbar">
+        <label className="catalog-search">
+          <Search size={16} aria-hidden />
+          <input
+            type="search"
+            aria-label="Search games"
+            placeholder="Search games"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </label>
+        <Tabs
+          value={mode}
+          onValueChange={setMode}
+          ariaLabel="Game type"
+          className="catalog-filters"
+        >
+          {[
+            ['all', 'All games'],
+            ['realtime', 'Real time'],
+            ['turn-based', 'Turn based'],
+            ['simultaneous', 'Simultaneous'],
+            ['hybrid', 'Hybrid'],
+          ]
+            .filter(
+              ([id]) => id === 'all' || games.some((g) => g.spec.mode === id),
+            )
+            .map(([id, label]) => (
+              <Tab key={id} value={id!}>
+                {label}
+              </Tab>
+            ))}
+        </Tabs>
+        <Select value={order} onValueChange={setOrder} ariaLabel="Sort games">
+          <SelectOption value="az" title="Name: A–Z" />
+          <SelectOption value="za" title="Name: Z–A" />
+        </Select>
+      </div>
       {!query && mode === 'all' && featured.length > 0 && (
         <section className="catalog-featured" aria-label="Featured games">
           {featured.map((game) => (
@@ -50,7 +93,6 @@ export function GameCatalog({
                 mode={game.spec.mode}
               />
               <div>
-                <span className="eyebrow">Featured game</span>
                 <h2>{game.metadata.title}</h2>
                 <p>{game.metadata.summary}</p>
               </div>
@@ -58,53 +100,6 @@ export function GameCatalog({
           ))}
         </section>
       )}
-      <div className="catalog-heading">
-        <h2>Explore the arcade</h2>
-        <span>
-          {visible.length} {visible.length === 1 ? 'game' : 'games'}
-        </span>
-      </div>
-      <div className="catalog-toolbar">
-        <label className="catalog-search">
-          <Search size={16} />
-          <input
-            type="search"
-            aria-label="Search games"
-            placeholder="Search games"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </label>
-        <div className="catalog-filters" aria-label="Game type">
-          {[
-            ['all', 'All games'],
-            ['realtime', 'Real time'],
-            ['turn-based', 'Turn based'],
-            ['simultaneous', 'Simultaneous'],
-            ['hybrid', 'Hybrid'],
-          ]
-            .filter(
-              ([id]) => id === 'all' || games.some((g) => g.spec.mode === id),
-            )
-            .map(([id, label]) => (
-              <button
-                key={id}
-                aria-pressed={mode === id}
-                onClick={() => setMode(id!)}
-              >
-                {label}
-              </button>
-            ))}
-        </div>
-        <select
-          aria-label="Sort games"
-          value={order}
-          onChange={(e) => setOrder(e.target.value)}
-        >
-          <option value="az">Name: A–Z</option>
-          <option value="za">Name: Z–A</option>
-        </select>
-      </div>
       <section className="catalog-grid" aria-label="Games">
         {visible.map((game) => (
           <Link

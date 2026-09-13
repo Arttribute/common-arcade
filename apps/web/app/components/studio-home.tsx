@@ -4,7 +4,7 @@ import { GameArtwork } from './game-artwork'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ArrowUpRight, Gamepad2, Plus } from 'lucide-react'
+import { ArrowUpRight, Plus } from 'lucide-react'
 import { emptyBrowserDocument, type StudioProject } from '@common-arcade/studio'
 import { ArcadeComposer, useArcadeIdentity } from './studio-composer'
 import { arcade } from '../../lib/api'
@@ -67,16 +67,10 @@ export function StudioHome() {
     <main className="arcade studio-home" id="main">
       <Header />
       <header className="page-heading shell">
-        <h1>
-          <span className="page-title">Studio</span>
-        </h1>
+        <h1>Studio</h1>
         <p>Create and manage your games.</p>
       </header>
       <section className="studio-home-create">
-        <span className="studio-home-eyebrow">
-          <Gamepad2 size={17} />
-          Arcade Studio
-        </span>
         <h2>What shall we play?</h2>
         <p>
           Create a game or simulation with your Commons agents.

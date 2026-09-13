@@ -724,6 +724,19 @@ export function PlayMatch({
     }
   }
 
+  // Exactly one seat is expanded: the one this viewer is in, or — if they have
+  // none — the first seat they could still take. Every other seat stays a
+  // single summary row, so a full roster does not bury the stage.
+  const expandedSeatId =
+    match?.seats.find(
+      (seat) =>
+        seat.id === controlledSeat || (viewer && seat.actorId === viewer.id),
+    )?.id ??
+    match?.seats.find(
+      (seat) =>
+        seat.joinable ?? (seat.status === 'open' && match.status === 'lobby'),
+    )?.id
+
   async function share() {
     await navigator.clipboard.writeText(window.location.href)
     setCopied(true)
@@ -738,17 +751,16 @@ export function PlayMatch({
         tabIndex={0}
       >
         <div className="match-panel-title">
-          <span className="panel-label">ROSTER</span>
+          <strong aria-live="polite">
+            {match?.seats.filter((seat) => seat.status !== 'open').length ?? 0}{' '}
+            / {match?.seats.length ?? 0} seats taken
+          </strong>
           <button className="icon-copy" onClick={() => void share()}>
             {copied ? <Check size={16} /> : <Share2 size={16} />}
             {copied ? 'Copied' : 'Share'}
           </button>
         </div>
         <p className="roster-summary" aria-live="polite">
-          <strong>
-            {match?.seats.filter((seat) => seat.status !== 'open').length ?? 0}{' '}
-            / {match?.seats.length ?? 0} seats taken
-          </strong>
           <span>
             {terminal ? (
               ended ? (
@@ -768,24 +780,6 @@ export function PlayMatch({
             )}
           </span>
         </p>
-        {match && (
-          <LivePaymentPanel
-            releaseId={match.releaseId}
-            matchId={matchId}
-            agentId={
-              activeAgent ||
-              match.seats
-                .find(
-                  (seat) =>
-                    seat.controllerKind === 'agent' &&
-                    seat.controllerId?.startsWith('commons-agent-'),
-                )
-                ?.controllerId?.replace(/^commons-agent-/, '') ||
-              selectedAgent ||
-              undefined
-            }
-          />
-        )}
         <p className="match-rule-note">
           {match?.visibility === 'public'
             ? 'Public · listed on Live'
@@ -874,7 +868,7 @@ export function PlayMatch({
             return (
               <details
                 key={seat.id}
-                open={joinable || own || controlling}
+                open={seat.id === expandedSeatId}
                 className={`roster-seat ${open ? 'is-open' : 'is-taken'} ${controlling ? 'is-yours' : ''}`}
                 data-seat-id={seat.id}
               >
@@ -1045,8 +1039,10 @@ export function PlayMatch({
             )
           })}
         </div>
-        {/* Only the host may end the session; the backend enforces ownership. */}
-        <div className="match-panel-actions">
+        {/* Only the host may end the session; the backend enforces ownership.
+            Pinned to the foot of the panel so it is reachable without
+            scrolling past however many seats the game has. */}
+        <div className="match-panel-actions is-pinned">
           <button
             className="secondary compact"
             disabled={
@@ -1103,15 +1099,7 @@ export function PlayMatch({
 
       <section className="game-stage" ref={stageRef}>
         <div className="stage-meta">
-          <button
-            className="fullscreen-toggle"
-            aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-            onClick={() => void toggleFullscreen()}
-          >
-            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            {fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-          </button>
-          <span>
+          <span className="stage-state">
             {terminal
               ? ended
                 ? 'Session ended'
@@ -1122,11 +1110,33 @@ export function PlayMatch({
                   ? 'Waiting for players'
                   : 'Loading'}
           </span>
+          <span className="stage-dot" aria-hidden />
           <span>
             Round {match?.series?.currentRound ?? 1}/
             {match?.series?.maximumRounds ?? 1}
-            {!terminal && connection !== 'idle' ? ` · ${connection}` : ''}
           </span>
+          {!terminal ? (
+            <>
+              <span className="stage-dot" aria-hidden />
+              <span>
+                {match?.result !== undefined
+                  ? `Result: ${JSON.stringify(match.result)}`
+                  : connection === 'connected' && publicState !== undefined
+                    ? 'Live game connected'
+                    : connection !== 'idle'
+                      ? connection
+                      : 'Connect to watch or play'}
+              </span>
+            </>
+          ) : null}
+          <button
+            className="fullscreen-toggle"
+            aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            onClick={() => void toggleFullscreen()}
+          >
+            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            {fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          </button>
         </div>
         <div className={`live-stage-view${terminal ? ' is-finished' : ''}`}>
           {match?.releaseId ? (
@@ -1148,12 +1158,9 @@ export function PlayMatch({
               className="live-result-card"
               aria-label={ended ? 'Session result' : 'Round result'}
             >
+              {/* The headline says what happened; the round it happened in is
+                  the first scoreline below it, not a kicker above it. */}
               <div role="status" aria-live="polite">
-                <span className="eyebrow">
-                  {ended
-                    ? 'Session ended'
-                    : `Round ${match.series?.currentRound ?? 1} complete`}
-                </span>
                 <h2>
                   {match.status === 'completed'
                     ? seriesOutcome(match, ended)
@@ -1168,34 +1175,26 @@ export function PlayMatch({
                     ? match.status === 'completed'
                       ? 'Thanks for playing.'
                       : 'Play has stopped. Any completed rounds are recorded below.'
-                    : 'Take a moment. Your seats and agents are ready for the next round.'}
+                    : 'Your seats and agents are ready for the next round.'}
                 </p>
               </div>
-              <details className="live-result-details live-disclosure">
-                <summary>
-                  <span>Round results</span>
-                  <ChevronDown size={16} aria-hidden />
-                </summary>
-                <p>
+              <div className="live-result-scores">
+                <div className="live-result-round">
                   Round {match.series?.currentRound ?? 1} of{' '}
                   {match.series?.maximumRounds ?? 1}
-                  {match.series?.status === 'complete' &&
-                  match.status === 'completed'
-                    ? ' · Complete'
+                  {match.result !== undefined
+                    ? ` · ${resultLabel(match.result, match.seats)}`
                     : ''}
-                </p>
+                </div>
                 <ul aria-label="Rounds won by each player">
                   {match.seats.map((seat) => (
                     <li key={seat.id}>
                       <span>{seat.label}</span>
-                      <strong>{match.series?.scores[seat.id] ?? 0} wins</strong>
+                      <strong>{match.series?.scores[seat.id] ?? 0}</strong>
                     </li>
                   ))}
                 </ul>
-                {match.result !== undefined ? (
-                  <p>Latest round: {resultLabel(match.result, match.seats)}</p>
-                ) : null}
-              </details>
+              </div>
               <div className="live-result-actions">
                 {!ended &&
                 (match.series?.restartPolicy === 'unanimous'
@@ -1242,15 +1241,6 @@ export function PlayMatch({
             onAction={submit}
           />
         ) : null}
-        {!terminal ? (
-          <strong className="game-outcome">
-            {match?.result !== undefined
-              ? `Result: ${JSON.stringify(match.result)}`
-              : connection === 'connected' && publicState !== undefined
-                ? 'Live game connected'
-                : 'Connect to watch or play'}
-          </strong>
-        ) : null}
       </section>
 
       <aside className="match-panel inspector">
@@ -1277,6 +1267,24 @@ export function PlayMatch({
             <dt>Restart rule</dt>
             <dd>{match?.series?.restartPolicy ?? 'owner'}</dd>
           </dl>
+          {match ? (
+            <LivePaymentPanel
+              releaseId={match.releaseId}
+              matchId={matchId}
+              agentId={
+                activeAgent ||
+                match.seats
+                  .find(
+                    (seat) =>
+                      seat.controllerKind === 'agent' &&
+                      seat.controllerId?.startsWith('commons-agent-'),
+                  )
+                  ?.controllerId?.replace(/^commons-agent-/, '') ||
+                selectedAgent ||
+                undefined
+              }
+            />
+          ) : null}
         </details>
         {connection === 'disconnected' && !terminal ? (
           <button
