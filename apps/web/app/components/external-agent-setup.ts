@@ -1,7 +1,8 @@
 export type ExternalClient = 'claude-code' | 'codex' | 'other'
 
-export const SKILL_URL =
-  'https://raw.githubusercontent.com/Arttribute/common-arcade/main/skills/common-arcade/SKILL.md'
+/** Arcade serves its own copy of skills/common-arcade/SKILL.md (kept in sync
+ *  by `pnpm sync:skill` and a test), so the skill matches the deployed API. */
+export const SKILL_PATH = '/skills/common-arcade/SKILL.md'
 
 const KEY_FILE = '~/.config/common-arcade/token'
 const KEY_PLACEHOLDER = 'YOUR_ARCADE_KEY'
@@ -26,14 +27,19 @@ export function buildAgentSetup({
   token,
   idea,
   project,
+  skillText,
 }: {
   client: ExternalClient
   origin: string
   token: string
   idea: string
   project?: { id: string; title: string; revision: number }
+  /** When given, the full skill is pasted into the prompt, so the agent
+   *  needs neither a local copy nor network access to read it. */
+  skillText?: string
 }) {
   const apiUrl = `${origin}/api/arcade`
+  const skillUrl = `${origin}${SKILL_PATH}`
   const skill = skillPath(client)
   const skillDir = skill.slice(0, skill.lastIndexOf('/'))
   const key = token || KEY_PLACEHOLDER
@@ -41,21 +47,28 @@ export function buildAgentSetup({
   const install = [
     `mkdir -p ~/.config/common-arcade ${skillDir}`,
     `(umask 077 && printf '%s' '${key}' > ${KEY_FILE})`,
-    `curl -fsSL ${SKILL_URL} -o ${skill}`,
+    `curl -fsSL ${skillUrl} -o ${skill}`,
   ].join('\n')
 
   const task = project
     ? `Work on my existing game "${project.title}" (project ${project.id}, currently revision ${project.revision}). Read it first, then make these changes: <describe the changes>.`
     : `Create a new game: ${idea.trim() || '<describe your game>'}.`
 
+  const skillLine = skillText
+    ? 'Follow the Common Arcade skill included at the end of this message.'
+    : `Use the Common Arcade skill at ${skill}. If that file is not on this machine, fetch it from ${skillUrl} and follow it.`
+
   const prompt = [
-    `Use the Common Arcade skill at ${skill} to build on Common Arcade.`,
+    skillLine,
     task,
     `API base URL: ${apiUrl}`,
     `Authenticate every request with the header "Authorization: Bearer $(cat ${KEY_FILE})". Never print the key or put it in game files.`,
     project
       ? `Save your work as a new revision of that project, run a test, and tell me what changed.`
       : `Create the project with POST /v1/projects, run a test, and give me its ${origin}/studio/<project id> link.`,
+    ...(skillText
+      ? ['', '--- Common Arcade skill (SKILL.md) ---', skillText.trim()]
+      : []),
   ].join('\n')
 
   const connectNote =
@@ -72,5 +85,5 @@ export function buildAgentSetup({
         ? 'Codex blocks network access by default, so start it with: codex -c sandbox_workspace_write.network_access=true — then paste this prompt.'
         : 'Paste this prompt into your agent.'
 
-  return { install, prompt, connectNote, launchNote, apiUrl }
+  return { install, prompt, connectNote, launchNote, apiUrl, skillUrl }
 }
