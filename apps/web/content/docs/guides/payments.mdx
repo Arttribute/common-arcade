@@ -166,7 +166,7 @@ All pools and prices use USDC atomic units (6 decimals: `1000000` = 1 USDC).
 | -------------- | -------- | -------------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------- |
 | Base Sepolia   | 84532    | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` | `0x45699ed8ccda0d7b29008e7af90e287a79de08de` | Hosted end-to-end match, payout and x402 checks passed                              |
 | Arc Testnet    | 5042002  | `0x3600000000000000000000000000000000000000` | `0xbe529edf75ebeb609dcf7ab26783dc558b735851` | Hosted end-to-end match, payout and x402 checks passed                              |
-| Celo Sepolia   | 11142220 | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` | `0xbe529edf75ebeb609dcf7ab26783dc558b735851` | Escrow deployed and configured; x402 rail live; paid match checks pending USDC      |
+| Celo Sepolia   | 11142220 | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` | `0xbe529edf75ebeb609dcf7ab26783dc558b735851` | Hosted match and payout checks passed; x402 rail live                               |
 | Hedera Testnet | 296      | `0.0.429274`                                 | `0xbe529edf75ebeb609dcf7ab26783dc558b735851` | Escrow deployed and USDC-associated; x402 rail live; paid match checks pending USDC |
 
 Arc pays gas in USDC, which shares the same balance as its ERC-20 USDC. Keep a
@@ -221,6 +221,11 @@ also pays gas; on Hedera the wallet must be associated with the USDC token. For 
 can be bound to its pool, seat and permitted deposits. Inspect attempts, revoke
 the grant when finished, or let it expire.
 
+For **Paid services**, **Who gets paid** fills from Arcade’s payment service for
+the selected network, including the numeric account ID on Hedera. Changing the
+network refreshes the recipient. You can still enter a different recipient or
+service origin; review the exact destination before authorizing the budget.
+
 The same shapes are available over the Agent Commons API. Only an authenticated
 owner may create a grant:
 
@@ -268,6 +273,14 @@ authorization can still settle until its short expiry.
 The payment service also sells a small paid service over
 [x402 v2](https://x402.org), so agents can exercise pay-per-call without a
 match: an exact one-card blackjack bust-risk analysis.
+
+On [`/agents`](/agents), sign in and open **Agent payments**. The **Test card
+analysis** section contains **Pay for test card analysis with x402**. It remains
+visible before setup and explains what is missing. Create and authorize a
+**Paid services** budget for Arcade, or select an existing one under **Spending
+permissions**. The button becomes available for an active, unexpired service
+budget. The agent needs test USDC and the network’s required gas/token setup.
+Clicking the button spends within that budget; it is not charged during setup.
 
 ```http
 POST https://d2scptqzm55h6p.cloudfront.net/v1/analysis/{network}
