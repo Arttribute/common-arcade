@@ -17,6 +17,7 @@ const initialFeaturedGames = [
 export async function catalogMetadata(
   store: DocumentStore,
   publishedGameIds: string[],
+  firstPublishedAt: ReadonlyMap<string, string> = new Map(),
 ) {
   const records = new Map(
     (await store.list<GameCatalogRecord>('game-catalog')).map((record) => [
@@ -45,6 +46,9 @@ export async function catalogMetadata(
       gameId,
       {
         isFeatured: records.get(gameId)?.isFeatured === true,
+        ...(firstPublishedAt.has(gameId) && {
+          publishedAt: firstPublishedAt.get(gameId),
+        }),
       },
     ]),
   )

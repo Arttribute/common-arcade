@@ -12,6 +12,7 @@ async function published(
   gameId: string,
   title: string,
   releaseId = `rel_${gameId}`,
+  publishedAt = '2026-01-01T00:00:00.000Z',
 ) {
   const manifest = await getTicTacToeManifest()
   const release: StudioRelease = {
@@ -20,7 +21,7 @@ async function published(
     revision: 1,
     document: starterDocument,
     digest: manifest.metadata.digest,
-    publishedAt: '2026-01-01T00:00:00.000Z',
+    publishedAt,
     manifest: {
       ...manifest,
       metadata: { ...manifest.metadata, id: gameId, title },
@@ -46,9 +47,12 @@ it('persists the two featured games separately without changing their immutable 
   )
   for (const body of bodies) {
     expect(body.catalog).toEqual({
-      [redline]: { isFeatured: true },
-      [blackjack]: { isFeatured: true },
-      gam_other: { isFeatured: false },
+      [redline]: { isFeatured: true, publishedAt: '2026-01-01T00:00:00.000Z' },
+      [blackjack]: {
+        isFeatured: true,
+        publishedAt: '2026-01-01T00:00:00.000Z',
+      },
+      gam_other: { isFeatured: false, publishedAt: '2026-01-01T00:00:00.000Z' },
     })
     expect(body.games).toEqual([
       redlineManifest,
@@ -58,11 +62,19 @@ it('persists the two featured games separately without changing their immutable 
   }
   expect(await store.list('game-catalog')).toHaveLength(2)
   // The flag survives another control-plane instance and another game release.
-  await published(store, redline, 'Redline Run updated', 'rel_redline_second')
+  await published(
+    store,
+    redline,
+    'Redline Run updated',
+    'rel_redline_second',
+    '2026-03-01T00:00:00.000Z',
+  )
   const next = await (
     await createApp({ store, logRequests: false }).request('/v1/games')
   ).json()
   expect(next.catalog[redline].isFeatured).toBe(true)
+  // A new revision keeps the date the game first went public.
+  expect(next.catalog[redline].publishedAt).toBe('2026-01-01T00:00:00.000Z')
   expect(next.games).toHaveLength(3)
 })
 
@@ -84,8 +96,11 @@ it('respects explicit curation overrides and excludes unpublished/private game m
     await createApp({ store, logRequests: false }).request('/v1/games')
   ).json()
   expect(body.catalog).toEqual({
-    [redline]: { isFeatured: false },
-    gam_new_feature: { isFeatured: true },
+    [redline]: { isFeatured: false, publishedAt: '2026-01-01T00:00:00.000Z' },
+    gam_new_feature: {
+      isFeatured: true,
+      publishedAt: '2026-01-01T00:00:00.000Z',
+    },
   })
   expect(
     (await store.get<GameCatalogRecord>('game-catalog', redline))?.version,

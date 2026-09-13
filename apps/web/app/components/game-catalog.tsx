@@ -15,7 +15,7 @@ export function GameCatalog({
   games: catalog,
   initialPaidOnly = false,
 }: {
-  games: (GameManifest & { isFeatured?: boolean })[]
+  games: (GameManifest & { isFeatured?: boolean; publishedAt?: string })[]
   initialPaidOnly?: boolean
 }) {
   const games = catalog.map((game) => ({
@@ -28,7 +28,7 @@ export function GameCatalog({
   const [paidOnly, setPaidOnly] = useState(initialPaidOnly)
   const [query, setQuery] = useState(''),
     [mode, setMode] = useState('all'),
-    [order, setOrder] = useState('az')
+    [order, setOrder] = useState('newest')
   const filtered = games.filter(
     (g) =>
       (!paidOnly || offersPaidHosting(g)) &&
@@ -37,11 +37,14 @@ export function GameCatalog({
         .toLowerCase()
         .includes(query.toLowerCase()),
   )
-  const visible = filtered.sort((a, b) =>
-    order === 'az'
-      ? a.metadata.title.localeCompare(b.metadata.title)
-      : b.metadata.title.localeCompare(a.metadata.title),
-  )
+  const visible = filtered.sort((a, b) => {
+    if (order === 'az') return a.metadata.title.localeCompare(b.metadata.title)
+    if (order === 'za') return b.metadata.title.localeCompare(a.metadata.title)
+    // Games without a publish date (built-in examples) sort after dated ones.
+    const byDate = (a.publishedAt ?? '').localeCompare(b.publishedAt ?? '')
+    if (!a.publishedAt !== !b.publishedAt) return a.publishedAt ? -1 : 1
+    return order === 'oldest' ? byDate : -byDate
+  })
   const featured = games.filter((game) => game.isFeatured)
   return (
     <>
@@ -105,6 +108,8 @@ export function GameCatalog({
               ))}
           </Tabs>
           <Select value={order} onValueChange={setOrder} ariaLabel="Sort games">
+            <SelectOption value="newest" title="Newest" />
+            <SelectOption value="oldest" title="Oldest" />
             <SelectOption value="az" title="Name: A–Z" />
             <SelectOption value="za" title="Name: Z–A" />
           </Select>
