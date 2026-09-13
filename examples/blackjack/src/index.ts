@@ -136,7 +136,6 @@ export const blackjackGame: GameDefinition<
   },
   // Private authoritative checkpoints retain the shoe for recovery. Public delivery uses the projection below.
   serializeState: (state) => state as unknown as JsonValue,
-  projectSpectatorState: publicBlackjackState,
   projectObservation(state, seatId) {
     return {
       visibleState: publicBlackjackState(state),
