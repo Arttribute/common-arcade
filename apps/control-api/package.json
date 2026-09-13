@@ -19,12 +19,12 @@
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.883.0",
-    "@aws-sdk/client-lambda": "^3.883.0",
-    "@aws-sdk/client-s3": "^3.1127.0",
-    "@aws-sdk/lib-dynamodb": "^3.883.0",
-    "@aws-sdk/s3-presigned-post": "^3.1127.0",
-    "@aws-sdk/s3-request-presigner": "^3.1127.0",
+    "@aws-sdk/client-dynamodb": "^3.1129.0",
+    "@aws-sdk/client-lambda": "^3.1129.0",
+    "@aws-sdk/client-s3": "^3.1129.0",
+    "@aws-sdk/lib-dynamodb": "^3.1129.0",
+    "@aws-sdk/s3-presigned-post": "^3.1129.0",
+    "@aws-sdk/s3-request-presigner": "^3.1129.0",
     "@common-arcade/auth": "workspace:^",
     "@common-arcade/diagnostics": "workspace:^",
     "@common-arcade/example-tic-tac-toe": "workspace:^",
@@ -34,8 +34,8 @@
     "@common-arcade/studio": "workspace:^",
     "@common-arcade/test-arena": "workspace:^",
     "@hono/node-server": "^2.1.1",
-    "hono": "^4.13.5",
-    "jose": "^6.1.0",
+    "hono": "^4.13.7",
+    "jose": "^6.2.12",
     "zod": "catalog:"
   },
   "devDependencies": {

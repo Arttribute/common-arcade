@@ -28,8 +28,8 @@
   "dependencies": {
     "@common-arcade/manifest": "workspace:^",
     "@common-arcade/protocol": "workspace:^",
-    "@jitl/quickjs-singlefile-cjs-release-sync": "0.31.0",
-    "quickjs-emscripten": "0.31.0"
+    "@jitl/quickjs-singlefile-cjs-release-sync": "0.32.0",
+    "quickjs-emscripten": "0.32.0"
   },
   "devDependencies": {
     "tsup": "catalog:",
