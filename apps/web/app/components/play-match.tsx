@@ -33,38 +33,8 @@ import { LiveControls, actionLabel } from './live-controls'
 import { ExternalSeatAgent } from './external-seat-agent'
 import { LivePaymentPanel } from './live-payment-panel'
 import { AgentSelect } from './agent-select'
+import { LiveResultCard } from './live-result-card'
 import './live-results.css'
-
-function resultLabel(
-  result: JsonValue,
-  seats: MatchDescriptor['seats'],
-): string {
-  if (result && typeof result === 'object' && !Array.isArray(result)) {
-    if (typeof result.message === 'string') return result.message
-    const winner = result.winner ?? result.winnerSeatId
-    if (typeof winner === 'string')
-      return `Winner: ${seats.find((seat) => seat.id === winner)?.label ?? winner}`
-    if (result.draw === true || result.winner === null) return 'Draw'
-  }
-  return typeof result === 'string' ? result : 'Round complete'
-}
-
-function seriesOutcome(match: MatchDescriptor, ended: boolean): string {
-  if (ended && (match.series?.maximumRounds ?? 1) > 1) {
-    const scores = match.seats.map((seat) => ({
-      label: seat.label,
-      wins: match.series?.scores[seat.id] ?? 0,
-    }))
-    const best = Math.max(0, ...scores.map((seat) => seat.wins))
-    const leaders = scores.filter((seat) => seat.wins === best)
-    if (best > 0 && leaders.length === 1)
-      return `${leaders[0]!.label} wins the session`
-    if (best > 0) return 'The session ends in a tie'
-  }
-  return match.result !== undefined
-    ? resultLabel(match.result, match.seats)
-    : 'Round complete'
-}
 
 export function PlayMatch({
   matchId,
@@ -1154,70 +1124,25 @@ export function PlayMatch({
             </p>
           )}
           {terminal && match ? (
-            <section
-              className="live-result-card"
-              aria-label={ended ? 'Session result' : 'Round result'}
-            >
-              {/* The headline says what happened; the round it happened in is
-                  the first scoreline below it, not a kicker above it. */}
-              <div role="status" aria-live="polite">
-                <h2>
-                  {match.status === 'completed'
-                    ? seriesOutcome(match, ended)
-                    : match.status === 'canceled'
-                      ? 'Session closed by the host'
-                      : match.status === 'expired'
-                        ? 'Session expired'
-                        : 'Session interrupted'}
-                </h2>
-                <p>
-                  {ended
-                    ? match.status === 'completed'
-                      ? 'Thanks for playing.'
-                      : 'Play has stopped. Any completed rounds are recorded below.'
-                    : 'Your seats and agents are ready for the next round.'}
-                </p>
-              </div>
-              <div className="live-result-scores">
-                <div className="live-result-round">
-                  Round {match.series?.currentRound ?? 1} of{' '}
-                  {match.series?.maximumRounds ?? 1}
-                  {match.result !== undefined
-                    ? ` · ${resultLabel(match.result, match.seats)}`
-                    : ''}
-                </div>
-                <ul aria-label="Rounds won by each player">
-                  {match.seats.map((seat) => (
-                    <li key={seat.id}>
-                      <span>{seat.label}</span>
-                      <strong>{match.series?.scores[seat.id] ?? 0}</strong>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="live-result-actions">
-                {!ended &&
+            <LiveResultCard
+              key={`${match.status}:${match.series?.currentRound ?? 1}`}
+              match={match}
+              ended={ended}
+              restart={
+                !ended &&
                 (match.series?.restartPolicy === 'unanimous'
                   ? seatedHere
-                  : match.ownerId === viewer?.id) ? (
-                  <button
-                    className="primary compact"
-                    onClick={() => void restart()}
-                  >
-                    <RotateCcw size={16} />
-                    {match.series?.restartPolicy === 'unanimous'
-                      ? 'Vote for next round'
-                      : 'Start next round'}
-                  </button>
-                ) : null}
-                {ended ? (
-                  <a href="/live">
-                    Find another session
-                    <ArrowRight size={16} aria-hidden />
-                  </a>
-                ) : null}
-              </div>
-            </section>
+                  : match.ownerId === viewer?.id)
+                  ? {
+                      label:
+                        match.series?.restartPolicy === 'unanimous'
+                          ? 'Vote for next round'
+                          : 'Start next round',
+                      run: () => void restart(),
+                    }
+                  : undefined
+              }
+            />
           ) : null}
         </div>
         {!terminal && observation && !activeAgent ? (

@@ -1254,75 +1254,230 @@
   margin-top: var(--space-3);
 }
 
-/* ---- Round result ------------------------------------------------------- */
-/* A finished round is the whole tile's subject, so the card is a centred
-   scrim over the frozen game rather than a small box in one corner. */
-.arcade .live-result-card {
+/* ---- Match result ------------------------------------------------------ */
+/* A standard results card centred on the stage. The finished game stays in
+   full view around it (no scrim or blur), and the card can be hidden to see
+   the game's own end screen, leaving a small "Show result" button. */
+.arcade .live-result-layer {
   position: absolute;
   inset: 0;
-  width: auto;
-  max-height: none;
+  z-index: 5;
   display: grid;
-  gap: var(--space-5);
-  align-content: center;
-  justify-items: center;
-  text-align: center;
-  padding: var(--space-6);
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  background: var(--stage-scrim);
-  backdrop-filter: blur(6px);
-  color: var(--stage-ink);
+  place-items: center;
+  padding: var(--space-4);
+  pointer-events: none;
+}
+.arcade .live-result-layer.is-collapsed {
+  place-items: end center;
+}
+.arcade .live-result-card,
+.arcade .live-result-reopen {
+  pointer-events: auto;
+}
+.arcade .live-result-card {
+  display: grid;
+  gap: var(--space-4);
+  width: min(400px, 100%);
+  max-height: 100%;
   overflow: auto;
+  padding: var(--space-5);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-floating);
+}
+.arcade .live-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.arcade .live-result-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--hl-primary);
+  color: #0c0a09;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+.arcade .live-result-dismiss {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-muted);
+}
+.arcade .live-result-dismiss:hover {
+  background: var(--sunken);
+  color: var(--ink);
 }
 .arcade .live-result-card h2 {
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-1);
   font-size: var(--text-xl);
   font-weight: 600;
+  line-height: 1.25;
   letter-spacing: var(--tracking-tight);
+  overflow-wrap: anywhere;
 }
 .arcade .live-result-card p {
   margin: 0;
+  color: var(--ink-muted);
   font-size: var(--text-sm);
-  color: var(--stage-ink-muted);
 }
-.live-result-scores {
-  display: grid;
-  gap: var(--space-2);
-  min-width: min(320px, 80%);
+.arcade .live-result-table {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
-.arcade .live-result-round {
+.arcade .live-result-table-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px var(--space-3);
+  background: var(--sunken);
+  color: var(--ink-subtle);
   font-size: var(--text-xs);
-  color: var(--stage-ink-muted);
 }
-.arcade .live-result-scores ul {
-  display: grid;
-  gap: 1px;
+.arcade .live-result-table ul {
   margin: 0;
   padding: 0;
   list-style: none;
-  text-align: left;
 }
-.arcade .live-result-scores li {
+.arcade .live-result-table li {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  gap: var(--space-3);
+  padding: 10px var(--space-3);
+  border-top: 1px solid var(--line);
   font-size: var(--text-sm);
 }
-.arcade .live-result-scores li:last-child {
-  border-bottom: 0;
+.arcade .live-result-table li:first-child {
+  border-top: 0;
 }
-.arcade .live-result-scores strong {
+.arcade .live-result-table-head + ul li:first-child {
+  border-top: 1px solid var(--line);
+}
+.arcade .live-result-table li.is-winner {
+  background: color-mix(in srgb, var(--hl-primary) 22%, transparent);
+}
+.arcade .live-result-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.arcade .live-result-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--sunken);
+  color: var(--ink-muted);
+}
+.arcade .live-result-name {
+  display: grid;
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.arcade .live-result-name small {
+  color: var(--ink-subtle);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+.arcade .live-result-badge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--hl-primary);
+  color: #0c0a09;
+  font-size: 11px;
+  font-weight: 600;
+}
+.arcade .live-result-table strong {
+  font-size: var(--text-base);
   font-variant-numeric: tabular-nums;
+}
+.arcade .live-result-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  margin: 0;
+}
+.arcade .live-result-facts:empty {
+  display: none;
+}
+.arcade .live-result-facts dt {
+  color: var(--ink-subtle);
+  font-size: var(--text-xs);
+}
+.arcade .live-result-facts dd {
+  margin: 2px 0 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 .arcade .live-result-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.arcade .live-result-actions > * {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+.arcade .live-result-reopen {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  box-shadow: var(--shadow-floating);
+}
+@media (max-width: 600px) {
+  /* On phones the card follows the game instead of covering it: the stage
+     lets go of its 16:9 box and the game frame keeps the ratio itself. */
+  .arcade .live-stage-view.is-finished {
+    aspect-ratio: auto;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+  .arcade .live-stage-view.is-finished .live-game-frame {
+    height: auto;
+    aspect-ratio: 16 / 9;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+  }
+  /* Nothing is covered, so there is nothing to hide. */
+  .arcade .live-result-dismiss,
+  .arcade .live-result-actions > .live-result-view {
+    display: none;
+  }
+  .arcade .live-result-layer {
+    position: static;
+    padding: var(--space-3) 0 0;
+  }
+  .arcade .live-result-card {
+    width: 100%;
+    max-height: none;
+  }
 }
 
 /* ---- Session details ---------------------------------------------------- */

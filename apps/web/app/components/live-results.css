@@ -10,91 +10,12 @@
 .live-stage-view.is-finished .live-game-frame {
   pointer-events: none;
 }
-.live-result-card {
-  position: absolute;
-  inset: auto 16px 16px auto;
-  width: min(360px, calc(100% - 32px));
-  max-height: calc(100% - 32px);
-  overflow: auto;
-  padding: 20px;
-  color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--line-strong, var(--line));
-  border-radius: var(--radius-md);
-  box-shadow: 0 6px 24px #00000012;
-}
-.live-result-card h2 {
-  margin: 8px 0;
-  font-size: 22px;
-  line-height: 1.2;
-  overflow-wrap: anywhere;
-}
-.live-result-card p {
-  margin: 8px 0;
-  color: var(--ink-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.live-result-details {
-  margin-top: 16px;
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
-}
-.live-result-details summary {
-  font-size: 13px;
-  cursor: pointer;
-}
-.live-result-details ul {
-  padding: 0;
-  margin: 12px 0;
-  list-style: none;
-}
-.live-result-details li {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
-  font-size: 13px;
-}
-.live-result-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
-}
-.live-result-actions:empty {
-  display: none;
-}
-.live-result-actions a,
-.live-result-actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 9px 12px;
-  background: var(--primary);
-  color: var(--primary-ink);
-  border: 1px solid var(--primary);
-  border-radius: var(--radius-md);
-  font-size: 12px;
-  text-decoration: none;
-}
 .game-stage:fullscreen .live-stage-view {
   flex: 1;
   min-height: 55dvh;
 }
 .game-stage:fullscreen .live-stage-view .live-game-frame {
   height: 100%;
-}
-@media (max-width: 600px) {
-  .live-result-card {
-    position: relative;
-    inset: auto;
-    width: 100%;
-    max-height: none;
-    margin-top: 12px;
-  }
 }
 .live-player-panel {
   overflow-y: auto;
