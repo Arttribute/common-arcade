@@ -1883,3 +1883,40 @@
 .arcade.landing .shell {
   width: min(var(--shell-max), calc(100% - var(--shell-gutter) * 2));
 }
+
+/* Preview zoom: the frame is sized in pixels (fit × zoom) inside its own
+   scrolling viewport. Auto margins centre it while it fits and keep every
+   edge reachable once it is larger than the view. The padding, offset by a
+   matching negative margin, leaves room for the frame's shadow. */
+.arcade.studio-workspace .studio-preview-stage {
+  overflow: hidden;
+}
+.arcade.studio-workspace .studio-preview-viewport {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  margin: -12px;
+  padding: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.arcade.studio-workspace .studio-preview-viewport > .studio-preview-frame {
+  flex: none;
+  max-width: none;
+  max-height: none;
+  margin: auto;
+  aspect-ratio: auto;
+}
+.arcade .studio-zoom-reset {
+  min-width: 42px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.arcade .studio-zoom-reset:hover {
+  background: var(--sunken);
+  color: var(--ink);
+}
