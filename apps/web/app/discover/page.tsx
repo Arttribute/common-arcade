@@ -28,13 +28,22 @@ async function games(): Promise<{
   }
 }
 
-export default async function DiscoverPage() {
+export default async function DiscoverPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ payments?: string | string[] }>
+}) {
+  const paidOnly = (await searchParams).payments === 'enabled'
   const catalog = await games()
   return (
     <main className="arcade" id="main">
       <Header />
       {catalog.online ? (
-        <GameCatalog games={catalog.games} />
+        <GameCatalog
+          key={String(paidOnly)}
+          games={catalog.games}
+          initialPaidOnly={paidOnly}
+        />
       ) : (
         <section className="shell catalog-empty">
           <h2>The arcade is taking a moment.</h2>

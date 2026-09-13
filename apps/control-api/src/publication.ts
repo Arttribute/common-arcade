@@ -44,7 +44,22 @@ export async function publishedReleases(store: DocumentStore) {
       .map((record) => record.projectId),
   )
   // Pre-existing releases have no availability record and stay published.
-  return releases.filter(({ release }) => !unpublished.has(release.projectId))
+  // DynamoDB orders release IDs lexically (revision 11 precedes revision 8).
+  // All public readers use the last release per game, so order by revision.
+  const byProject = new Map<string, ReleaseRecord[]>()
+  for (const record of releases) {
+    if (unpublished.has(record.release.projectId)) continue
+    const group = byProject.get(record.release.projectId) ?? []
+    group.push(record)
+    byProject.set(record.release.projectId, group)
+  }
+  return [...byProject.values()].flatMap((group) =>
+    group.sort(
+      (a, b) =>
+        a.release.revision - b.release.revision ||
+        a.release.id.localeCompare(b.release.id),
+    ),
+  )
 }
 
 export async function releaseIsPublished(

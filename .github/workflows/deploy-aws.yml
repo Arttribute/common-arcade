@@ -9,6 +9,12 @@ on:
         type: choice
         options: [development, staging, production]
         default: development
+      target:
+        description: Stacks to plan or deploy
+        required: true
+        type: choice
+        options: [all, control-plane]
+        default: all
       operation:
         description: Review a diff or deploy it
         required: true
@@ -102,14 +108,24 @@ jobs:
 
       - name: Review infrastructure diff
         if: inputs.operation == 'diff'
-        run: pnpm --filter @common-arcade/aws-infra diff --context stage="${{ inputs.stage }}"
+        run: |
+          if [ "${{ inputs.target }}" = control-plane ]; then
+            pnpm --filter @common-arcade/aws-infra diff "CommonArcade-${{ inputs.stage }}-ControlPlane" --exclusively --context stage="${{ inputs.stage }}"
+          else
+            pnpm --filter @common-arcade/aws-infra diff --context stage="${{ inputs.stage }}"
+          fi
         env:
           CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
           CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}
 
       - name: Deploy reviewed infrastructure
         if: inputs.operation == 'deploy' && inputs.confirm == 'deploy'
-        run: pnpm --filter @common-arcade/aws-infra run deploy --all --context stage="${{ inputs.stage }}"
+        run: |
+          if [ "${{ inputs.target }}" = control-plane ]; then
+            pnpm --filter @common-arcade/aws-infra run deploy "CommonArcade-${{ inputs.stage }}-ControlPlane" --exclusively --context stage="${{ inputs.stage }}"
+          else
+            pnpm --filter @common-arcade/aws-infra run deploy --all --context stage="${{ inputs.stage }}"
+          fi
         env:
           CDK_DEFAULT_ACCOUNT: ${{ vars.AWS_ACCOUNT_ID }}
           CDK_DEFAULT_REGION: ${{ vars.AWS_REGION }}

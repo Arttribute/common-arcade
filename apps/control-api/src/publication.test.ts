@@ -255,3 +255,51 @@ it('uses publication CAS to reject stale publish/unpublish reversals', async () 
   ).rejects.toBeInstanceOf(StoreConflict)
   expect((await publicationRecord(store, 'prj_game'))?.isPublished).toBe(false)
 })
+
+it('serves the highest published revision and its payment settings after revision 9', async () => {
+  const { app, store, platform, release } = await setup()
+  try {
+    const monetization = {
+      mode: 'revenue-share',
+      allowedModes: ['staked', 'sponsored'],
+      feeBps: 250,
+      creatorShareBps: 7000,
+      payouts: { 'base-sepolia': `0x${'1'.repeat(40)}` },
+    }
+    // DynamoDB's lexical order returns revision 11 before revision 8.
+    for (const revision of [11, 8]) {
+      const next = structuredClone(release)
+      next.id = release.id.replace('_1_', `_${revision}_`)
+      next.revision = revision
+      next.manifest.metadata.version = `0.1.${revision}`
+      if (revision === 11) {
+        next.document.monetization = monetization
+        next.manifest.spec.extensions.push({
+          id: 'https://arcade.agentcommons.io/extensions/payments/v0alpha1',
+          required: false,
+          config: monetization,
+        })
+      }
+      await store.put('releases', next.id, { version: 1, release: next })
+    }
+    const catalog = await (await app.request('/v1/games')).json()
+    const game = await (
+      await app.request(`/v1/games/${release.manifest.metadata.id}`)
+    ).json()
+    expect(catalog.games[0].metadata.version).toBe('0.1.11')
+    expect(game.metadata.version).toBe('0.1.11')
+    expect(game.spec.extensions.at(-1).config).toEqual(monetization)
+    const versions = await (
+      await app.request(`/v1/games/${release.manifest.metadata.id}/releases`)
+    ).json()
+    expect(
+      versions.releases.map((r: { version: string }) => r.version),
+    ).toEqual(['0.1.1', '0.1.8', '0.1.11'])
+    const old = await (
+      await app.request(`/v1/studio/releases/${release.id}`)
+    ).json()
+    expect(old.document.monetization).toBeUndefined()
+  } finally {
+    platform.close()
+  }
+})
