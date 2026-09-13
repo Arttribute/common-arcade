@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { AccountMenu } from './account-menu'
 import { Brand } from './brand'
+import { SidebarRecents } from './sidebar-recents'
 
 export function Header({
   beforeSignOut,
@@ -47,15 +48,10 @@ export function Header({
         <Link
           className="brand"
           href="/"
-          aria-label="Common Arcade"
+          aria-label="Common Arcade home"
           title="Common Arcade"
         >
-          <span className="brand-expanded">
-            <Brand />
-          </span>
-          <span className="brand-collapsed">
-            <Brand compact />
-          </span>
+          <Brand />
         </Link>
         {!locked && (
           <button
@@ -94,6 +90,7 @@ export function Header({
           </Link>
         ))}
       </div>
+      {!collapsed ? <SidebarRecents /> : null}
       <div className="sidebar-footer">
         <AccountMenu beforeSignOut={beforeSignOut} />
       </div>

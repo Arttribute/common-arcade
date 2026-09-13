@@ -1,4 +1,5 @@
 'use client'
+import { UserAvatar } from './user-avatar'
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import {
@@ -93,11 +94,7 @@ export function AccountMenu({
         aria-label={`Account: ${user.name}`}
         title="Your Commons account"
       >
-        <span className="arcade-avatar">
-          {user.name.trim().slice(0, 1).toUpperCase() || (
-            <UserRound size={14} />
-          )}
-        </span>
+        <UserAvatar seed={user.id || user.name} name={user.name} />
         <span className="arcade-account-name">{user.name}</span>
         <ChevronsUpDown size={14} />
       </summary>

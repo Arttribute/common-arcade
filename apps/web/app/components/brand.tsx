@@ -1,14 +1,18 @@
 import { Gamepad2 } from 'lucide-react'
 
-export function Brand({ compact = false }: { compact?: boolean }) {
-  return compact ? (
-    <span className="arcade-brand-icon">
-      <Gamepad2 size={18} strokeWidth={1.75} />
-    </span>
-  ) : (
-    <span className="arcade-wordmark">
-      <span>Common</span>
-      <span>Arcade</span>
+/**
+ * The Arcade mark: a gamepad on the signature tangerine tile. It is the only
+ * logo — the same mark in the sidebar, the Studio rail and the favicon — so
+ * the product is recognisable at every size without a wordmark.
+ */
+export function Brand({ size = 28 }: { size?: number }) {
+  return (
+    <span
+      className="arcade-logo"
+      style={{ width: size, height: size }}
+      aria-hidden
+    >
+      <Gamepad2 size={Math.round(size * 0.64)} strokeWidth={2} />
     </span>
   )
 }

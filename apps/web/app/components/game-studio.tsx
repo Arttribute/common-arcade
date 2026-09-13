@@ -1346,7 +1346,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
           aria-label="All projects"
           title="Back to Studio"
         >
-          <Brand compact />
+          <Brand size={26} />
         </Link>
         {(
           [

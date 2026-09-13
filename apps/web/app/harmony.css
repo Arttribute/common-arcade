@@ -1,34 +1,3 @@
-/* Commons geometry with artwork-led Arcade pages and App Store-style actions. */
-.arcade-wordmark {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  height: 32px;
-  font-size: 16px;
-  line-height: 16px;
-  font-weight: 700;
-  letter-spacing: -0.6px;
-}
-.arcade-wordmark span:first-child {
-  background: #e4dcfa;
-  border-radius: 3px;
-  padding: 0 2px;
-}
-.arcade-wordmark span:last-child {
-  background: #fbd38d;
-  border-radius: 3px;
-  padding: 0 2px;
-}
-.arcade-brand-icon {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
-  background: #e4dcfa;
-  color: #292524;
-}
 .sidebar-brand-row {
   display: flex;
   align-items: center;
@@ -38,9 +7,6 @@
 }
 .app-sidebar .brand {
   padding: 0;
-}
-.brand-collapsed {
-  display: none;
 }
 .sidebar-toggle {
   display: grid;
@@ -67,14 +33,6 @@
   flex-direction: column;
   gap: 12px;
   margin: 0 0 20px;
-}
-.app-sidebar.is-collapsed .brand-expanded,
-.app-sidebar.is-collapsed .nav-links a span,
-.app-sidebar.is-collapsed .arcade-account-name {
-  display: none;
-}
-.app-sidebar.is-collapsed .brand-collapsed {
-  display: block;
 }
 .app-sidebar.is-collapsed .nav-links {
   gap: 12px;
@@ -311,12 +269,6 @@ main.arcade:has(> .app-sidebar.is-collapsed) {
   }
 }
 @media (max-width: 850px) {
-  .app-sidebar .brand-expanded {
-    display: none;
-  }
-  .app-sidebar .brand-collapsed {
-    display: block;
-  }
   .sidebar-toggle {
     display: none;
   }
@@ -330,9 +282,6 @@ main.arcade:has(> .app-sidebar.is-collapsed) {
     width: 28px;
     height: 28px;
     padding: 6px;
-  }
-  .app-sidebar .brand > span:last-child {
-    display: block;
   }
   .studio-workspace .ac-canvas-left {
     left: 60px;
@@ -427,10 +376,6 @@ main.arcade:has(> .app-sidebar.is-collapsed) {
     width: min(360px, calc(100vw - 60px)) !important;
     max-width: calc(100vw - 60px);
   }
-}
-
-.app-sidebar.is-collapsed:not(.is-locked) .brand {
-  display: none;
 }
 .app-sidebar.is-collapsed .sidebar-brand-row {
   min-height: 32px;

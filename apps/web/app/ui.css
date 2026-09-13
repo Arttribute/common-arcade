@@ -360,12 +360,14 @@
  * Agent Commons' studio page title: bold 16px type sitting fully inside a
  * marker highlight.
  *
- * Accent colour is used the way Commons uses it — vividly, but in one place at
- * a time: an electric lime as the primary highlight, a warm amber as its only
- * partner. Neither appears on chrome, borders or buttons. */
+ * Arcade's signature is one electric tangerine — a colour neither Commons app
+ * uses — spent the way Commons spends colour: vividly, in one place at a time.
+ * It marks the logo, page titles, hero highlights and the hero animation, and
+ * never chrome, borders or buttons. --hl-secondary is its lighter tint, used
+ * only inside the animation. Ink text on it is 6.9:1. */
 :root {
-  --hl-primary: #bef264;
-  --hl-secondary: #fcd34d;
+  --hl-primary: #ff7849;
+  --hl-secondary: #ffb899;
   --title-highlight: var(--hl-primary);
   --title-highlight-ink: #0c0a09;
   --highlight-warm: var(--hl-secondary);
@@ -1517,7 +1519,7 @@
   color: var(--title-highlight-ink);
 }
 .arcade .hero-mark.is-warm {
-  background: var(--highlight-warm);
+  background: var(--title-highlight);
 }
 .hero-foot {
   display: flex;
@@ -1666,4 +1668,148 @@
     transparent 0
   ) !important;
   background-size: 16px 16px;
+}
+
+/* ======================================================================== *
+ *  Brand and sidebar
+ * ======================================================================== */
+
+.arcade-logo {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--hl-primary);
+  color: #0c0a09;
+}
+.arcade .rail-brand {
+  width: auto;
+  height: auto;
+  margin: 0 0 var(--space-5);
+  background: none;
+}
+.arcade .app-sidebar .brand {
+  display: inline-flex;
+  padding: 0;
+}
+.arcade .sidebar-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  margin: 0 var(--space-1) var(--space-3);
+}
+/* Closed, the sidebar keeps the mark on top and the toggle beneath it. */
+.arcade .app-sidebar.is-collapsed .sidebar-brand-row {
+  height: auto;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+}
+.arcade .app-sidebar.is-collapsed .brand {
+  display: inline-flex;
+}
+
+/* Recents: the Commons dashboard list — a quiet label, then one-line rows
+   that scroll between the navigation and the account. */
+.sidebar-recents {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: var(--space-5);
+}
+.sidebar-recents-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+.sidebar-recents-list {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-1) 0 var(--space-2);
+}
+.arcade .sidebar-recent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 32px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+.arcade .sidebar-recent:hover,
+.arcade .sidebar-recent[aria-current='page'] {
+  background: var(--sunken);
+  color: var(--ink);
+}
+.sidebar-recent-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--line-strong);
+}
+.sidebar-recent-dot[data-live='yes'] {
+  background: var(--live);
+}
+.sidebar-recent-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.arcade .sidebar-recent-status {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--ink-subtle);
+}
+.sidebar-recents-skeleton {
+  display: block;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+}
+.arcade .sidebar-recents-empty {
+  margin: 0;
+  padding: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--ink-subtle);
+}
+/* Recents take the flexible space, so the account stays pinned below them. */
+.arcade .app-sidebar .sidebar-recents + .sidebar-footer {
+  margin-top: 0;
+}
+
+/* Below 850px the sidebar is a 60px icon rail at every route, with no room
+   for a list; Recents are for the full sidebar only. */
+@media (max-width: 850px) {
+  .sidebar-recents {
+    display: none;
+  }
+  .arcade .app-sidebar .sidebar-footer {
+    margin-top: auto;
+  }
+}
+
+/* Placeholder avatar: the Commons gradient with black initials, no border. */
+.arcade .arcade-avatar {
+  border: 0;
+  background-color: var(--sunken);
+  color: #0c0a09;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.35);
 }
