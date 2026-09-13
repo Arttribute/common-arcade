@@ -1716,10 +1716,8 @@
 .arcade .app-sidebar.is-collapsed .brand {
   display: inline-flex;
 }
-/* The logo doubles as the expand control: on hover the mark gives way to the
-   panel icon, so the affordance is discoverable without a second button. */
+/* The logo is the expand control — the only one. */
 .arcade .brand-toggle {
-  position: relative;
   display: inline-grid;
   place-items: center;
   padding: 0;
@@ -1728,21 +1726,8 @@
   cursor: pointer;
   border-radius: 8px;
 }
-.brand-toggle > * {
-  grid-area: 1 / 1;
-  transition: opacity var(--duration-fast) var(--ease);
-}
-.arcade .brand-toggle-hint {
-  opacity: 0;
-  color: var(--ink);
-}
-.arcade .brand-toggle:hover .arcade-logo,
-.arcade .brand-toggle:focus-visible .arcade-logo {
-  opacity: 0;
-}
-.arcade .brand-toggle:hover .brand-toggle-hint,
-.arcade .brand-toggle:focus-visible .brand-toggle-hint {
-  opacity: 1;
+.arcade .brand-toggle:hover .arcade-logo {
+  filter: brightness(0.96);
 }
 .arcade .brand-toggle:focus-visible {
   outline: none;
@@ -1876,4 +1861,18 @@
 }
 .arcade .app-sidebar.is-collapsed .sidebar-footer {
   justify-items: center;
+}
+
+/* Closed rail: every mark sits on one centre line. The logo, the nav icons and
+   the account avatar are each centred in the 60px rail instead of hanging off
+   the left padding at slightly different offsets. */
+.arcade .app-sidebar.is-collapsed .sidebar-brand-row,
+.arcade .app-sidebar.is-collapsed .nav-links,
+.arcade .app-sidebar.is-collapsed .sidebar-footer {
+  align-items: center;
+  justify-items: center;
+}
+.arcade .app-sidebar.is-collapsed .nav-links a {
+  justify-content: center;
+  margin-inline: auto;
 }

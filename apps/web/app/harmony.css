@@ -381,7 +381,7 @@ main.arcade:has(> .app-sidebar.is-collapsed) {
   min-height: 32px;
 }
 @media (prefers-reduced-motion: no-preference) {
-  .app-sidebar {
+  .app-sidebar.is-settled {
     transition: width 200ms var(--ease);
   }
 }

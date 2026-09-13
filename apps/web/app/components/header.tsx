@@ -9,11 +9,16 @@ import {
   Bot,
   BookOpen,
   PanelLeftClose,
-  PanelLeftOpen,
 } from 'lucide-react'
 import { AccountMenu } from './account-menu'
 import { Brand } from './brand'
 import { SidebarRecents } from './sidebar-recents'
+
+// Every page mounts its own Header, so a preference held only in state starts
+// over — expanded — on each navigation, then snaps shut once storage is read.
+// Holding it at module scope lets the next page mount already in the reader's
+// chosen state. (Null on a fresh load, so server and client markup agree.)
+let rememberedPreference: boolean | null = null
 
 export function Header({
   beforeSignOut,
@@ -22,18 +27,31 @@ export function Header({
   // `null` until the reader has chosen; until then the landing page opens
   // with the sidebar closed so the hero has the full width, and every other
   // page opens with it expanded.
-  const [preference, setPreference] = useState<boolean | null>(null)
+  const [preference, setPreference] = useState<boolean | null>(
+    rememberedPreference,
+  )
+  // Width transitions start only after the first settle, so restoring a saved
+  // preference on a fresh load does not animate the rail open or shut.
+  const [settled, setSettled] = useState(rememberedPreference !== null)
   const locked =
     /^\/(games|studio)\/[^/]+/.test(path) || /^\/play\/[^/]+/.test(path)
   const collapsed = locked || (preference ?? path === '/')
   useEffect(() => {
-    try {
-      const stored = sessionStorage.getItem('arcade-sidebar-collapsed')
-      if (stored !== null) setPreference(stored === 'true')
-    } catch {}
+    if (rememberedPreference === null) {
+      try {
+        const stored = sessionStorage.getItem('arcade-sidebar-collapsed')
+        if (stored !== null) {
+          rememberedPreference = stored === 'true'
+          setPreference(rememberedPreference)
+        }
+      } catch {}
+    }
+    const frame = requestAnimationFrame(() => setSettled(true))
+    return () => cancelAnimationFrame(frame)
   }, [])
   function toggle() {
     const value = !collapsed
+    rememberedPreference = value
     setPreference(value)
     try {
       sessionStorage.setItem('arcade-sidebar-collapsed', String(value))
@@ -41,7 +59,7 @@ export function Header({
   }
   return (
     <nav
-      className={`app-sidebar${collapsed ? ' is-collapsed' : ''}${locked ? ' is-locked' : ''}`}
+      className={`app-sidebar${collapsed ? ' is-collapsed' : ''}${locked ? ' is-locked' : ''}${settled ? ' is-settled' : ''}`}
       aria-label="Main navigation"
     >
       <div className="sidebar-brand-row">
@@ -56,11 +74,6 @@ export function Header({
             title="Expand sidebar"
           >
             <Brand />
-            <PanelLeftOpen
-              size={16}
-              className="brand-toggle-hint"
-              aria-hidden
-            />
           </button>
         ) : (
           <Link
