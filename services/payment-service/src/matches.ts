@@ -1,5 +1,9 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { compileGame } from '@common-arcade/studio/runtime'
+import {
+  createBrowserPolicy,
+  livePolicyObservation,
+} from '@common-arcade/studio'
 import type { StudioRelease, JsonValue } from '@common-arcade/protocol'
 import {
   resolveCreatorRevenue,
@@ -37,6 +41,7 @@ export const createTableSchema = z
       .optional(),
     recipients: z.tuple([address, address]).optional(),
     economy: economyConfigSchema.default({ mode: 'free' }),
+    startWhenReady: z.boolean().optional(),
   })
   .strict()
 export interface TableRecord {
@@ -72,6 +77,18 @@ export interface TableRecord {
   transactions: Hex[]
   actions: Record<string, string>
   runtimeError?: string
+  cancelRequested?: boolean
+  startWhenReady?: boolean
+  readyAt?: number
+  autoplay?: Record<
+    string,
+    {
+      address: Address
+      expiresAt: number
+      step: number
+      lastDecisionAt?: number
+    }
+  >
 }
 export interface SignedCommand {
   address: Address
@@ -102,6 +119,8 @@ export class MatchHost {
   private runtimes = new Map<string, AuthoritativeMatch<unknown, unknown>>()
   private liveRecords = new Map<string, TableRecord>()
   private clocks = new Map<string, ReturnType<typeof setInterval>>()
+  private agentClocks = new Map<string, ReturnType<typeof setInterval>>()
+  private fundingClocks = new Map<string, ReturnType<typeof setInterval>>()
   private controllers = new Map<string, symbol>()
   private tickets = new Map<
     string,
@@ -109,6 +128,7 @@ export class MatchHost {
   >()
   private operations = new Map<string, Promise<unknown>>()
   private listeners = new Map<string, Set<(value: unknown) => void>>()
+  private policy = createBrowserPolicy()
   constructor(
     private store: MatchStore,
     private adapters: Partial<Record<string, MatchSettlementAdapter>>,
@@ -239,6 +259,7 @@ export class MatchHost {
           ...(release ? { release, revenue } : {}),
           host: auth.address,
           openSeats: !body.recipients,
+          startWhenReady: body.startWhenReady ?? false,
           recipients: body.recipients ?? [zeroAddress, zeroAddress],
           ...(body.economy.mode === 'escrow'
             ? {
@@ -327,6 +348,7 @@ export class MatchHost {
         record.stage = 'funding'
         await this.store.put(id, record)
       }
+      this.watchFunding(record)
       return this.viewRecord(record)
     })
   }
@@ -372,11 +394,7 @@ export class MatchHost {
               }))
           })(),
         })
-    if (
-      record.release?.manifest.spec.mode === 'realtime' &&
-      record.stage !== 'settled' &&
-      !record.runtimeError
-    ) {
+    if (record.stage !== 'settled' && !record.runtimeError) {
       this.runtimes.set(record.id, runtime)
       this.liveRecords.set(record.id, record)
     }
@@ -384,16 +402,21 @@ export class MatchHost {
   }
   async start(id: string, auth: SignedCommand) {
     await this.verify(id, 'start', {}, auth)
+    return this.startForHost(id, auth.address)
+  }
+  private async startForHost(id: string, address: Address) {
     return this.exclusive(id, async () => {
       const record = await this.require(id)
       if (this.closing)
         throw new Error('Payment worker is restarting; try again shortly')
       if (
         (record.host ?? record.recipients[0]!).toLowerCase() !==
-        auth.address.toLowerCase()
+        address.toLowerCase()
       )
         throw new Error('Only the table creator can start')
       if (record.stage !== 'funding') return this.viewRecord(record)
+      if (record.cancelRequested)
+        throw new Error('Session cancellation is pending')
       await this.refreshSeats(record)
       if (record.openSeats && !record.funded?.every(Boolean))
         throw new Error('Waiting for both players to join their seats')
@@ -434,10 +457,42 @@ export class MatchHost {
           throw error
         }
         this.startClock(record)
+        clearInterval(this.fundingClocks.get(id))
+        this.fundingClocks.delete(id)
         return this.broadcast(record)
       } finally {
         this.starting.delete(id)
       }
+    })
+  }
+  async cancelFunding(id: string, auth: SignedCommand) {
+    await this.verify(id, 'cancel', {}, auth)
+    return this.exclusive(id, async () => {
+      const record = await this.require(id)
+      if (
+        (record.host ?? record.recipients[0]!).toLowerCase() !==
+        auth.address.toLowerCase()
+      )
+        throw new Error('Only the host can end this lobby')
+      if (record.stage === 'settled' && record.cancelRequested)
+        return this.viewRecord(record)
+      if (record.stage !== 'funding')
+        throw new Error('A started game cannot be canceled by its host')
+      const adapter = this.adapter(record)
+      if (adapter && !adapter.cancelFunding)
+        throw new Error('Lobby cancellation is unavailable')
+      record.cancelRequested = true
+      await this.store.put(id, record)
+      const hash = await adapter?.cancelFunding?.(record.pool!)
+      if (hash) record.transactions.push(hash)
+      record.stage = 'settled'
+      record.result = { outcome: 'canceled' }
+      record.autoplay = {}
+      clearInterval(this.fundingClocks.get(id))
+      this.fundingClocks.delete(id)
+      await this.store.put(id, record)
+      await this.refreshAccounting(record)
+      return this.broadcast(record)
     })
   }
   async action(
@@ -452,9 +507,7 @@ export class MatchHost {
   ) {
     await this.verify(id, 'action', body, auth)
     const record = await this.require(id)
-    const seat = record.recipients.findIndex(
-      (a) => a.toLowerCase() === auth.address.toLowerCase(),
-    )
+    const seat = await this.playerSeat(record, auth.address)
     return this.playerAction(id, seat, body)
   }
   private async playerAction(
@@ -602,9 +655,7 @@ export class MatchHost {
   async observation(id: string, auth: SignedCommand) {
     await this.verify(id, 'observation', {}, auth)
     const record = await this.require(id),
-      seat = record.recipients.findIndex(
-        (a) => a.toLowerCase() === auth.address.toLowerCase(),
-      )
+      seat = await this.playerSeat(record, auth.address)
     if (seat < 0 || record.stage === 'prepared' || record.stage === 'funding')
       throw new Error('A seated player and locked funding are required')
     return (await this.runtime(record)).observation(
@@ -612,13 +663,24 @@ export class MatchHost {
     )
   }
   private async refreshSeats(record: TableRecord) {
-    if (!record.openSeats || record.stage !== 'funding') return
+    if (record.economy.mode !== 'escrow' || record.stage !== 'funding') return
     const adapter = this.adapter(record)
+    if (!record.openSeats && !adapter?.seats) return
     if (!adapter?.seats || !record.pool)
       throw new Error('Seat reader unavailable')
     const seats = await adapter.seats(record.pool, record.fundingBlock)
     if (seats.recipients.length !== 2 || seats.funded.length !== 2)
       throw new Error('Invalid onchain roster')
+    if (!record.openSeats) {
+      if (
+        seats.recipients.some(
+          (recipient, index) =>
+            recipient.toLowerCase() !== record.recipients[index]?.toLowerCase(),
+        )
+      )
+        throw new Error('Onchain seats differ from the reserved players')
+      if (BigInt(record.economy.stakeUnits) === 0n) seats.funded = [true, true]
+    }
     if (
       JSON.stringify([record.recipients, record.funded, record.payments]) !==
       JSON.stringify([seats.recipients, seats.funded, seats.payments])
@@ -630,9 +692,122 @@ export class MatchHost {
       this.broadcast(record)
     }
   }
+  private async playerSeat(record: TableRecord, address: Address) {
+    const owner = record.recipients.findIndex(
+      (a) => a.toLowerCase() === address.toLowerCase(),
+    )
+    if (owner >= 0) return owner
+    const adapter = this.adapter(record)
+    if (!adapter?.controller || !record.pool) return -1
+    for (let seat = 0; seat < record.recipients.length; seat++) {
+      if (!record.funded?.[seat]) continue
+      const controller = await adapter.controller(
+        record.pool,
+        hashArcadeId(`sea_player_${seat + 1}`),
+      )
+      if (controller.toLowerCase() === address.toLowerCase()) return seat
+    }
+    return -1
+  }
+
+  /** The wallet signs once server-side, within its existing game grant. No payment authority is created. */
+  async autoplay(
+    id: string,
+    body: { expiresAt: number; enabled: boolean },
+    auth: SignedCommand,
+  ) {
+    await this.verify(id, 'autoplay', body, auth)
+    return this.exclusive(id, async () => {
+      const record = await this.require(id)
+      await this.refreshSeats(record)
+      const seat = await this.playerSeat(record, auth.address)
+      if (seat < 0 || !['funding', 'playing'].includes(record.stage))
+        throw new Error('A funded player seat is required')
+      if (
+        record.economy.mode === 'escrow' &&
+        (record.openSeats || BigInt(record.economy.stakeUnits) > 0n)
+      ) {
+        const funded = await this.adapter(record)?.seats?.(
+          record.pool!,
+          record.fundingBlock,
+        )
+        if (!funded?.funded[seat])
+          throw new Error('A funded player seat is required')
+      }
+      if (
+        body.expiresAt <= Date.now() ||
+        body.expiresAt > record.settlementDeadline * 1000
+      )
+        throw new Error('Autoplay must expire within this game')
+      record.autoplay ??= {}
+      if (body.enabled)
+        record.autoplay[String(seat)] = {
+          address: auth.address,
+          expiresAt: body.expiresAt,
+          step: 0,
+        }
+      else delete record.autoplay[String(seat)]
+      await this.store.put(id, record)
+      if (record.stage === 'playing') this.startClock(record)
+      return this.broadcast(record)
+    })
+  }
+
+  private async playAgents(
+    record: TableRecord,
+    runtime: AuthoritativeMatch<unknown, unknown>,
+  ) {
+    for (const [index, agent] of Object.entries(record.autoplay ?? {})) {
+      if (agent.expiresAt <= Date.now() || runtime.getStatus() !== 'running')
+        continue
+      const cadence =
+        1000 /
+        Math.max(
+          1,
+          Math.min(
+            20,
+            record.release?.manifest.spec.policy.maxDecisionsPerSecond ?? 2,
+          ),
+        )
+      if (Date.now() - (agent.lastDecisionAt ?? 0) < cadence) continue
+      agent.lastDecisionAt = Date.now()
+      const seat = Number(index)
+      const observation = runtime.observation(`sea_player_${seat + 1}`)
+      if (!observation.legalActions.length) continue
+      const legal = livePolicyObservation(observation)
+      const decision = this.policy.choose(
+        legal.observation,
+        {
+          seatId: observation.seatId,
+          strategy: 'Play to win legally using visible objectives and threats.',
+        },
+        agent.step++,
+      )
+      const payload = legal.payloads.get(decision.actionId)
+      if (payload === undefined) continue
+      await runtime.submitAction(
+        {
+          actionId: `act_${randomUUID()}`,
+          matchId: record.id,
+          seatId: observation.seatId,
+          basedOnStateSequence: observation.stateSequence,
+          clientSequence: agent.step,
+          controlLease: 'wallet-authorized-policy',
+          payload,
+        } as ActionSubmission,
+        1,
+      )
+    }
+  }
+
+  async publicObservation(id: string) {
+    const record = await this.require(id)
+    if (record.stage === 'prepared' || record.stage === 'funding') return null
+    return (await this.runtime(record)).spectatorState()
+  }
   async view(id: string) {
     const record = await this.require(id)
-    if (record.openSeats && record.stage === 'funding')
+    if (record.economy.mode === 'escrow' && record.stage === 'funding')
       return this.exclusive(id, async () => {
         const latest = await this.require(id)
         if (Date.now() - (this.lobbyReadAt.get(id) ?? 0) >= 2000) {
@@ -662,6 +837,11 @@ export class MatchHost {
       game: record.release?.document.title ?? 'Blackjack duel',
       mode: record.release?.manifest.spec.mode ?? 'turn-based',
       runtimeError: record.runtimeError,
+      startWhenReady: record.startWhenReady,
+      readyAt: record.readyAt,
+      autoplay: Object.keys(record.autoplay ?? {}).filter(
+        (seat) => record.autoplay![seat]!.expiresAt > Date.now(),
+      ),
       published: !!record.release,
       releaseId: record.release?.id ?? blackjackGame.releaseId,
       releaseDigest: record.releaseDigest,
@@ -703,16 +883,9 @@ export class MatchHost {
   async realtimeSession(id: string, auth: SignedCommand) {
     await this.verify(id, 'realtime-session', {}, auth)
     const record = await this.require(id)
-    const seat = record.recipients.findIndex(
-      (a) => a.toLowerCase() === auth.address.toLowerCase(),
-    )
-    if (
-      seat < 0 ||
-      record.stage !== 'playing' ||
-      record.runtimeError ||
-      record.release?.manifest.spec.mode !== 'realtime'
-    )
-      throw new Error('A seated player in a running realtime match is required')
+    const seat = await this.playerSeat(record, auth.address)
+    if (seat < 0 || record.stage !== 'playing' || record.runtimeError)
+      throw new Error('A seated player in a running match is required')
     for (const [token, ticket] of this.tickets)
       if (
         ticket.expiresAt <= Date.now() ||
@@ -821,8 +994,10 @@ export class MatchHost {
     for (const id of await this.store.ids()) {
       await this.exclusive(id, async () => {
         const record = await this.require(id)
+        if (record.stage === 'funding') this.watchFunding(record)
         if (
-          record.release?.manifest.spec.mode !== 'realtime' ||
+          (record.release?.manifest.spec.mode !== 'realtime' &&
+            !Object.keys(record.autoplay ?? {}).length) ||
           record.runtimeError
         )
           return
@@ -843,7 +1018,58 @@ export class MatchHost {
       )
     }
   }
+  /** Only funding reconciliation polls the chain; gameplay retains its worker clock. */
+  private watchFunding(record: TableRecord) {
+    if (
+      this.closing ||
+      !record.startWhenReady ||
+      record.stage !== 'funding' ||
+      this.fundingClocks.has(record.id)
+    )
+      return
+    let pending = false
+    const timer = setInterval(() => {
+      if (pending) return
+      pending = true
+      void this.exclusive(record.id, async () => {
+        const latest = await this.require(record.id)
+        if (
+          this.closing ||
+          latest.stage !== 'funding' ||
+          latest.cancelRequested ||
+          Date.now() >= latest.fundingDeadline * 1000
+        ) {
+          clearInterval(timer)
+          this.fundingClocks.delete(record.id)
+          return undefined
+        }
+        await this.refreshSeats(latest)
+        if (!latest.funded?.every(Boolean)) return undefined
+        if (!latest.readyAt) {
+          latest.readyAt = Date.now() + 10000
+          await this.store.put(latest.id, latest)
+          this.broadcast(latest)
+        }
+        return Date.now() >= latest.readyAt ? latest.host : undefined
+      })
+        .then(async (host) => {
+          if (host) await this.startForHost(record.id, host)
+        })
+        .catch(() => {
+          // Funding/RPC/capacity failures remain retryable until the funding deadline.
+        })
+        .finally(() => {
+          pending = false
+        })
+    }, 2000)
+    timer.unref()
+    this.fundingClocks.set(record.id, timer)
+  }
   private startClock(record: TableRecord) {
+    if (record.release?.manifest.spec.mode !== 'realtime') {
+      this.startAgentClock(record)
+      return
+    }
     if (
       this.closing ||
       record.release?.manifest.spec.mode !== 'realtime' ||
@@ -888,6 +1114,7 @@ export class MatchHost {
         }
         const due = Math.min(8, Math.floor((now - last) / deltaMs))
         if (due < 1) return
+        await this.playAgents(record, runtime)
         last = Math.max(last, now - 1000)
         for (let step = 0; step < due; step++) {
           if (!(await runtime.advanceTick(deltaMs))) break
@@ -945,10 +1172,55 @@ export class MatchHost {
   private stopClock(id: string) {
     clearInterval(this.clocks.get(id))
     this.clocks.delete(id)
+    clearInterval(this.agentClocks.get(id))
+    this.agentClocks.delete(id)
+  }
+  private startAgentClock(record: TableRecord) {
+    if (
+      this.closing ||
+      this.agentClocks.has(record.id) ||
+      !Object.keys(record.autoplay ?? {}).length
+    )
+      return
+    let pending = false
+    this.agentClocks.set(
+      record.id,
+      setInterval(() => {
+        if (pending) return
+        pending = true
+        void this.exclusive(record.id, async () => {
+          if (this.closing || record.stage !== 'playing' || record.runtimeError)
+            return this.stopClock(record.id)
+          if (Date.now() >= record.settlementDeadline * 1000)
+            return this.stopClock(record.id)
+          const runtime = await this.runtime(record)
+          await this.playAgents(record, runtime)
+          record.replay = runtime.exportReplay()
+          if (runtime.getStatus() === 'completed') {
+            this.stopClock(record.id)
+            record.stage = 'settlement-pending'
+            record.result = (await runtime.snapshot()).result
+          }
+          await this.store.put(record.id, record)
+          this.broadcast(record)
+          if (record.stage === 'settlement-pending')
+            await this.settleRecord(record)
+        })
+          .catch(() => {
+            this.stopClock(record.id)
+          })
+          .finally(() => {
+            pending = false
+          })
+      }, 500),
+    )
   }
   async close() {
     this.closing = true
+    for (const timer of this.fundingClocks.values()) clearInterval(timer)
+    this.fundingClocks.clear()
     for (const id of this.clocks.keys()) this.stopClock(id)
+    for (const id of this.agentClocks.keys()) this.stopClock(id)
     await Promise.all(
       [...this.operations.values()].map((p) => p.catch(() => undefined)),
     )

@@ -47,7 +47,7 @@ async function proxy(
     {
       method: 'POST',
       pattern:
-        /^wallets\/agent\/[A-Za-z0-9_-]+\/(?:x402-fetch|arcade\/(?:deposit|action|observation))$/,
+        /^wallets\/agent\/[A-Za-z0-9_-]+\/(?:x402-fetch|arcade\/(?:deposit|action|observation|autoplay))$/,
     },
     {
       method: 'DELETE',

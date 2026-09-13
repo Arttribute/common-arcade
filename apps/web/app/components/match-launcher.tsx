@@ -1,5 +1,4 @@
 'use client'
-import { BrowserWalletPicker } from './browser-wallet-picker'
 import { hostPaidSession } from '../../lib/paid-session'
 import { PaymentSummary } from './payment-disclosure'
 import './payments.css'
@@ -278,9 +277,6 @@ export function MatchLauncher({
                   unavailableReason={paymentUnavailableReason}
                   gameMode={gameMode}
                 />
-                {economy.mode === 'escrow' && (
-                  <BrowserWalletPicker disabled={busy} />
-                )}
                 {!browserGame && economy.mode === 'free' ? (
                   <details className="payment-disclosure">
                     <PaymentSummary>

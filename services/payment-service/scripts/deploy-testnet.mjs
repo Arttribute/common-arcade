@@ -174,6 +174,13 @@ try {
     await write('allowUSDC', 'setToken', [network.token, true])
   if (!(await read('resolvers', [account.address])))
     await write('allowResolver', 'setResolver', [account.address, true])
+  if (revision === 'seat-controllers-v3') {
+    const emptyId = `0x${'0'.repeat(64)}`
+    if (
+      (await read('controller', [emptyId, emptyId])) !== `0x${'0'.repeat(40)}`
+    )
+      throw new Error('Unexpected seat controller state')
+  }
   if (network.chain.id === 296) {
     await write('associateEscrowUSDC', 'associateHederaToken', [network.token])
     // The EOA treasury must also be able to receive canonical HTS USDC.
@@ -215,7 +222,12 @@ try {
           contract: record.contract,
           treasury: account.address,
           rpcUrl,
-          ...(revision === 'open-seats-v2' ? { openSeats: true } : {}),
+          ...(['open-seats-v2', 'seat-controllers-v3'].includes(revision)
+            ? { openSeats: true }
+            : {}),
+          ...(revision === 'seat-controllers-v3'
+            ? { seatControllers: true }
+            : {}),
         },
       },
       null,

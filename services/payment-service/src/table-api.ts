@@ -43,6 +43,25 @@ export function createTableApi(host: MatchHost) {
   app.get('/v1/economy/matches/:id', async (c) =>
     c.json(await host.view(c.req.param('id'))),
   )
+  app.get('/v1/economy/matches/:id/presentation', async (c) =>
+    c.json({ state: await host.publicObservation(c.req.param('id')) }),
+  )
+  app.post('/v1/economy/matches/:id/autoplay', async (c) => {
+    const { body, auth } = await c.req.json()
+    return c.json(
+      await host.autoplay(
+        c.req.param('id'),
+        z
+          .object({
+            enabled: z.boolean(),
+            expiresAt: z.number().int(),
+          })
+          .strict()
+          .parse(body),
+        authSchema.parse(auth) as Parameters<typeof host.autoplay>[2],
+      ),
+    )
+  })
   app.post('/v1/economy/matches/:id/observation', async (c) =>
     c.json(
       await host.observation(
@@ -69,6 +88,16 @@ export function createTableApi(host: MatchHost) {
         c.req.param('id'),
         authSchema.parse(await c.req.json()) as Parameters<
           typeof host.start
+        >[1],
+      ),
+    ),
+  )
+  app.post('/v1/economy/matches/:id/cancel', async (c) =>
+    c.json(
+      await host.cancelFunding(
+        c.req.param('id'),
+        authSchema.parse(await c.req.json()) as Parameters<
+          typeof host.cancelFunding
         >[1],
       ),
     ),

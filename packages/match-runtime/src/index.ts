@@ -91,6 +91,7 @@ export interface GameDefinition<State, Action> {
   advanceTick?(state: State, context: GameTickContext): GameTransition<State>
   restoreState?(state: JsonValue): State
   serializeState(state: State): JsonValue
+  projectSpectatorState?(state: State): JsonValue
   projectObservation(
     state: State,
     seatId: string,
@@ -368,6 +369,9 @@ export class AuthoritativeMatch<State, Action> {
 
   publicState(): JsonValue {
     return this.game.serializeState(this.state)
+  }
+  spectatorState(): JsonValue {
+    return this.game.projectSpectatorState?.(this.state) ?? null
   }
 
   eventLog(afterSequence = 0): readonly MatchEvent[] {

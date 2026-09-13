@@ -31,7 +31,6 @@ import {
 
 import { LiveControls, actionLabel } from './live-controls'
 import { ExternalSeatAgent } from './external-seat-agent'
-import { LivePaymentPanel } from './live-payment-panel'
 import { AgentSelect } from './agent-select'
 import { LiveResultCard } from './live-result-card'
 import './live-results.css'
@@ -1192,24 +1191,6 @@ export function PlayMatch({
             <dt>Restart rule</dt>
             <dd>{match?.series?.restartPolicy ?? 'owner'}</dd>
           </dl>
-          {match ? (
-            <LivePaymentPanel
-              releaseId={match.releaseId}
-              matchId={matchId}
-              agentId={
-                activeAgent ||
-                match.seats
-                  .find(
-                    (seat) =>
-                      seat.controllerKind === 'agent' &&
-                      seat.controllerId?.startsWith('commons-agent-'),
-                  )
-                  ?.controllerId?.replace(/^commons-agent-/, '') ||
-                selectedAgent ||
-                undefined
-              }
-            />
-          ) : null}
         </details>
         {connection === 'disconnected' && !terminal ? (
           <button

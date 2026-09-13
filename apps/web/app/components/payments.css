@@ -1,13 +1,8 @@
 .play-choice,
-.game-economy-table,
 .payment-support-option,
 .budget-review {
   display: grid;
   gap: 16px;
-}
-.game-economy-table {
-  max-width: 960px;
-  margin-top: 24px;
 }
 .play-choice h3,
 .payment-support-option h3,
@@ -157,8 +152,6 @@
   grid-column: 1 / -1;
 }
 
-.game-economy-table,
-.game-economy-table > *,
 .payment-panel .grant-form,
 .budget-fields,
 .budget-review,
@@ -168,11 +161,6 @@
 .budget-fields:not([hidden]) {
   display: grid;
   gap: 12px;
-}
-.game-economy-table > .payment-disclosure > .payment-panel {
-  padding: 0;
-  border: 0;
-  background: transparent;
 }
 .payment-panel .grant-form > button,
 .payment-panel .budget-review button,
@@ -447,39 +435,54 @@ details[open] > .payment-summary > .payment-summary-chevron {
   }
 }
 
-.arcade .paid-realtime-game {
+.seat-payment {
+  display: grid;
+  gap: 10px;
   min-width: 0;
+  padding-top: 4px;
 }
-.arcade .paid-realtime-game iframe {
-  display: block;
-  width: 100%;
+.blackjack-live-stage {
+  display: grid;
+  align-content: center;
+  gap: 24px;
   min-height: 420px;
-  aspect-ratio: 16 / 10;
-  border: 0;
+  padding: 32px;
+  color: #fff;
+  background: #123c32;
   border-radius: 14px;
-  margin-block: 16px;
+  text-align: center;
 }
-
-.paid-seat-join {
+.blackjack-hands {
   display: grid;
-  gap: 16px;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
 }
-.paid-lobby-seats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+.blackjack-cards {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
-.paid-seat-join p {
-  margin: 0;
+.blackjack-cards span {
+  background: white;
+  color: #292524;
+  border-radius: 6px;
+  padding: 18px 12px;
+  font-size: 22px;
+}
+.seat-payment small,
+.seat-payment-message {
   color: var(--ink-muted);
+  font-size: 12px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
-.paid-lobby-seats .paid-player-card {
-  display: grid;
-  gap: 12px;
+.seat-payment .primary,
+.spectator-seat .primary {
+  width: 100%;
+  white-space: normal;
 }
-@media (max-width: 480px) {
-  .paid-lobby-seats {
-    grid-template-columns: 1fr;
-  }
+.roster-seat .field input {
+  width: 100%;
+  min-width: 0;
 }

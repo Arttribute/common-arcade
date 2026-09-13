@@ -145,6 +145,7 @@ function invocationSource(
       if (!game || typeof game !== 'object')
         throw new TypeError('Runtime must assign globalThis.arcadeGame.');
       if (name === '__prepare__') return typeof game.prepare === 'function' ? game.prepare(values[0]) : null;
+      if (name === 'spectate' && typeof game.spectate !== 'function') return null;
       if (name === '__validate__') {
         const required = ['initialize','validateAction','applyAction','observe','result'];
         if (${JSON.stringify(requireTick)}) required.push('tick');
@@ -272,6 +273,9 @@ export async function createSandboxedScriptGame(
     },
     serializeState(state) {
       return json(state, 'Runtime state')
+    },
+    projectSpectatorState(state) {
+      return json(evaluate('spectate', [state]), 'Spectator state')
     },
     projectObservation(state, seatId, context: GameActionContext) {
       return projection(evaluate('observe', [state, seatId, context]))

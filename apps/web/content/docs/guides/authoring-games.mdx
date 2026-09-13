@@ -119,11 +119,16 @@ globalThis.arcadeGame = {
   applyAction(state, action, context) {},
   tick(state, context) {}, // required for realtime and hybrid modes
   observe(state, seatId, context) {},
+  spectate(state) {}, // explicitly public state for live paid spectators
   result(state) {},
 }
 ```
 
 - Transitions return `{ state, events }`.
+- `spectate(state)` returns only JSON state that every spectator may see. Paid
+  sessions never fall back to private checkpoints or a player observation. Without
+  this projection the game preview remains visible, but there is no live spectator
+  state. Funding lobbies do not reveal initialized game state before deposits lock.
 - Observations return `{ visibleState, legalActions, feedback? }` — use
   `feedback: { reward, outcome, summary, metrics }` to explain the
   consequences of a prior action; Studio prefers this over its own estimate.

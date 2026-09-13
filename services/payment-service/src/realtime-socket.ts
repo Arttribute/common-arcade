@@ -23,6 +23,13 @@ export function attachPaymentSocket(
   }
   const update = (table: unknown) => {
     send(table) // Existing read-only clients keep their table-shaped protocol.
+    if (!controller)
+      void host
+        .publicObservation(id)
+        .then((state) => {
+          if (!closed && !controller) send({ type: 'presentation', state })
+        })
+        .catch(() => undefined)
     if (controller) {
       try {
         send({ type: 'observation', observation: controller.observation() })

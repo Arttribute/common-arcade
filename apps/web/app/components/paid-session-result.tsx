@@ -46,11 +46,13 @@ export function PaidSessionResult({
       {!breakdownOnly && (
         <>
           <h2>
-            {winner
-              ? `Player ${winner} wins`
-              : draw
-                ? 'A draw — well played'
-                : 'Game complete'}
+            {value?.outcome === 'canceled'
+              ? 'Session ended'
+              : winner
+                ? `Player ${winner} wins`
+                : draw
+                  ? 'A draw — well played'
+                  : 'Game complete'}
           </h2>
           <p>
             {economy.mode === 'free'

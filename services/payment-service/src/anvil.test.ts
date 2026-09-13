@@ -108,6 +108,7 @@ it.skipIf(!rpc).each([false, true])(
         token,
         confirmations: 1,
         openSeats,
+        seatControllers: true,
       },
       adapter = createSettlementAdapter(
         deployment,
@@ -193,7 +194,13 @@ it.skipIf(!rpc).each([false, true])(
       )
       await payerAdapter.submit(approvalCall(deployment, amount))
       await payerAdapter.submit(
-        escrowCall(deployment, op, pool, { seat: hashArcadeId(seat), amount }),
+        escrowCall(deployment, op, pool, {
+          seat: hashArcadeId(seat),
+          amount,
+          ...(openSeats && payer === 2 && op === 'stake'
+            ? { controller: accounts[5]!.address }
+            : {}),
+        }),
       )
     }
     let updates = 0
@@ -207,6 +214,19 @@ it.skipIf(!rpc).each([false, true])(
       )
     }
     await host.start(id, await auth(openSeats ? 0 : 2, 'start', {}))
+    if (openSeats) {
+      expect(
+        await adapter.controller!(pool, hashArcadeId('sea_player_1')),
+      ).toBe(accounts[5]!.address)
+      const ticket = await host.realtimeSession(
+        id,
+        await auth(5, 'realtime-session', {}),
+      )
+      const controller = await host.connectRealtime(id, ticket.token)
+      expect(controller.observation().seatId).toBe('sea_player_1')
+      await controller.close()
+      expect((await host.view(id)).recipients[0]).toBe(accounts[2]!.address)
+    }
     const first = {
       actionId: randomUUID(),
       sequence: 0,
