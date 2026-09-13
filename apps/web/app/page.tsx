@@ -45,7 +45,7 @@ const capabilities = [
 
 export default function HomePage() {
   return (
-    <main className="arcade" id="main">
+    <main className="arcade landing" id="main">
       <Header />
       <section className="hero shell">
         <HeroBackdrop />

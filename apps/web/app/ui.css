@@ -1872,3 +1872,14 @@
   justify-content: center;
   margin-inline: auto;
 }
+
+/* The landing page breathes wider than the working pages: a larger side
+   gutter that scales with the viewport (24px on phones, up to 120px). */
+.arcade.landing {
+  --shell-gutter: clamp(24px, 7vw, 120px);
+}
+/* Out-ranks the narrower-viewport .shell widths in the older sheets, which
+   otherwise replace the gutter with a fixed 16-24px below 1000px. */
+.arcade.landing .shell {
+  width: min(var(--shell-max), calc(100% - var(--shell-gutter) * 2));
+}
