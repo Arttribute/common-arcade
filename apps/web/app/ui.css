@@ -1478,6 +1478,11 @@
     transparent 80%
   );
 }
+.hero-field,
+.hero-field-lit {
+  position: absolute;
+  inset: 0;
+}
 .hero-pixel {
   position: absolute;
   border-radius: 1px;
@@ -1507,13 +1512,14 @@
 .arcade .hero h1 span {
   color: inherit;
 }
-/* An inline-block mark keeps its box on its own line: the highlight can no
-   longer run into the descenders of the line above or the caps below. */
+/* Infisical-style marks: square-cornered blocks. As inline-blocks they keep
+   their box on their own line, so a highlight never runs into the descenders
+   of the line above or the caps below. */
 .arcade .hero-mark {
   display: inline-block;
-  padding: 0 0.14em;
+  padding: 0 0.1em;
   line-height: 1.12;
-  border-radius: 4px;
+  border-radius: 0;
   background: var(--title-highlight);
   color: var(--title-highlight-ink);
 }
