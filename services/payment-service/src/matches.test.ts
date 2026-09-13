@@ -1,3 +1,4 @@
+import { paidHostAllowlist } from './hosting-policy.js'
 import { describe, it, expect } from 'vitest'
 import { privateKeyToAccount } from 'viem/accounts'
 import { randomUUID } from 'node:crypto'
@@ -286,4 +287,125 @@ it('pins existing sessions to their original escrow during a deployment rotation
   await expect(
     new MatchHost(store, { 'base-sepolia': next }, domain).view(id),
   ).rejects.toThrow('Original escrow')
+})
+
+describe('public wallet hosting', () => {
+  const adapter = {
+    deployment: {
+      chainId: 84532,
+      contract: alice.address,
+      token: bob.address,
+      openSeats: true,
+    },
+    inspect: async () => ({ status: 0 }),
+    create: async () => `0x${'ab'.repeat(32)}`,
+    seats: async () => ({
+      recipients: ['0x' + '0'.repeat(40), '0x' + '0'.repeat(40)],
+      funded: [false, false],
+      payments: [],
+    }),
+  } as unknown as MatchSettlementAdapter
+  const input = () => ({
+    id: randomUUID(),
+    economy: {
+      mode: 'escrow',
+      network: 'base-sepolia',
+      stakeUnits: '100',
+      bounties: false,
+      spectatorBets: true,
+      feeBps: 250,
+      fundingSeconds: 600,
+      settlementSeconds: 3600,
+    },
+  })
+  it('accepts different signed hosts without enrollment and preserves ownership checks', async () => {
+    const host = new MatchHost(
+      new MemoryMatchStore(),
+      { 'base-sepolia': adapter },
+      domain,
+      undefined,
+      paidHostAllowlist('public', alice.address),
+    )
+    for (const account of [bob, fan]) {
+      const body = input(),
+        id = `mat_${body.id}`
+      const view = await host.create(
+        body,
+        await auth(account, id, 'create', body),
+      )
+      expect(view.host).toBe(account.address)
+      expect(view.openSeats).toBe(true)
+      await expect(
+        host.start(id, await auth(alice, id, 'start', {})),
+      ).rejects.toThrow()
+      await expect(
+        host.create(body, await auth(alice, id, 'create', body)),
+      ).rejects.toThrow('another host')
+    }
+    const body = input(),
+      id = `mat_${body.id}`
+    const forged = {
+      ...(await auth(alice, id, 'create', body)),
+      address: bob.address,
+    }
+    await expect(host.create(body, forged)).rejects.toThrow(
+      'Invalid wallet signature',
+    )
+  })
+  it('checks smart-wallet signatures on the match network and rejects invalid signatures', async () => {
+    const calls: string[] = []
+    const smartAdapter = {
+      ...adapter,
+      verifySignature: async ({
+        message,
+        signature,
+      }: {
+        message: string
+        signature: string
+      }) => {
+        calls.push(message)
+        return signature === '0x1234'
+      },
+    }
+    const host = new MatchHost(
+      new MemoryMatchStore(),
+      { 'base-sepolia': smartAdapter },
+      domain,
+      undefined,
+      paidHostAllowlist('public'),
+    )
+    const body = input(),
+      id = `mat_${body.id}`
+    const signed = {
+      address: fan.address,
+      expiresAt: Date.now() + 60000,
+      signature: '0x1234' as const,
+    }
+    expect((await host.create(body, signed)).host).toBe(fan.address)
+    // An existing session resolves the same chain verifier for subsequent actions.
+    await expect(host.start(id, signed)).rejects.toThrow(
+      'Waiting for both players to join their seats',
+    )
+    expect(calls).toHaveLength(2)
+    expect(JSON.parse(calls[1]!).operation).toBe('start')
+    await expect(
+      host.create(input(), { ...signed, signature: '0xdead' }),
+    ).rejects.toThrow('Invalid wallet signature')
+  })
+  it('keeps explicitly restricted deployments closed to unlisted wallets', async () => {
+    const host = new MatchHost(
+      new MemoryMatchStore(),
+      { 'base-sepolia': adapter },
+      domain,
+      undefined,
+      paidHostAllowlist('restricted', alice.address),
+    )
+    const body = input(),
+      id = `mat_${body.id}`
+    await expect(
+      host.create(body, await auth(bob, id, 'create', body)),
+    ).rejects.toThrow('not enabled')
+    expect(paidHostAllowlist()).toEqual(new Set())
+    expect(() => paidHostAllowlist('typo')).toThrow('public or restricted')
+  })
 })

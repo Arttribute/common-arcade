@@ -1,4 +1,6 @@
 'use client'
+import { BrowserWalletPicker, useBrowserWallet } from './browser-wallet-picker'
+import { paymentProvider as provider } from '../../lib/browser-wallets'
 import { hostPaidSession } from '../../lib/paid-session'
 import { PaidSeatJoin } from './paid-seat-join'
 import { PaymentSummary } from './payment-disclosure'
@@ -13,7 +15,6 @@ import {
   custom,
   http,
   type Address,
-  type EIP1193Provider,
   type Hex,
 } from 'viem'
 import {
@@ -80,14 +81,6 @@ interface Table {
   settlementDeadline?: number
   replay?: unknown
 }
-function provider() {
-  const value = (window as unknown as { ethereum?: EIP1193Provider }).ethereum
-  if (!value)
-    throw new Error(
-      'Connect an EVM wallet extension to play. Spectating needs no wallet.',
-    )
-  return value
-}
 export function GameEconomyTable({
   releaseId,
   matchId,
@@ -97,6 +90,7 @@ export function GameEconomyTable({
   matchId?: string
   initialEconomy?: EconomyConfig
 } = {}) {
+  const { provider: selectedProvider } = useBrowserWallet()
   const [localReceipts, setLocalReceipts] = useState<
     { operation: string; hash: Hex }[]
   >([])
@@ -232,30 +226,24 @@ export function GameEconomyTable({
     }
   }, [table?.id, table?.stage, table?.openSeats])
   useEffect(() => {
-    const ethereum = (
-      window as unknown as {
-        ethereum?: {
-          on?: (event: string, listener: (accounts: string[]) => void) => void
-          removeListener?: (
-            event: string,
-            listener: (accounts: string[]) => void,
-          ) => void
-        }
-      }
-    ).ethereum
+    let active = true
+    setAccount(undefined)
+    setObservation(undefined)
     const changed = (accounts: string[]) => {
+      if (!active) return
       setAccount(accounts[0] as Address | undefined)
       setObservation(undefined)
     }
-    try {
-      void provider()
-        .request({ method: 'eth_accounts' })
-        .then((value) => changed(value as string[]))
-        .catch(() => {})
-    } catch {}
-    ethereum?.on?.('accountsChanged', changed)
-    return () => ethereum?.removeListener?.('accountsChanged', changed)
-  }, [])
+    void selectedProvider
+      ?.request({ method: 'eth_accounts' })
+      .then((value) => changed(value as string[]))
+      .catch(() => {})
+    selectedProvider?.on?.('accountsChanged', changed)
+    return () => {
+      active = false
+      selectedProvider?.removeListener?.('accountsChanged', changed)
+    }
+  }, [selectedProvider])
   async function create() {
     if (economy.mode === 'free') {
       const address = account ?? (await connect())
@@ -440,21 +428,24 @@ export function GameEconomyTable({
   const ended =
     table?.stage === 'settled' || table?.stage === 'settlement-pending'
   const connectButton = (
-    <button
-      className={account ? 'secondary' : 'primary'}
-      disabled={busy}
-      onClick={() =>
-        run(async () => {
-          await connect()
-        })
-      }
-    >
-      {account
-        ? `${account.slice(0, 8)}…${account.slice(-6)}`
-        : ended
-          ? 'Connect wallet to claim'
-          : 'Connect wallet'}
-    </button>
+    <>
+      <BrowserWalletPicker disabled={busy} />
+      <button
+        className={account ? 'secondary' : 'primary'}
+        disabled={busy}
+        onClick={() =>
+          run(async () => {
+            await connect()
+          })
+        }
+      >
+        {account
+          ? `${account.slice(0, 8)}…${account.slice(-6)}`
+          : ended
+            ? 'Connect wallet to claim'
+            : 'Connect wallet'}
+      </button>
+    </>
   )
   return (
     <div className="game-economy-table">

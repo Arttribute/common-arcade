@@ -1,15 +1,10 @@
-import { createWalletClient, custom, type EIP1193Provider } from 'viem'
+import { paymentProvider } from './browser-wallets'
+import { createWalletClient, custom } from 'viem'
 import { economyConfigSchema, type EconomyConfig } from '@common-arcade/economy'
 
 export const paymentService =
   process.env.NEXT_PUBLIC_ARCADE_PAYMENTS_URL ??
   (process.env.NODE_ENV === 'development' ? 'http://localhost:4021' : '')
-export function paymentProvider() {
-  const provider = (window as unknown as { ethereum?: EIP1193Provider })
-    .ethereum
-  if (!provider) throw new Error('Connect an EVM wallet to continue.')
-  return provider
-}
 /** The caller retains the body across retries so a lost response cannot create a second pool. */
 export async function hostPaidSession(input: {
   id: string

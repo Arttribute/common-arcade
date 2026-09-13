@@ -14,7 +14,9 @@ Copy `.env.example` to `.env` for Docker Compose; local shell dev requires expor
 the variables. Compose binds to localhost; place an HTTPS/WebSocket reverse proxy
 in front for a public testnet preview. Persist and back up the encrypted host disk.
 
-`ARCADE_PAYMENT_CREATORS` restricts who can spend resolver gas creating paid pools.
+`ARCADE_PAYMENT_HOSTING=public` accepts any correctly signed wallet for paid hosting.
+The live testnet stack uses this mode. Unset or `restricted` hosting retains the
+`ARCADE_PAYMENT_CREATORS` allowlist; an empty restricted list denies creation.
 Use proxy connection/request limits. The optional EVM facilitator must remain on a
 private network. Run it separately with `pnpm --filter @common-arcade/payment-service
 dev:facilitator`. Hedera uses Blocky402. No facilitator capability is assumed:

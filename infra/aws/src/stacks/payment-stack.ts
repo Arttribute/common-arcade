@@ -113,7 +113,7 @@ export class PaymentStack extends Stack {
         ARCADE_ESCROW_LEGACY_DEPLOYMENTS: JSON.stringify(legacyDeployments),
         ARCADE_REGISTRY_URL: props.registryUrl.replace(/\/$/, ''),
         ARCADE_PAYMENT_ORIGINS: props.corsOrigins,
-        ARCADE_PAYMENT_CREATORS: `${treasury},0x9AE39751dD3ABc21f7ebB1d278D9b178B0837ca5`,
+        ARCADE_PAYMENT_HOSTING: 'public',
         ARCADE_X402_RAILS: JSON.stringify([
           {
             network: 'base-sepolia',
