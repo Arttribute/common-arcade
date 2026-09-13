@@ -1,6 +1,8 @@
+diff --git a/src/compiled-frame.tsx b/src/compiled-frame.tsx
+index 8d4f8c7..36b0c28 100644
 --- a/src/compiled-frame.tsx
 +++ b/src/compiled-frame.tsx
-@@ -7,6 +7,7 @@
+@@ -7,6 +7,7 @@ import {
    useMemo,
    useRef,
    useState,
@@ -8,7 +10,7 @@
  } from "react";
  import { recorderBundle } from "./recorder-bundle";
  import { replayerBundle } from "./replayer-bundle";
-@@ -74,6 +75,12 @@
+@@ -74,6 +75,12 @@ export const CompiledArtifactFrame = forwardRef<
      className?: string;
      revision?: string | number;
      interactive?: boolean;
@@ -21,7 +23,7 @@
      onRecording?: (recording: CanvasRecording) => void;
      onInteraction?: (interaction: CanvasInteraction) => void;
    }
-@@ -84,6 +91,7 @@
+@@ -84,6 +91,7 @@ export const CompiledArtifactFrame = forwardRef<
      className = "",
      revision,
      interactive = true,
@@ -29,7 +31,7 @@
      onRecording,
      onInteraction,
    },
-@@ -156,6 +164,20 @@
+@@ -156,6 +164,20 @@ export const CompiledArtifactFrame = forwardRef<
      setSaved(result);
      callbacks.current.onRecording?.(result);
    }
@@ -50,7 +52,7 @@
    useEffect(() => {
      ready.current = false;
      const receive = (event: MessageEvent) => {
-@@ -177,6 +199,8 @@
+@@ -177,6 +199,8 @@ export const CompiledArtifactFrame = forwardRef<
            "*",
          );
        } else if (type === "response") {
@@ -59,7 +61,7 @@
          const request = pending.current.get(payload?.requestId);
          if (request) {
            clearTimeout(request.timer);
-@@ -198,6 +222,7 @@
+@@ -198,6 +222,7 @@ export const CompiledArtifactFrame = forwardRef<
          setError(String(payload?.message ?? "Game error"));
      };
      window.addEventListener("message", receive);
@@ -67,7 +69,7 @@
      return () => {
        window.removeEventListener("message", receive);
        for (const request of pending.current.values()) {
-@@ -296,7 +321,9 @@
+@@ -296,7 +321,9 @@ export const CompiledArtifactFrame = forwardRef<
                }
              }}
            >
@@ -78,7 +80,7 @@
            </button>
            {saved && (
              <>
-@@ -327,7 +354,7 @@
+@@ -327,7 +354,7 @@ export const CompiledArtifactFrame = forwardRef<
              aria-label="Dismiss preview error"
              onClick={() => setError("")}
            >
@@ -87,7 +89,7 @@
            </button>
          </div>
        )}
-@@ -337,6 +364,7 @@
+@@ -337,6 +364,7 @@ export const CompiledArtifactFrame = forwardRef<
          <iframe
            ref={frame}
            key={revision}
@@ -95,6 +97,50 @@
            title={title}
            src={preview.type === "url" ? preview.url : undefined}
            srcDoc={html}
+diff --git a/src/index.tsx b/src/index.tsx
+index 4ac2bae..9dcfd7d 100644
+--- a/src/index.tsx
++++ b/src/index.tsx
+@@ -47,6 +47,8 @@ export function CanvasShell({
+   bottom,
+   children,
+   className = "",
++  leftWidth = 240,
++  rightWidth = 340,
+ }: {
+   toolbar: ReactNode;
+   left?: ReactNode;
+@@ -54,6 +56,10 @@ export function CanvasShell({
+   bottom?: ReactNode;
+   children: ReactNode;
+   className?: string;
++  /** Default (and double-click reset) width of the left panel, in px. */
++  leftWidth?: number;
++  /** Default (and double-click reset) width of the right panel, in px. */
++  rightWidth?: number;
+ }) {
+   return (
+     <div className={`ac-canvas ${className}`}>
+@@ -62,7 +68,7 @@ export function CanvasShell({
+         {left && (
+           <ResizablePanel
+             side="left"
+-            defaultWidth={240}
++            defaultWidth={leftWidth}
+             label="Project panel"
+             className="ac-canvas-left"
+           >
+@@ -80,7 +86,7 @@ export function CanvasShell({
+         {right && (
+           <ResizablePanel
+             side="right"
+-            defaultWidth={340}
++            defaultWidth={rightWidth}
+             label="Assistant panel"
+             className="ac-canvas-right"
+           >
+diff --git a/src/styles.css b/src/styles.css
+index 45dc7c9..e1d57cd 100644
 --- a/src/styles.css
 +++ b/src/styles.css
 @@ -844,6 +844,9 @@

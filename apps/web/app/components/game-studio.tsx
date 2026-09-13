@@ -161,6 +161,13 @@ type BrowserEvent = {
     'kind' | 'agentId' | 'strategy' | 'strategyEpoch' | 'policyMemory'
   >
 }
+// Default panel widths. The right panel opens at its desktop minimum
+// (harmony.css); the left panel opens so that the icon rail plus the left
+// panel together match it. Only the panel grows — the rail keeps its width.
+const STUDIO_RAIL_WIDTH = 60
+const RIGHT_PANEL_WIDTH = 390
+const LEFT_PANEL_WIDTH = RIGHT_PANEL_WIDTH - STUDIO_RAIL_WIDTH
+
 const BrowserEventRow = memo(function BrowserEventRow({
   event,
   index,
@@ -1418,6 +1425,8 @@ export function GameStudio({
       )}
       <CanvasShell
         className={logsExpanded && logsOpen ? 'studio-logs-expanded' : ''}
+        leftWidth={LEFT_PANEL_WIDTH}
+        rightWidth={RIGHT_PANEL_WIDTH}
         toolbar={
           <>
             <Link
