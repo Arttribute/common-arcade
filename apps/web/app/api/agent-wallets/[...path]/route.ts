@@ -26,6 +26,10 @@ async function proxy(
   const routes = [
     {
       method: 'GET',
+      pattern: /^wallets\/agent\/[A-Za-z0-9_-]+\/payment-capabilities$/,
+    },
+    {
+      method: 'GET',
       pattern: /^wallets\/agent\/[A-Za-z0-9_-]+\/runtime-sessions$/,
     },
     { method: 'GET', pattern: /^agents$/ },

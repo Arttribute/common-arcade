@@ -76,6 +76,7 @@ export function PaidSeatJoin({
   const [kind, setKind] = useState<'human' | 'agent'>('human')
   const [agents, setAgents] = useState<Agent[]>([])
   const [agentId, setAgentId] = useState('')
+  const [agentReady, setAgentReady] = useState<boolean>()
   const [signedIn, setSignedIn] = useState<boolean>()
   const [selectedSeat, setSelectedSeat] = useState(0)
   const [budget, setBudget] = useState(
@@ -118,6 +119,27 @@ export function PaidSeatJoin({
       cancelled = true
     }
   }, [kind])
+  useEffect(() => {
+    if (kind !== 'agent' || !agentId) return
+    let cancelled = false
+    setAgentReady(undefined)
+    api<{ openSeatDeposits?: boolean; sponsoredSeatDeposits?: boolean }>(
+      `wallets/agent/${agentId}/payment-capabilities`,
+    )
+      .then((value) => {
+        if (!cancelled)
+          setAgentReady(
+            value.openSeatDeposits === true &&
+              (stake > 0n || value.sponsoredSeatDeposits === true),
+          )
+      })
+      .catch(() => {
+        if (!cancelled) setAgentReady(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [kind, agentId, stake])
   async function join() {
     if (seat === undefined) return
     setWorking(true)
@@ -131,6 +153,10 @@ export function PaidSeatJoin({
         return
       }
       if (!agentId) throw new Error('Choose your agent first.')
+      if (!agentReady)
+        throw new Error(
+          'Agent entry payments are not available yet. No budget has been created.',
+        )
       const wallets = await api<Wallet[]>(`wallets/agent/${agentId}`)
       const wallet = wallets.find((w) => w.isActive && w.walletType === 'eoa')
       if (!wallet)
@@ -302,7 +328,8 @@ export function PaidSeatJoin({
                 disabled={
                   busy ||
                   working ||
-                  (kind === 'agent' && (!agentId || joinedAgent === agentId)) ||
+                  (kind === 'agent' &&
+                    (!agentId || !agentReady || joinedAgent === agentId)) ||
                   (kind === 'human' && mySeat >= 0)
                 }
                 onClick={() => void join()}
@@ -322,6 +349,12 @@ export function PaidSeatJoin({
             </>
           )}
         </>
+      )}
+      {kind === 'agent' && agentReady === false && (
+        <p role="status">
+          Agent entries are temporarily unavailable while the wallet service
+          updates. You can still join with your own wallet.
+        </p>
       )}
       {message && <p role="status">{message}</p>}
       {receipt && (
