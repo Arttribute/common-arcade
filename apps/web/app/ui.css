@@ -2239,3 +2239,43 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+.arcade.dialog-content .external-agent-skill {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.arcade.dialog-content .external-agent-skill > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink);
+}
+.arcade.dialog-content .external-agent-skill[open] > summary {
+  margin-bottom: var(--space-1);
+}
+.arcade.dialog-content .external-agent-skill pre {
+  max-height: 260px;
+  overflow: auto;
+}
+.arcade.dialog-content .external-agent-skill > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  font-size: var(--text-xs);
+}
+.arcade.dialog-content
+  .external-agent-steps
+  > li
+  > label:has(input[type='checkbox']) {
+  font-size: var(--text-sm);
+}
+.arcade.dialog-content .external-agent-code pre.is-wrapped {
+  max-height: 320px;
+  overflow: auto;
+}

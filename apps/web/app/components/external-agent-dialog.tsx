@@ -1,10 +1,70 @@
 'use client'
-import { useState, type ReactNode } from 'react'
-import { Check, Copy, KeyRound, Loader2 } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
+import {
+  ArrowUpRight,
+  Check,
+  Copy,
+  FileText,
+  KeyRound,
+  Loader2,
+} from 'lucide-react'
 import { arcade } from '../../lib/api'
 import { Dialog } from './ui/dialog'
 import { Tab, Tabs } from './ui/tabs'
-import { buildAgentSetup, type ExternalClient } from './external-agent-setup'
+import {
+  SKILL_PATH,
+  buildAgentSetup,
+  type ExternalClient,
+} from './external-agent-setup'
+
+/** Loads Arcade's skill the first time the dialog opens (its content only
+ *  mounts while open), so the page itself never pays for the 10 KB file. */
+function useSkillText(onLoad: (text: string) => void, loaded: boolean) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    if (loaded) return
+    let alive = true
+    fetch(SKILL_PATH)
+      .then((response) =>
+        response.ok ? response.text() : Promise.reject(response.status),
+      )
+      .then((text) => alive && onLoad(text))
+      .catch(() => alive && setFailed(true))
+    return () => {
+      alive = false
+    }
+  }, [loaded, onLoad])
+  return failed
+}
+
+function SkillPanel({
+  skill,
+  onLoad,
+}: {
+  skill: string
+  onLoad: (text: string) => void
+}) {
+  const failed = useSkillText(onLoad, Boolean(skill))
+  return (
+    <details className="external-agent-skill">
+      <summary>
+        <FileText size={14} aria-hidden />
+        View the skill · SKILL.md
+      </summary>
+      {skill ? (
+        <CopyBlock label="SKILL.md" text={skill} />
+      ) : (
+        <p role={failed ? 'alert' : 'status'}>
+          {failed ? 'The skill could not be loaded.' : 'Loading the skill…'}
+        </p>
+      )}
+      <a href={SKILL_PATH} target="_blank" rel="noreferrer">
+        Open SKILL.md
+        <ArrowUpRight size={12} aria-hidden />
+      </a>
+    </details>
+  )
+}
 
 const CLIENTS: { id: ExternalClient; label: string }[] = [
   { id: 'claude-code', label: 'Claude Code' },
@@ -78,12 +138,21 @@ export function ExternalAgentDialog({
   const [idea, setIdea] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [skill, setSkill] = useState('')
+  const [inlineSkill, setInlineSkill] = useState(false)
 
   const origin =
     typeof window === 'undefined'
       ? 'https://arcade.agentcommons.io'
       : window.location.origin
-  const setup = buildAgentSetup({ client, origin, token, idea, project })
+  const setup = buildAgentSetup({
+    client,
+    origin,
+    token,
+    idea,
+    project,
+    skillText: inlineSkill && skill ? skill : undefined,
+  })
   const clientLabel = CLIENTS.find((c) => c.id === client)!.label
 
   async function createKey() {
@@ -207,7 +276,11 @@ export function ExternalAgentDialog({
 
           <li>
             <h3>Connect {clientLabel}</h3>
-            <p>{setup.connectNote}</p>
+            <p>
+              The Common Arcade skill teaches your agent Arcade's game format
+              and API. {setup.connectNote}
+            </p>
+            <SkillPanel skill={skill} onLoad={setSkill} />
             <CopyBlock
               label="Run in your terminal"
               text={setup.install}
@@ -228,7 +301,21 @@ export function ExternalAgentDialog({
                 />
               </label>
             )}
-            <p>{setup.launchNote}</p>
+            <label>
+              <input
+                type="checkbox"
+                checked={inlineSkill}
+                disabled={!skill}
+                onChange={(event) => setInlineSkill(event.target.checked)}
+              />
+              Include the full skill in the prompt
+            </label>
+            <p>
+              {inlineSkill
+                ? 'Works even where the agent cannot read files or reach the internet. '
+                : 'Without the setup step, the agent fetches the skill from Arcade itself. '}
+              {setup.launchNote}
+            </p>
             <CopyBlock label="Prompt" text={setup.prompt} />
           </li>
         </ol>
