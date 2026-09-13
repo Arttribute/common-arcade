@@ -29,16 +29,15 @@ export ARCADE_TOKEN=your_scoped_arcade_key
 
 ### Projects
 
-| Command                                                  | Description                                                                           |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `arcade init [file] [--template preview]`                | Write a live-ready game project (or a browser-only preview with `--template preview`) |
-| `arcade projects list`                                   | List your saved games                                                                 |
-| `arcade projects create --file game.json`                | Create a game project                                                                 |
-| `arcade projects get <id>`                               | Read a project at its exact revision                                                  |
-| `arcade projects update <id> --file <file> --revision N` | Update (revision required)                                                            |
-| `arcade projects publish <id> --revision N`              | Publish an immutable release                                                          |
-| `arcade projects test <id>`                              | Run a pinned game to completion                                                       |
-| `arcade projects test-runtime <id> --file inputs.json`   | Headless determinism and timing test                                                  |
+| Command                                                  | Description                                                                                        |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `arcade init [file] [--template preview]`                | Write a live-ready game project (or a browser-only preview with `--template preview`)              |
+| `arcade projects list`                                   | List your saved games                                                                              |
+| `arcade projects create --file game.json`                | Create a game project                                                                              |
+| `arcade projects get <id>`                               | Read a project at its exact revision                                                               |
+| `arcade projects update <id> --file <file> --revision N` | Update (revision required)                                                                         |
+| `arcade projects publish <id> --revision N`              | Publish an immutable release                                                                       |
+| `arcade projects test <id> [--file inputs.json]`         | Runtime test for any game with authoritative rules (`--steps N`, `--seed S`; alias `test-runtime`) |
 
 ### Playtesting
 
@@ -58,17 +57,15 @@ export ARCADE_TOKEN=your_scoped_arcade_key
 | `arcade play <matchId> --seat <seatId> [--controller <id>]`                   | Run a bounded test policy against a live match (10-minute session limit) |
 | `arcade replay show <matchId>`                                                | Print an authoritative replay                                            |
 
-### Discovery and diagnostics
+### Discovery and status
 
-| Command                                   | Description                                                               |
-| ----------------------------------------- | ------------------------------------------------------------------------- |
-| `arcade games search [query]`             | Discover compatible games                                                 |
-| `arcade games info <gameId>`              | Print a canonical game manifest                                           |
-| `arcade test run [--seed value] [--step]` | Run two policies in Test Arena                                            |
-| `arcade test logs <testRunId>`            | Query structured agent diagnostics                                        |
-| `arcade status`                           | Inspect the control plane                                                 |
-| `arcade doctor`                           | Check API reachability and runtime prerequisites (e.g. WebSocket support) |
-| `arcade version`                          | Print protocol status                                                     |
+| Command                       | Description                                                               |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| `arcade games search [query]` | Discover compatible games                                                 |
+| `arcade games info <gameId>`  | Print a canonical game manifest                                           |
+| `arcade status`               | Inspect the control plane                                                 |
+| `arcade doctor`               | Check API reachability and runtime prerequisites (e.g. WebSocket support) |
+| `arcade version`              | Print protocol status                                                     |
 
 ## Example: end-to-end
 
@@ -77,7 +74,7 @@ arcade init game.json
 arcade projects create --file game.json
 # → prj_abc123, revision 1
 
-arcade projects test-runtime prj_abc123 --file inputs.json
+arcade projects test prj_abc123 --file inputs.json
 arcade projects publish prj_abc123 --revision 1
 # → rel_xyz789
 

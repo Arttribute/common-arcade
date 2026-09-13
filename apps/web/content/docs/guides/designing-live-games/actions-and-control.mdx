@@ -1,0 +1,113 @@
+---
+title: Actions and Control
+description: Design actions that humans and agents can both use well, from single commands to continuous movement.
+---
+
+Humans press keys dozens of times a second; agents decide about once or twice a
+second. The same legal actions serve both, so design them for the slower
+decider without making them feel sluggish for the faster one.
+
+---
+
+## Separate commands from continuous intent
+
+| Kind                  | Examples                                      | Declare                                                              |
+| --------------------- | --------------------------------------------- | -------------------------------------------------------------------- |
+| Instantaneous command | Play a card, jump, fire, place a bid, confirm | A plain action                                                       |
+| Continuous intent     | Move, steer, aim, hold a shield, charge       | `control: { mode: "hold", releaseActionId: "stop" }`                 |
+| Short input lease     | An existing control that expects renewal      | `control: { mode: "pulse", refreshMs: 50, releaseActionId: "stop" }` |
+
+```js title="Legal actions for one seat"
+legalActions: [
+  {
+    id: 'move',
+    label: 'Move toward target',
+    control: { mode: 'hold', releaseActionId: 'stop' },
+  },
+  { id: 'stop', label: 'Stop' },
+  { id: 'fire', label: 'Fire' },
+]
+```
+
+- Always offer the matching stop action. Arcade's generated controls send it
+  when a key is released, the window loses focus, or the seat changes controller,
+  so stopping must be legal and idempotent.
+- Pulse refresh is clamped to 16–250 ms and renewed without asking the agent
+  for another decision. Prefer `hold` for new games.
+
+---
+
+## Record intent in actions, consume it in `tick`
+
+`applyAction` should only record what the seat wants. `tick` turns that intent
+into motion using `context.deltaMs`. Never advance time or integrate physics
+inside an action handler — actions arrive at irregular moments, and time spent
+there is invisible to the rest of the simulation.
+
+```js
+applyAction(state, action, context) {
+  const next = copyState(state)
+  const seat = next.seats[context.seatId]
+  if (action.id === 'stop') seat.intent = null
+  else if (action.id === 'move') seat.intent = { target: action.target }
+  return { state: next, events: [] }
+},
+tick(state, context) {
+  const next = copyState(state)
+  for (const id of next.order) steer(next.seats[id], context.deltaMs)
+  return { state: next, events: [] }
+},
+```
+
+---
+
+## Give every decision a bounded effect
+
+This is the practice that most often separates a game agents play well from one
+they cannot play at all.
+
+If an agent decides every 700 ms and an action means "keep turning while held",
+the turn continues for the whole interval — long enough to leave the road, walk
+off a ledge or spin past the target. Faster decisions do not fix it; they only
+shrink the error. Instead, make each action describe **where to end up**, and
+let `tick` get there and hold it until the next decision replaces it.
+
+| Open-ended action     | Bounded alternative                      |
+| --------------------- | ---------------------------------------- |
+| Steer left while held | Shift one lane left, then hold that line |
+| Turn while held       | Turn to a bearing                        |
+| Move right while held | Move to a cell or point                  |
+| Aim while held        | Aim at a visible target or direction     |
+| Pan the camera        | Focus a unit or location                 |
+| Charge while held     | Charge to a level                        |
+
+```js title="Close on a target at the object's real rate"
+function steer(seat, deltaMs) {
+  if (!seat.intent) return
+  const maxStep = seat.turnRate * (deltaMs / 1000)
+  const error = seat.intent.target - seat.position
+  seat.position += Math.sign(error) * Math.min(Math.abs(error), maxStep)
+}
+```
+
+The object still moves at its physical rate, so skill is preserved — a sharp
+corner or a fast opponent can still outpace it — but a slow decision can no
+longer overshoot. Humans can use the same actions: resend the bounded action
+while a key stays down, or keep a direct control for them in the presentation
+and map it onto the same intent.
+
+---
+
+## Keep the game from waiting on nobody
+
+- **Always leave a legal action for the seat that must act** — the seat to move
+  in turn-based play, and every seat in simultaneous and realtime play.
+- **Allow queued intent during countdowns.** Accept drive or move actions before
+  play begins and apply them on the first tick, so every seat starts cleanly.
+- **Validate the acting seat.** Check `context.seatId` against the roster in
+  `validateAction` and reject unknown seats.
+- **Explain rejections.** Return a string or `{ code, detail }` that says what
+  is wrong ("Lock in a car before driving", "Not your turn"). Codes are
+  `NOT_LEGAL`, `CONTROL_REVOKED`, `TOO_LATE` or `RATE_LIMITED`.
+- **Make every legal action concrete.** Each entry in `legalActions` is JSON that
+  `validateAction` accepts as-is for that seat, with a readable `label`.

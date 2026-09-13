@@ -295,7 +295,7 @@ describe('hosted Studio boundary', () => {
           body: '{}',
         })
       ).status,
-    ).toBe(201)
+    ).toBe(200)
     expect(
       (
         await app.request(`/v1/projects/${project.id}/annotations`, {
@@ -347,44 +347,66 @@ describe('hosted Studio boundary', () => {
       ).status,
     ).toBe(403)
   })
-  it('steps a pinned test after process replacement and prevents duplicate advancement', async () => {
-    const { app, store } = setup()
-    const p = await (
-      await app.request('/v1/projects', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          document: { ...starterDocument, boardSize: 4, winLength: 4 },
-        }),
-      })
-    ).json()
-    const created = await app.request(`/v1/projects/${p.id}/runs`, {
+  it('runs one headless runtime test for every game with authoritative rules', async () => {
+    const { app } = setup()
+    const create = async (document: unknown) =>
+      (
+        await app.request('/v1/projects', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ document }),
+        })
+      ).json()
+    const grid = await create({
+      ...starterDocument,
+      boardSize: 4,
+      winLength: 4,
+    })
+    const tested = await app.request(`/v1/projects/${grid.id}/runs`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ seed: 'any-game', steps: 40 }),
+    })
+    expect(tested.status).toBe(200)
+    expect(await tested.json()).toMatchObject({
+      kind: 'runtime-test',
+      deterministic: true,
+      seatCount: 2,
+    })
+    // Grid-only preference policies and the stepwise run loop no longer exist.
+    expect(
+      (
+        await app.request(`/v1/projects/${grid.id}/runs`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ preferences: [[0], [1]] }),
+        })
+      ).status,
+    ).toBe(422)
+    expect(
+      (
+        await app.request('/v1/studio/runs/tst_legacy/step', {
+          method: 'POST',
+          headers,
+          body: '{"steps":0}',
+        })
+      ).status,
+    ).toBe(404)
+    const preview = await create(emptyBrowserDocument)
+    const previewTest = await app.request(`/v1/projects/${preview.id}/runs`, {
       method: 'POST',
       headers,
       body: '{}',
     })
-    expect(created.status).toBe(201)
-    const run = await created.json()
-    const other = createApp({ store, allowLocalAuth: true, logRequests: false })
-    const step = () =>
-      other.request(`/v1/studio/runs/${run.runId}/step`, {
-        method: 'POST',
-        headers,
-        body: '{"steps":0}',
-      })
-    const result = await step()
-    expect(result.status).toBe(200)
-    const advanced = await result.json()
-    expect(advanced.steps).toBe(1)
-    expect(advanced.diagnostics).toHaveLength(3)
-    expect((await step()).status).toBe(409)
-    expect(
-      (
-        await (
-          await app.request(`/v1/studio/runs/${run.runId}`, { headers })
-        ).json()
-      ).replay,
-    ).toEqual(advanced.replay)
+    expect(previewTest.status).toBe(422)
+    expect(await previewTest.json()).toMatchObject({
+      violations: expect.arrayContaining([
+        expect.objectContaining({
+          field: 'document.runtime',
+          message: expect.stringContaining('authoritative rules'),
+        }),
+      ]),
+    })
   })
   it('enforces key scopes, prevents key escalation and supports immediate revocation', async () => {
     const { app } = setup()

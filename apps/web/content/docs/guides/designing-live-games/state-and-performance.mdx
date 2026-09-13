@@ -1,0 +1,133 @@
+---
+title: State and Performance
+description: Keep authoritative state small and deterministic, and keep every runtime call inside its budget.
+---
+
+Your rules file runs in a bounded QuickJS sandbox on the match worker. How it
+runs explains every rule on this page.
+
+---
+
+## How your rules run
+
+- **A fresh sandbox per call.** Every `initialize`, `validateAction`,
+  `applyAction`, `tick`, `observe` and `result` call evaluates the whole rules
+  file again. Nothing you assign at module level survives to the next call.
+- **State arrives as JSON.** Each call receives state serialized into the call,
+  and returns new state that is serialized back. State, transitions and
+  observations are bounded at 192 KiB serialized.
+- **No ambient clock or randomness.** `Date`, `fetch` and `Math.random` are
+  unavailable. Use `context.deltaMs` and `context.elapsedMs` for time and the
+  initialization `context.seed` for randomness.
+- **Bounded time and memory.** `runtime.timeoutMs` (1–50 ms) and
+  `runtime.memoryMiB` (4–32) cap each call.
+
+So the cost of a tick is roughly: parse the rules file, parse state, simulate,
+serialize state. Parsing alone costs about a millisecond and a half for an
+18 KB rules file on a laptop, on every call. Keep the other parts small.
+
+---
+
+## Keep only what actions change in state
+
+Put a value in state only if an action or an outcome can change it. Anything
+that is a pure function of the seed, the configuration or elapsed time can be
+computed whenever it is needed, identically on the worker and in the browser.
+
+| Game                | Store in state                           | Derive on demand                                    |
+| ------------------- | ---------------------------------------- | --------------------------------------------------- |
+| Racing              | Car positions, speeds, held intent       | Track curves, traffic that moves on a fixed pattern |
+| Tower defense       | Towers, health, gold, live enemies       | Wave schedule, enemy path geometry                  |
+| Card game           | Hands, discard pile, deck position       | Card definitions, the shuffled order from the seed  |
+| Platformer or co-op | Players, switches, collected items       | Static level layout, moving platforms on timers     |
+| Party game          | Scores, current round, submitted answers | Round prompts from a seeded list                    |
+
+A closed-form function replaces per-tick integration and removes the data from
+state entirely:
+
+```js title="Motion that depends only on time"
+// A patrol that repeats: nothing to store, nothing to step each tick.
+function patrolPosition(patrol, elapsedMs) {
+  const lap = (elapsedMs + patrol.offsetMs) % patrol.periodMs
+  const p = lap / patrol.periodMs
+  return patrol.from + (patrol.to - patrol.from) * (p < 0.5 ? p * 2 : 2 - p * 2)
+}
+```
+
+The same function, copied into the presentation, lets the browser draw that
+object for any instant without receiving it in a frame. Keep the two copies
+identical and cover them with a parity test.
+
+### Use `prepare` for expensive data, not large data
+
+`prepare(context)` runs once when a match initializes, and its JSON result is
+available to every later call as the frozen `globalThis.arcadePrepared`. The
+result is still embedded in, and frozen by, every call. Use it when data is
+**expensive to compute** — pathfinding tables, procedurally generated levels,
+solved lookup tables. Data that is merely large, or cheap to regenerate from a
+seed, costs less generated inside the call.
+
+---
+
+## Bound the work in every call
+
+- **Copy structurally.** Rebuild only the objects you change instead of
+  `JSON.parse(JSON.stringify(state))`; flat per-seat objects copy cheaply field
+  by field.
+- **Cap sub-steps.** Split a long `deltaMs` into a bounded number of fixed
+  sub-steps so physics stays stable without unbounded work.
+- **Return early in idle phases.** A lobby or results phase whose state does not
+  change can return the state it received.
+- **Keep observations compact.** `observe` runs for each controlling seat on
+  every frame; send decision facts, not render caches.
+
+```js title="Bounded sub-steps"
+tick(state, context) {
+  const next = copyState(state)
+  const dt = Math.min(0.1, context.deltaMs / 1000)
+  const steps = Math.min(6, Math.ceil(dt / (1 / 60)))
+  for (let i = 0; i < steps; i++) simulate(next, dt / steps)
+  next.elapsedMs += context.deltaMs
+  return { state: next, events: [] }
+}
+```
+
+### Budget per match
+
+Estimate the runtime work one match needs each second:
+
+```
+tickRate × tick cost  +  frames per second × controlling seats × observe cost
+```
+
+A realtime game at 30 ticks with four seats and 15 frames per second makes 90
+runtime calls a second. Keep p95 step cost **well below** `1000 / tickRate` ms.
+When a rules file cannot keep real time, the worker falls behind and catches up
+several ticks at once, and every viewer sees the match advance in bursts.
+
+The [runtime test](/docs/guides/designing-live-games/results-testing-publishing#test-every-change)
+reports median, p95 and maximum step cost against this budget.
+
+---
+
+## Stay deterministic and fair
+
+- **Carry randomness in state.** Seed a small generator from `context.seed` in
+  `initialize` and store its state, so replays reproduce every draw.
+- **Resolve simultaneous events together.** Process every seat's movement,
+  collision, bid or finish for a step before deciding the outcome, so seat order
+  never breaks a tie.
+- **Treat exact ties explicitly.** Decide whether a dead heat is a draw, a
+  shared rank or a tiebreak rule, and report it in the result.
+
+```js title="Fair finish: nobody wins by being first in the roster"
+for (const id of state.order) move(state.seats[id], dt)
+const crossed = state.order.filter((id) => state.seats[id].z >= FINISH)
+if (crossed.length) {
+  const best = Math.max(...crossed.map((id) => state.seats[id].z))
+  const leaders = crossed.filter((id) => state.seats[id].z === best)
+  if (leaders.length > 1) state.draw = true
+  else state.winner = leaders[0]
+  state.phase = 'results'
+}
+```

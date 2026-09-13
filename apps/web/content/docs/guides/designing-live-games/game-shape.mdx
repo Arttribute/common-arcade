@@ -1,0 +1,117 @@
+---
+title: Game Shape
+description: Choose the play mode, seats, roles, teams and cadence that fit how decisions happen in your game.
+---
+
+The `play` and `runtime` blocks describe the shape of a match before any rule
+runs. Getting them right up front decides how Arcade schedules decisions, how
+many frames observers receive, and which formats hosts can offer.
+
+---
+
+## Choose the mode from how decisions happen
+
+Ask one question: **does the world keep moving while a player thinks?**
+
+| Mode           | Use it when                                                     | `tick` |
+| -------------- | --------------------------------------------------------------- | ------ |
+| `turn-based`   | One seat acts at a time and nothing changes between moves       | No     |
+| `simultaneous` | Every seat commits a choice each round, then the round resolves | No     |
+| `realtime`     | The world keeps moving between decisions                        | Yes    |
+| `hybrid`       | Realtime play with discrete phases such as planning or scoring  | Yes    |
+
+The same genre can suit more than one mode. Pick the one that matches the
+experience you want:
+
+| Game                                    | Mode                       | Seats and roles                               |
+| --------------------------------------- | -------------------------- | --------------------------------------------- |
+| Card duel, trick-taking, board game     | `turn-based`               | 2–4 players                                   |
+| Sealed-bid auction, rock-paper-scissors | `simultaneous`             | 2–8 players                                   |
+| Racing, arena shooter, team sports      | `realtime`                 | 2–8 players, optional teams                   |
+| Tactics with a plan-then-resolve rhythm | `hybrid`                   | 2–4 players                                   |
+| Co-op raid or puzzle                    | `realtime` or `turn-based` | 1–4 players with roles such as tank or healer |
+| Tag, hide and seek                      | `realtime`                 | Asymmetric: one seeker, several hiders        |
+| Party game                              | `simultaneous`             | Up to 16 players                              |
+
+Mode also affects what hosts can do. Paid formats currently require a
+`turn-based` release — see [Results, Testing and Publishing](/docs/guides/designing-live-games/results-testing-publishing#paid-matches).
+
+---
+
+## Declare seats, roles and teams
+
+Seats are always explicit. `play.seats` sets the range a host may start with
+(`min`, `max`, `default`, each 1–16). Add `play.roles` when seats differ: role
+counts must add up to the default seat count, and a role may name a `team`.
+
+```json title="Asymmetric: one seeker, four hiders"
+{
+  "play": {
+    "mode": "realtime",
+    "seats": { "min": 5, "max": 5, "default": 5 },
+    "roles": [
+      { "id": "seeker", "title": "Seeker", "count": 1 },
+      { "id": "hider", "title": "Hider", "count": 4 }
+    ],
+    "spectators": true,
+    "lateJoin": true,
+    "maxDurationSeconds": 600,
+    "maxDecisionsPerSecond": 4
+  }
+}
+```
+
+```json title="Two teams of two"
+{
+  "play": {
+    "mode": "realtime",
+    "seats": { "min": 4, "max": 4, "default": 4 },
+    "roles": [
+      { "id": "red", "title": "Red", "count": 2, "team": "red" },
+      { "id": "blue", "title": "Blue", "count": 2, "team": "blue" }
+    ],
+    "maxDecisionsPerSecond": 3
+  }
+}
+```
+
+- **Read seat IDs from `context.roster`.** Seat IDs are opaque; never hardcode
+  them, assume their order, or fall back to "player one" for an unknown seat.
+  The roster also carries each seat's `role` and `team`.
+- **Decide on spectators and late join deliberately.** `play.spectators`
+  controls watching; `play.lateJoin` lets a disconnected seat be reopened within
+  its resume window, which matters more as seat counts grow.
+- **Bound the match.** Set `play.maxDurationSeconds` (10–3600) to the longest
+  a real match should take, so an abandoned or stuck game ends on its own.
+
+---
+
+## Set simulation and decision cadence separately
+
+Realtime and hybrid games have two independent clocks:
+
+- `runtime.tickRate` (1–60, default 30) is how often `tick` runs — choose it for
+  simulation fidelity.
+- `play.maxDecisionsPerSecond` (1–20, default 2) bounds how often a seat may
+  make a new decision — choose it for the pace of play you intend.
+
+Observers do not receive a frame every tick. The worker sends one every
+`round(tickRate / min(20, tickRate))` ticks:
+
+| `tickRate` | Frame every | Frames per second |
+| ---------- | ----------- | ----------------- |
+| 60         | 3 ticks     | 20                |
+| 30         | 2 ticks     | 15                |
+| 25         | 1 tick      | 25                |
+| 20         | 1 tick      | 20                |
+| 10         | 1 tick      | 10                |
+
+A higher tick rate costs runtime work on every tick without adding frames above
+20 per second. Use sub-steps inside `tick` when physics needs finer resolution
+than the tick rate — see [State and Performance](/docs/guides/designing-live-games/state-and-performance#bound-the-work-in-every-call).
+
+<Callout type="warn">
+  Frames reach players unevenly even at a steady tick rate. Plan for this in the
+  presentation from the start — see [Rendering Live
+  Play](/docs/guides/designing-live-games/rendering-live-play).
+</Callout>

@@ -43,4 +43,9 @@ export async function compileGame(
   return createGridPlacementGame(rulesFor(parsed, releaseId, digest))
 }
 
-export { testGameRuntime, type RuntimeTestInput } from './runtime-test.js'
+export {
+  RUNTIME_TEST_BUDGET_MS,
+  testGameRuntime,
+  type RuntimeTestInput,
+  type RuntimeTestOptions,
+} from './runtime-test.js'

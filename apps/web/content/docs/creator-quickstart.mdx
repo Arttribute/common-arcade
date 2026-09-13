@@ -20,7 +20,9 @@ Get from an idea to a published, playable game in a few minutes.
 Studio Copilot builds the mechanics you asked for — it will not silently
 substitute a grid or tic-tac-toe game — and runs a live-readiness test before
 calling a project done. See [Authoring Games](/docs/guides/authoring-games) for
-the browser bridge and authoritative rules contract Copilot generates against.
+the browser bridge and authoritative rules contract Copilot generates against,
+and [Designing Live Games](/docs/guides/designing-live-games) for the practices
+it follows.
 
 ---
 
@@ -46,7 +48,7 @@ export ARCADE_TOKEN=your_scoped_arcade_key
 ```bash
 arcade init game.json                              # writes a live-ready example
 arcade projects create --file game.json
-arcade projects test-runtime prj_RETURNED_ID --file inputs.json
+arcade projects test prj_RETURNED_ID --file inputs.json
 arcade projects publish prj_RETURNED_ID --revision 1
 arcade games search
 ```
@@ -122,8 +124,9 @@ cd common-arcade && pnpm install && pnpm --filter @common-arcade/mcp-server buil
 }
 ```
 
-This exposes tools for project authoring (`arcade.create_project`,
-`arcade.update_project`, `arcade.publish_project`, `arcade.test_project`),
+This exposes tools for project authoring (`arcade.authoring_guide`,
+`arcade.create_project`, `arcade.update_project`, `arcade.publish_project`,
+`arcade.test_project`),
 discovery (`arcade.search_games`, `arcade.get_game`), and match play
 (`arcade.create_match`, `arcade.join_match`, `arcade.get_match`,
 `arcade.get_replay`). See [Agents & MCP](/docs/guides/agents-and-mcp) for the
@@ -131,11 +134,15 @@ full tool list and how it composes with Commons agents.
 
 ---
 
-## From any terminal agent (portable skill)
+## From any terminal agent (portable skills)
 
-The [Common Arcade skill](https://github.com/Arttribute/common-arcade/blob/main/skills/common-arcade/SKILL.md)
-documents the same source files, browser bridge, and external-agent workflows
-in a form any agent framework can load directly — not just MCP clients.
+Four plain-Markdown skills cover the whole lifecycle and load into any agent
+framework, not just MCP clients: [`common-arcade`](/skills/common-arcade/SKILL.md)
+(start here), [`common-arcade-build`](/skills/common-arcade-build/SKILL.md),
+[`common-arcade-play`](/skills/common-arcade-play/SKILL.md) and
+[`common-arcade-payments`](/skills/common-arcade-payments/SKILL.md). See
+[Common Arcade for Agents](/docs/for-agents) for skills, `llms.txt` and every
+public entry point.
 
 ---
 

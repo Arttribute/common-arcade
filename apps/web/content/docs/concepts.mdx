@@ -98,11 +98,14 @@ or Commons-agent controller per seat, stepping through `window.arcade`
 never prize-eligible, since it doesn't go through the authoritative match
 runtime.
 
-## Test Arena
+## Runtime test
 
-**Test Arena** runs two policies against each other using the deterministic
-[Policy IR](/docs/guides/agents-and-mcp#test-arena-and-policy-ir) — useful for
-evaluating bounded, declarative strategies without spinning up a live match.
+The **runtime test** runs a project's authoritative rules headlessly, twice from
+the same seed, and reports determinism, per-step timing against the simulation
+budget, and warnings about agent-facing feedback and perception. It works the
+same way for every game with authoritative rules — any genre, mode or seat
+count — and is available from Studio, Studio Copilot, the CLI, MCP, the SDK and
+HTTP. See [Results, Testing and Publishing](/docs/guides/designing-live-games/results-testing-publishing#test-every-change).
 
 ## Paid match
 

@@ -1,0 +1,119 @@
+---
+title: Results, Testing and Publishing
+description: Report a result that scoring and settlement can read, test every seat and phase, and meet the publishing requirements.
+---
+
+## Report a result Arcade can act on
+
+`result(state)` returns `null` until the game ends, then one object that
+scoreboards, series play, leaderboards and paid settlement all read:
+
+```js
+result(state) {
+  if (state.phase !== 'results') return null
+  const standings = rankSeats(state).map((seatId, index) => ({
+    seatId,
+    rank: state.draw ? 1 : index + 1,
+    score: state.seats[seatId].score,
+  }))
+  if (state.draw) return { outcome: 'draw', standings }
+  return { outcome: 'win', winnerSeatId: state.winner, standings }
+}
+```
+
+| `outcome`  | Use when                             | `winnerSeatId` |
+| ---------- | ------------------------------------ | -------------- |
+| `win`      | One seat won                         | Required       |
+| `draw`     | Nobody won, including exact ties     | Omit           |
+| `complete` | Cooperative or purely ranked endings | Omit           |
+
+- **Series scores and paid settlement read `outcome` and `winnerSeatId`.** A
+  result without `winnerSeatId` has no winner to pay; a draw refunds every
+  contribution.
+- **Rank every seat in `standings`** with `seatId`, `rank` and `score`, including
+  teams and asymmetric roles, so any number of seats can be scored generically.
+- **Never let seat order decide a tie** — see
+  [State and Performance](/docs/guides/designing-live-games/state-and-performance#stay-deterministic-and-fair).
+
+### Paid matches
+
+A creator's earning terms make paid formats available; a host still chooses
+them per match. Paid formats currently require a **turn-based** release whose
+seat range includes two. Other modes can publish earning terms, but hosts see
+free entry only until their settlement is supported. See
+[Payments & Earnings](/docs/guides/payments).
+
+---
+
+## Test every change
+
+The runtime test runs your saved rules headlessly, twice from the same seed, and
+reports determinism, per-step timing against the simulation budget, and warnings
+about feedback and perception. It works the same way for every game with
+authoritative rules, whatever its genre, mode or seat count.
+
+| Surface        | How to run it                                        |
+| -------------- | ---------------------------------------------------- |
+| Studio         | **Test** tab → **Run test**                          |
+| Studio Copilot | `arcade_test_game` (runs after every write)          |
+| CLI            | `arcade projects test PROJECT_ID --file inputs.json` |
+| MCP            | `arcade.test_project`                                |
+| SDK            | `client.testRuntime(projectId, input)`               |
+| HTTP           | `POST /v1/projects/{id}/runs`                        |
+
+```json title="inputs.json"
+{
+  "seed": "repeatable-seed",
+  "steps": 240,
+  "actions": [
+    { "step": 0, "seat": 0, "action": { "id": "ready" } },
+    { "step": 0, "seat": 1, "action": { "id": "ready" } },
+    { "step": 130, "seat": 0, "action": { "id": "move", "target": 3 } },
+    { "step": 131, "seat": 1, "action": { "id": "stop" } }
+  ]
+}
+```
+
+Without scripted `actions`, each seat samples its legal actions at the declared
+cadence. Steps and seats are zero-based; each step is one tick in realtime games
+or one decision round otherwise.
+
+The response reports:
+
+| Field                                  | Meaning                                                     |
+| -------------------------------------- | ----------------------------------------------------------- |
+| `deterministic`, `replayDiff`          | Whether both runs matched, and where they diverged if not   |
+| `timing`                               | Median, p95 and maximum step cost with `simulationBudgetMs` |
+| `warnings`                             | Missing feedback, short perception horizon, budget overruns |
+| `steps`, `requestedSteps`, `truncated` | How many steps ran of those requested                       |
+| `result`, `replay`                     | The recorded result and the full replay                     |
+
+A request has a 10-second budget shared by both runs. A long or slow game stops
+both runs at the same step and returns `truncated: true` with a warning, instead
+of failing. Request fewer steps per test, or read `configuration` in
+`initialize` to start at a later phase when your game supports it.
+
+### What to cover
+
+- **Every seat, independently.** Drive each seat through setup, movement,
+  stopping, attacks or plays, and every terminal outcome — not only the first
+  idle action.
+- **Every phase.** Selection, countdown, play, results and restart.
+- **Realistic decision rates.** Script actions at the cadence agents actually
+  use, not every tick, to catch overshooting controls.
+- **A spectator.** Follow a hosted match from a browser with no claimed seat,
+  from setup to results.
+
+---
+
+## Publish
+
+- **A thumbnail is required.** Set `document.thumbnail` to an HTTPS image URL or
+  a PNG, JPEG or WebP data URI of at most 90,000 characters. A frame of real play
+  makes the best thumbnail.
+- **Stay under 120 KB.** The whole document, including an embedded thumbnail,
+  must fit. Compress the image and host large media separately.
+- **Publishing is a separate step** that produces an immutable release; the
+  runtime smoke test runs again before a release is stored.
+- **Describe the game** with what players do and how to win — the description
+  appears wherever the game is discovered.

@@ -27,7 +27,8 @@ Commands:
   projects get <id>                    Read a project and exact revision
   projects update <id> --file <file>   Update (requires --revision N)
   projects publish <id> --revision N  Publish immutable revision
-  projects test <id>                  Run a pinned game to completion
+  projects test <id> [--file JSON]    Headless determinism and timing test for any game
+                                      (--steps N, --seed S; alias: test-runtime)
   play <match-id> --seat <seat-id>     Run a bounded test policy; --controller reuses a reserved agent seat
   status                              Inspect the control plane
   doctor                              Check API and runtime prerequisites
@@ -36,10 +37,7 @@ Commands:
   matches create --release <id>       Create a match
   matches inspect <match-id>          Inspect lifecycle and roster
   matches abandon <match-id>          End a match you own
-  projects test-runtime <id>          Headless determinism and timing test
   replay show <match-id>              Print an authoritative replay
-  test run [--seed value] [--step]    Run two policies in Test Arena
-  test logs <test-run-id>             Query structured agent diagnostics
   version                             Print protocol status
 
 Environment:
@@ -143,16 +141,18 @@ export async function runCli(options: RunCliOptions): Promise<number> {
       write(json(await client.abandonMatch(subject)))
       return 0
     }
-    if (command === 'projects' && subcommand === 'test-runtime' && subject) {
+    if (
+      command === 'projects' &&
+      (subcommand === 'test' || subcommand === 'test-runtime') &&
+      subject
+    ) {
       const script = option(options.args, '--file')
-      write(
-        json(
-          await client.testRuntime(
-            subject,
-            script ? JSON.parse(await readFile(script, 'utf8')) : {},
-          ),
-        ),
-      )
+      const input = script ? JSON.parse(await readFile(script, 'utf8')) : {}
+      const steps = option(options.args, '--steps')
+      const seed = option(options.args, '--seed')
+      if (steps !== undefined) input.steps = Number(steps)
+      if (seed !== undefined) input.seed = seed
+      write(json(await client.testRuntime(subject, input)))
       return 0
     }
     if (command === 'projects') {
@@ -205,15 +205,6 @@ export async function runCli(options: RunCliOptions): Promise<number> {
         revision > 0
       ) {
         write(json(await client.publishProject(subject, revision)))
-        return 0
-      }
-      if (subcommand === 'test' && subject) {
-        let run = await client.createProjectRun(subject, {
-          seed: option(options.args, '--seed'),
-        })
-        while (run.status === 'running' && run.steps < 64)
-          run = await client.stepProjectRun(run.runId, run.steps)
-        write(json(run))
         return 0
       }
     }
@@ -379,24 +370,6 @@ export async function runCli(options: RunCliOptions): Promise<number> {
       subject !== undefined
     ) {
       write(json(await client.getReplay(subject)))
-      return 0
-    }
-
-    if (command === 'test' && subcommand === 'run') {
-      const seed = option(options.args, '--seed')
-      write(
-        json(
-          await client.createTestRun({
-            ...(seed === undefined ? {} : { seed }),
-            execution: options.args.includes('--step') ? 'step' : 'complete',
-          }),
-        ),
-      )
-      return 0
-    }
-
-    if (command === 'test' && subcommand === 'logs' && subject !== undefined) {
-      write(json(await client.getTestDiagnostics(subject)))
       return 0
     }
 

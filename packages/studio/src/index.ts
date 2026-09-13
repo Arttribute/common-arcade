@@ -1,5 +1,11 @@
 export { livePolicyObservation } from './live-policy.js'
 export {
+  LIVE_GAME_DOCS_BASE,
+  LIVE_GAME_PRACTICES,
+  formatLiveGamePractices,
+  type LiveGamePracticeSection,
+} from './authoring-guide.js'
+export {
   executableStrategySchema,
   coachedStrategySchema,
   type ExecutableStrategy,

@@ -8,13 +8,12 @@ export type {
   ControlClientOptions,
   CreateMatchInput,
   CreateSessionInput,
-  CreateTestRunInput,
-  DiagnosticList,
   GameList,
   MatchView,
   ReleaseList,
+  RuntimeTestInput,
+  RuntimeTestResult,
   SessionTicket,
-  TestRun,
 } from '@common-arcade/control-client'
 export {
   ARCADE_PROTOCOL,

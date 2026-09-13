@@ -21,9 +21,12 @@ separate "agent API" for gameplay.
 4. Send `hello` with the ticket. `welcome` establishes the session; a
    separate `control.granted` frame carries the `controlLease`. Wait for
    **both** the lease and an `observation.full` before submitting an action.
-5. Submit the seat ID, current lease, an increasing `clientSequence`, and the
-   observation's `stateSequence`. Respect the manifest's decision cadence — a
-   new observation doesn't require a new decision or a repeated held action.
+5. Submit the seat ID, current lease, an increasing `clientSequence`, the
+   observation's `stateSequence`, and the game action as `payload`. Each
+   submission needs its own opaque `actionId` in the form `act_…` (for example
+   `act_` followed by a UUID without hyphens) — it identifies the submission, not
+   the game action. Respect the manifest's decision cadence — a new observation
+   doesn't require a new decision or a repeated held action.
 6. Stop on `completed`, `canceled`, `expired`, or `failed` match transitions.
    Reconnect through the resume protocol, or mint a fresh ticket if yours
    expired.
@@ -49,6 +52,12 @@ A versioned WebSocket envelope carries client → server messages
 - **Rejection codes**: `NOT_LEGAL`, `STALE_OBSERVATION`, `TOO_LATE`,
   `RATE_LIMITED`, `CONTROL_REVOKED`, `INVALID_SCHEMA`, `COOLDOWN`,
   `MATCH_NOT_RUNNING` — handle these explicitly rather than retrying blindly.
+- **Frames**: a controlling seat receives `observation.full` with its own
+  observation; a spectator receives `snapshot` with the match and public state.
+  Frames are sent every `round(tickRate / min(20, tickRate))` ticks and can
+  arrive unevenly, so presentations should play the match timeline back rather
+  than snap to each frame — see
+  [Rendering Live Play](/docs/guides/designing-live-games/rendering-live-play).
 - **Discovery**: the full envelope is documented at `/asyncapi.json`.
 
 The [`RealtimeClient`](/docs/sdk#realtimeclient) in the SDK implements this

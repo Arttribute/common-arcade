@@ -1,0 +1,105 @@
+---
+title: Observations and Feedback
+description: Give each seat the facts a decision needs, far enough ahead, and tell it what its actions caused.
+---
+
+An agent sees your game only through `observe(state, seatId, context)`. What it
+returns decides whether an agent plays with foresight or guesses.
+
+---
+
+## Observe decisions, not pixels
+
+Put every decision input in `visibleState`. Render caches and raw geometry are
+not enough; include the facts a thoughtful player would work out.
+
+| Always include                | Examples                                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------------- |
+| Phase and progress            | `phase`, round, score, distance to the objective                                            |
+| The seat itself               | Position, health, resources, cards in hand, cooldowns                                       |
+| Visible opponents and hazards | Nearby players, projectiles, obstacles, the ball                                            |
+| **Derived facts**             | Time to impact, time left in the turn, force acting on the seat now, legal targets in range |
+
+Derived facts matter most in realtime play. "The corner ahead is pushing you
+0.6 lanes per second to the right" or "the projectile reaches you in 420 ms"
+lets an agent act on the rules instead of reverse-engineering them from
+positions.
+
+For unusual controls you may add `arcadeDecisionContext` with bounded
+`actionScores` keyed by legal action ID, plus `preferredActions` or
+`avoidActions`, derived only from what that seat can see.
+
+---
+
+## Look at least one decision ahead
+
+A seat should see the world at least as far as anything relevant can change in
+one decision interval:
+
+```
+horizon ≥ fastest closing speed × (1000 / play.maxDecisionsPerSecond) ms
+```
+
+If an obstacle approaching at full speed covers more ground between two
+decisions than the observation reports, it can go from unseen to collided with
+no chance to react. Never show a seat less than its screen shows a human
+player. Declare the horizon so tests can check it:
+
+```js
+visibleState: {
+  perception: { horizonMs: 2400 },
+  hazardsAhead: [{ distance: 1800, lane: -0.4, timeToImpactMs: 610 }],
+}
+```
+
+The runtime test warns when `perception.horizonMs` is shorter than one decision
+interval.
+
+---
+
+## Shape observations for any number of seats
+
+Use one consistent shape whether a match has two seats or sixteen:
+
+```js
+visibleState: {
+  phase: 'play',
+  you: { seatId, team: 'red', position: 12, health: 80 },
+  others: [
+    { seatId: 'sea_…', team: 'red', position: 9 },
+    { seatId: 'sea_…', team: 'blue', position: 15 },
+  ],
+  standings: [{ seatId: 'sea_…', rank: 1, score: 3 }],
+}
+```
+
+- Name the acting seat `you` and everyone else `others`, each with its `team`.
+- Keep `standings` current so any seat can reason about the race or the table.
+- **Leave out what a seat must not know** — hidden hands, fog of war, a sealed
+  bid. The observation is the seat's entire view of the match.
+
+---
+
+## Explain outcomes in every phase
+
+Return `feedback` from `observe` so agents can learn what their actions caused:
+
+```js
+feedback: {
+  reward: -0.9,
+  outcome: 'poor',                       // for example 'good', 'neutral' or 'poor'
+  summary: 'Last second: made contact twice and ran wide for 0.3s.',
+  metrics: { collisions: 2, secondsOffRoad: 0.3, place: 2 },
+}
+```
+
+- **Every phase, not only active play.** In setup say what is pending ("Locked
+  in; waiting for the other seat"); in a countdown say when play starts and
+  whether queued input will apply; in results say how the seat finished. The
+  runtime test warns when any observation lacks feedback.
+- **Attribute causes.** A falling score or speed tells an agent little; "made
+  contact", "missed the timing window" or "played into a trump" tells it what to
+  change.
+- **Summarize a recent window.** Realtime games can keep a short rolling window
+  of counters in state (distance covered, hits, time off course) and report the
+  last closed window, so feedback is stable between frames.

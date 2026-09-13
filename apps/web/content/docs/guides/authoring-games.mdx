@@ -16,6 +16,13 @@ cadence. There are two tracks, and they use different contracts.
 Use `arcade init game.json` for a live-ready starting point, or
 `arcade init --template preview` for a browser-only prototype.
 
+<Callout>
+  This page is the contract. [Designing Live
+  Games](/docs/guides/designing-live-games) covers how to build on it well for
+  any genre, mode or seat layout — state, controls, observations, smooth
+  rendering, results and testing.
+</Callout>
+
 ---
 
 ## Creating and revising
@@ -58,7 +65,9 @@ semver); the browser resolves them through esm.sh. Keep source under 120 KB /
 2. `PUT /v1/projects/{id}` with `If-Match: {revision}` saves an edit. On
    `409`, reload and reconcile rather than overwrite.
 3. `POST /v1/projects/{id}/publish` with the same revision header produces an
-   immutable release.
+   immutable release. Publishing requires `document.thumbnail` — an HTTPS image
+   URL or a PNG, JPEG or WebP data URI of at most 90,000 characters — and the
+   whole document, thumbnail included, must stay under 120 KB.
 
 ---
 
@@ -168,7 +177,9 @@ Arcade runs it once at initialization and caches the JSON result; other
 methods read it from the deeply frozen `globalThis.arcadePrepared`. Each
 invocation gets a fresh sandbox, so put expensive generation in `prepare`, not
 at module top level — mutable simulation state still belongs in the returned
-state.
+state. The prepared value is embedded in and frozen by every call, so it pays
+off for data that is costly to compute rather than data that is merely large;
+see [State and Performance](/docs/guides/designing-live-games/state-and-performance).
 
 ### Continuous input
 
@@ -184,6 +195,11 @@ without asking the agent for another decision, limited to once per animation
 frame and a 16-250 ms refresh window. Without a `control` declaration, actions
 remain discrete.
 
+Agents decide far less often than a simulation ticks, so give each held action a
+bounded effect — move to a point, shift one lane, turn to a bearing — rather
+than an open-ended rate. See
+[Actions and Control](/docs/guides/designing-live-games/actions-and-control).
+
 Test spectator rendering explicitly. A controlling player receives that seat's
 `observe(...).visibleState`; a spectator receives public runtime state with no
 `context.observation`. These shapes can differ, so map both and disable local
@@ -198,7 +214,7 @@ Treat schema, compilation, sandbox, or bridge failures as unfinished work:
 read the current revision, repair it, save, and test again.
 
 ```bash
-arcade projects test-runtime PROJECT_ID --file inputs.json
+arcade projects test PROJECT_ID --file inputs.json
 ```
 
 ```json
@@ -209,12 +225,16 @@ arcade projects test-runtime PROJECT_ID --file inputs.json
 }
 ```
 
-Equivalent to `POST /v1/projects/{id}/runs`, or `client.testRuntime(id, input)`
-in the SDK. Without scripted actions, the harness samples each seat's first
-legal action at the declared cadence, runs independent simulations with the
-same seed, and returns replay differences, median/p95/max execution time,
-per-seat cost, and any feedback/perception warnings. Bounded to 600 steps and
-10 seconds per request.
+Equivalent to `POST /v1/projects/{id}/runs`, `client.testRuntime(id, input)`
+in the SDK, `arcade.test_project` over MCP, or the **Test** tab in Studio. The
+runtime test works the same way for every game with authoritative rules. Without
+scripted actions, it samples each seat's legal actions at the declared cadence,
+runs two simulations with the same seed, and returns replay differences,
+median/p95/max execution time, per-seat cost, and any feedback/perception
+warnings. Requests allow up to 600 steps within a 10-second budget shared by
+both runs; a game that needs longer stops both runs at the same step and reports
+`truncated: true` rather than failing. See
+[Results, Testing and Publishing](/docs/guides/designing-live-games/results-testing-publishing#test-every-change).
 
 Schema errors name the document field that failed validation. The live-game
 validator also checks legal actions, player turn transitions, spectator-visible

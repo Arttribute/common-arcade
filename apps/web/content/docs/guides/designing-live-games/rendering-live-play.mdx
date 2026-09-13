@@ -1,0 +1,183 @@
+---
+title: Rendering Live Play
+description: Render players and spectators from one scene model, and play the match timeline back smoothly.
+---
+
+In a live match the browser only draws. Arcade calls
+`window.arcade.render(authoritativeState, context)` whenever new authoritative
+state arrives and routes human input through the host-installed
+`window.arcade.submit(action)`. This page covers doing both so that every
+viewer sees a smooth, correct match.
+
+---
+
+## Render players and spectators from one model
+
+`render` receives two different shapes:
+
+| Viewer               | `authoritativeState`                    | `context.observation` |
+| -------------------- | --------------------------------------- | --------------------- |
+| A controlling player | That seat's `observe(...).visibleState` | Present               |
+| A spectator          | The public runtime state                | Absent                |
+
+`context` also carries `mode`, `controllerKind` and `inputEnabled`. Normalize
+both shapes into one scene model before drawing, and test the spectator path
+explicitly: a second browser with no claimed seat should follow the match
+through setup, play and results.
+
+```js title="One scene model for both shapes"
+function toScene(state, context) {
+  if (context?.observation) {
+    // A seat's own view: you / others / standings.
+    return {
+      t: state.elapsedMs,
+      phase: state.phase,
+      me: state.you.seatId,
+      entities: [state.you, ...state.others],
+    }
+  }
+  // Public runtime state is whatever your rules store. This example keeps
+  // seats by ID alongside the roster order.
+  return {
+    t: state.elapsedMs,
+    phase: state.phase,
+    me: null,
+    entities: state.order.map((id) => ({ seatId: id, ...state.seats[id] })),
+  }
+}
+```
+
+Carry one simulation clock through every phase — for example `elapsedMs`, grown
+by `context.deltaMs` in `tick` and exposed in both shapes. It is the timeline the
+presentation plays back.
+
+---
+
+## Play the timeline back instead of snapping
+
+The worker does not deliver frames at a perfectly even rate, and every viewer
+receives the same irregular stream. Some frames arrive close together, others
+after a gap; some carry no new simulated time because an input was applied. A
+presentation that jumps to each frame shows those irregularities as stutter,
+backward jumps and objects that freeze then teleport — identically on every
+screen.
+
+Instead, place each frame on the game's own timeline and draw a moment slightly
+behind the newest frame, interpolating between the frames either side of it.
+
+```js title="A playback buffer for any realtime game"
+const frames = [] // scenes ordered by simulation time t (ms)
+const gaps = []
+let playback = null // the simulation time being drawn
+let delay = 150 // ms behind the newest frame; adapts to the stream
+
+window.arcade = {
+  render(state, context) {
+    const scene = toScene(state, context)
+    const last = frames.at(-1)
+    if (last && scene.t < last.t - 500) {
+      // restart or new round
+      frames.length = 0
+      gaps.length = 0
+      playback = null
+    }
+    if (last && scene.t === last.t) {
+      // no time passed: newer facts
+      frames[frames.length - 1] = scene
+      return
+    }
+    if (last) {
+      gaps.push(scene.t - last.t)
+      if (gaps.length > 48) gaps.shift()
+      const sorted = [...gaps].sort((a, b) => a - b)
+      const p95 = sorted[Math.floor((sorted.length - 1) * 0.95)]
+      delay = Math.min(500, Math.max(100, p95 + 40))
+    }
+    frames.push(scene)
+    playback ??= scene.t - delay
+  },
+}
+
+let lastFrame = 0
+function animate(now) {
+  const dt = lastFrame ? Math.min(100, now - lastFrame) : 0
+  lastFrame = now
+  if (frames.length) {
+    const newest = frames.at(-1)
+    playback += dt
+    const drift = newest.t - delay - playback
+    // Jump when far off; otherwise nudge the rate by at most 8%.
+    playback +=
+      Math.abs(drift) > 750
+        ? drift
+        : Math.max(-dt * 0.08, Math.min(dt * 0.08, drift))
+    playback = Math.min(playback, newest.t + 120) // never extrapolate far
+    draw(sampleAt(playback))
+  }
+  requestAnimationFrame(animate)
+}
+requestAnimationFrame(animate)
+
+function sampleAt(t) {
+  while (frames.length > 2 && frames[1].t < t - 1000) frames.shift()
+  let a = frames[0],
+    b
+  for (const frame of frames) {
+    if (frame.t <= t) a = frame
+    else {
+      b = frame
+      break
+    }
+  }
+  if (!b) return a
+  const k = (t - a.t) / (b.t - a.t)
+  return {
+    ...a, // discrete facts: earlier frame
+    entities: a.entities.map((entity) => {
+      const next = b.entities.find((e) => e.seatId === entity.seatId) ?? entity
+      return {
+        ...entity,
+        x: lerp(entity.x, next.x, k),
+        y: lerp(entity.y, next.y, k),
+      }
+    }),
+  }
+}
+const lerp = (from, to, k) => from + (to - from) * k
+```
+
+- **Interpolate continuous values** such as positions, angles and speeds.
+- **Take discrete values from the earlier frame** — phase, scores, whose turn it
+  is, the winner — so the picture never shows an outcome before the motion that
+  caused it.
+- **Adapt the delay** to the stream. A delay just above the recent 95th
+  percentile gap hides jitter while keeping latency low.
+- **Compute deterministic parts locally.** Scenery and anything that moves on a
+  fixed pattern can be drawn for any instant from the same functions the rules
+  use (see [State and Performance](/docs/guides/designing-live-games/state-and-performance#keep-only-what-actions-change-in-state)),
+  so it never waits for a frame.
+
+Turn-based and simultaneous games rarely need a buffer, but animating the
+transition between two authoritative states still reads better than a jump cut.
+
+---
+
+## Send input with discipline
+
+- **Only while enabled.** Accept human input only when `context.inputEnabled` is
+  true. The host rejects presentation input while standard controls or an agent
+  control the seat. Clear held keys when input becomes disabled.
+- **Only on change.** Send an action when the seat's intent changes — a key goes
+  down or up, a target is chosen — never on every animation frame and never on
+  every render.
+- **Judge legality from the newest frame.** Playback lags slightly behind, so
+  decide whether an action is allowed from the newest authoritative frame, not
+  the frame on screen.
+- **No local simulation during live play.** The worker is authoritative. Local
+  prediction that disagrees with it produces corrections viewers can see.
+- **Never reset authoritative state from the browser**, and never resubmit held
+  input when a new frame arrives.
+
+Studio previews run your saved rules locally with the same contract, so a
+presentation that renders both shapes and plays back smoothly in Preview behaves
+the same way in a hosted match.

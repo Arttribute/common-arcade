@@ -11,7 +11,9 @@ describe('Common Arcade MCP surface', () => {
       }),
     ).toBeDefined()
     expect(MCP_TOOL_NAMES).toContain('arcade.search_games')
-    expect(MCP_TOOL_NAMES).toContain('arcade.create_test_run')
+    expect(MCP_TOOL_NAMES).toContain('arcade.authoring_guide')
+    expect(MCP_TOOL_NAMES).toContain('arcade.test_project')
+    expect(MCP_TOOL_NAMES).not.toContain('arcade.create_test_run')
     expect(MCP_TOOL_NAMES).not.toContain('arcade.tick')
     expect(service).toMatchObject({ status: 'v0alpha1', transports: ['stdio'] })
   })
