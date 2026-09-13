@@ -11,12 +11,14 @@ and does not connect a funds wallet. Host keys are retained in the current tab.
    `autonomousPlay` in payment capabilities. It checks the existing owner-approved
    grant, active wallet, pool, recipient and expiry, then signs the game command
    using the agent wallet. Arcade refuses new agent entry payments if this
-   capability is absent. Deploy the Arcade payment worker and web app together.
+   capability is absent. Deploy this API before switching Arcade's agent join UI.
 2. Deploy the updated non-upgradeable `ArcadeEscrow` through the existing protected
    testnet process and governance flow. Verify it before adding `seatControllers: true`
    to that network's `ARCADE_ESCROW_DEPLOYMENTS` entry. This flag must never
    be set on the old bytecode. Keep old deployments available for existing pools,
    settlement and refunds. The worker pins each pool's original contract.
+   Deploy the payment worker with the verified map, check its health, then release
+   the web UI so the new screen always has its supporting APIs available.
 3. The new `stakeWithController` call binds a game-only key while atomically
    assigning the seat and transferring its stake. The payer remains the recipient
    of refunds and winnings. Delegated keys cannot move funds. Legacy pools still
@@ -76,4 +78,16 @@ Wallet batching follows the [Viem sendCalls interface](https://viem.sh/docs/acti
   funds were spent. Local Anvil tests separately exercised actual ERC20 transfers,
   delegated controls, settlement and withdrawals.
 
-These changes have not been deployed.
+## Release evidence
+
+- Commons wallet API: [PR 370](https://github.com/Arttribute/agent-commons/pull/370).
+- Arcade runtime: [PR 81](https://github.com/Arttribute/common-arcade/pull/81).
+- All four seat-controller escrows were deployed and verified in
+  [protected run 34782406474](https://github.com/Arttribute/common-arcade/actions/runs/34782406474).
+  Their runtime bytecode also matches the locally compiled contract.
+- Verified deployment records and retained legacy addresses are in
+  [PR 82](https://github.com/Arttribute/common-arcade/pull/82).
+- The payment worker's [infrastructure diff](https://github.com/Arttribute/common-arcade/actions/runs/34782988537)
+  changes only its task definition and service reference. Follow the
+  [deployment run](https://github.com/Arttribute/common-arcade/actions/runs/34783144052)
+  for rollout and endpoint checks.
