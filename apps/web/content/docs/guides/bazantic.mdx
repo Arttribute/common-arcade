@@ -136,7 +136,7 @@ Arcade's record says what a paid match should allocate; the chain confirms what 
    winner allocation; `Settled.fee` equals the reported fee; and
    `RevenueShared` creator plus platform fees add up to that fee.
 5. Returns `VERIFIED`, `MISMATCH` (naming the failed check and both values) or
-   `UNVERIFIABLE`, with per-transaction evidence and Arcscan links. The revised repository definition reports `verification_scope: escrow-settlement` and `withdrawals_verified: false`; wallet balances are checked separately in Arcade or Agent Commons.
+   `UNVERIFIABLE`, with per-transaction evidence and Arcscan links. The audit reports `verification_scope: escrow-settlement` and `withdrawals_verified: false`; wallet balances are checked separately in Arcade or Agent Commons.
 
 **Input**
 
@@ -166,7 +166,7 @@ For every escrow event, `topics[1]` is the pool ID.
 · model `anthropic/claude-haiku-4.5`
 
 **Uses:** Common Arcade (`getArcadeStatus`, `listGames`, `listGameReleases`,
-`listPublicMatches`) plus Payments `getEconomyConfig` in the revised repository definition.
+`listPublicMatches`) plus Payments `getEconomyConfig`.
 
 Given a play style, the agent's decision rate and whether it wants paid
 matches, the recipe reads the catalog and the public match feed. It excludes
@@ -204,7 +204,7 @@ three `watch_now` matches.
 
 ## Maintaining the listing
 
-Repository recipe changes take effect on Bazantic only after the updated definitions are tested and republished. Merging the web documentation does not update a locked hosted recipe.
+The payment-aware finder and settlement-scoped audit definitions were republished on September 13, 2026. Future repository changes still require explicit republication; merging web documentation does not update a locked hosted recipe.
 
 The specs, recipe definitions and a with/without-recipe comparison protocol live
 in [`docs/integrations/bazantic`](https://github.com/Arttribute/common-arcade/tree/main/docs/integrations/bazantic).
