@@ -13,6 +13,7 @@ import {
 import { AgentComputerPanel } from './agent-computer-panel'
 import { ThumbnailField } from './thumbnail-field'
 import { StudioCodeEditor } from './studio-code-editor'
+import { ZOOM_MAX, ZOOM_MIN, usePreviewZoom } from './preview-zoom'
 import { ProjectSwitcher } from './project-switcher'
 import { SwitchField } from './ui/switch'
 import { CheckboxField } from './ui/checkbox'
@@ -499,7 +500,8 @@ export function GameStudio({
     }
   }
   const identity = useArcadeIdentity()
-  const [zoom, setZoom] = useState(1)
+  const { zoom, zoomIn, zoomOut, resetZoom, viewportRef, frameStyle } =
+    usePreviewZoom()
   const [user, setUser] = useState<{ id: string; name: string } | null>(null)
   const [project, setProject] = useState<StudioProject>()
   const [publication, setPublication] = useState<{
@@ -3087,13 +3089,29 @@ export function GameStudio({
                   },
                   tool === 'region',
                 )}
-                {icon(<span>−</span>, 'Zoom out', () =>
-                  setZoom((z) => Math.max(0.5, z - 0.1)),
-                )}
-                <span className="studio-help">{Math.round(zoom * 100)}%</span>
-                {icon(<span>+</span>, 'Zoom in', () =>
-                  setZoom((z) => Math.min(2, z + 0.1)),
-                )}
+                <CanvasToolButton
+                  label="Zoom out"
+                  onClick={zoomOut}
+                  disabled={zoom <= ZOOM_MIN}
+                >
+                  <span>−</span>
+                </CanvasToolButton>
+                <button
+                  type="button"
+                  className="studio-help studio-zoom-reset"
+                  onClick={resetZoom}
+                  title="Fit preview to stage"
+                  aria-label={`Zoom ${Math.round(zoom * 100)}%, reset to fit`}
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+                <CanvasToolButton
+                  label="Zoom in"
+                  onClick={zoomIn}
+                  disabled={zoom >= ZOOM_MAX}
+                >
+                  <span>+</span>
+                </CanvasToolButton>
                 {icon(<RotateCcw size={14} />, 'Restart preview', () =>
                   setPreviewKey((k) => k + 1),
                 )}
@@ -3181,122 +3199,118 @@ export function GameStudio({
                   : `${document.boardSize} × ${document.boardSize} · Turn based`}
               </span>
             </div>
-            <div
-              className="studio-preview-frame"
-              style={{
-                zoom,
-                width: '100%',
-                marginInline: 'auto',
-              }}
-            >
-              {browserRun && browserAction ? (
-                <div
-                  className={`studio-live-action${browserAction.fallback ? ' is-fallback' : ''}`}
-                  aria-live="polite"
-                >
-                  <Bot size={14} />
-                  <span>
-                    <strong>{browserAction.seat}</strong>
-                    {browserAction.action}
-                  </span>
-                  {browserAction.fallback ? (
-                    <small>service fallback</small>
-                  ) : null}
-                </div>
-              ) : null}
-              {/* A live browser run must keep the shared frame interactive so
+            <div className="studio-preview-viewport" ref={viewportRef}>
+              <div className="studio-preview-frame" style={frameStyle}>
+                {browserRun && browserAction ? (
+                  <div
+                    className={`studio-live-action${browserAction.fallback ? ' is-fallback' : ''}`}
+                    aria-live="polite"
+                  >
+                    <Bot size={14} />
+                    <span>
+                      <strong>{browserAction.seat}</strong>
+                      {browserAction.action}
+                    </span>
+                    {browserAction.fallback ? (
+                      <small>service fallback</small>
+                    ) : null}
+                  </div>
+                ) : null}
+                {/* A live browser run must keep the shared frame interactive so
                 its animation clocks run. The sibling shield blocks unlogged
                 pointer input without enabling the frame's freeze mode. */}
-              <CompiledArtifactFrame
-                recordingLabels={{
-                  start: (
-                    <>
-                      <Circle size={12} aria-hidden="true" /> Record interaction
-                    </>
-                  ),
-                  stop: (
-                    <>
-                      <Square size={12} aria-hidden="true" /> Stop recording
-                    </>
-                  ),
-                  dismissError: <X size={14} aria-hidden="true" />,
-                }}
-                key={previewKey}
-                ref={compiledRef}
-                onRecording={(recording) =>
-                  void saveInteractionRecording(recording)
-                }
-                preview={
-                  compiled.html
-                    ? { type: 'html', html: compiled.html }
-                    : {
-                        type: 'unavailable',
-                        error: `The source could not compile: ${compiled.error} Check the entry file and local imports, or ask your copilot to fix the project.`,
-                      }
-                }
-                interactive={tool === 'select' && !reviewingBrowserRun}
-                title={`${document.title} compiled game`}
-                revision={`${previewKey}:${view}:${run?.steps ?? 0}`}
-              />
-              {browserRun && !isManagedBrowserGame(document) ? (
-                <div
-                  className="studio-agent-input-shield"
-                  aria-hidden="true"
-                  title="Use the Test Arena controls while this session is running"
+                <CompiledArtifactFrame
+                  recordingLabels={{
+                    start: (
+                      <>
+                        <Circle size={12} aria-hidden="true" /> Record
+                        interaction
+                      </>
+                    ),
+                    stop: (
+                      <>
+                        <Square size={12} aria-hidden="true" /> Stop recording
+                      </>
+                    ),
+                    dismissError: <X size={14} aria-hidden="true" />,
+                  }}
+                  key={previewKey}
+                  ref={compiledRef}
+                  onRecording={(recording) =>
+                    void saveInteractionRecording(recording)
+                  }
+                  preview={
+                    compiled.html
+                      ? { type: 'html', html: compiled.html }
+                      : {
+                          type: 'unavailable',
+                          error: `The source could not compile: ${compiled.error} Check the entry file and local imports, or ask your copilot to fix the project.`,
+                        }
+                  }
+                  interactive={tool === 'select' && !reviewingBrowserRun}
+                  title={`${document.title} compiled game`}
+                  revision={`${previewKey}:${view}:${run?.steps ?? 0}`}
                 />
-              ) : null}
-              <AnnotationLayer
-                tool={view === 'test' ? 'select' : tool}
-                notes={visibleNotes}
-                onCreate={(g) => {
-                  const frame = compiledRef.current
-                  const moment = frame?.moment()
-                  annotationContext.current = frame
-                    ? Promise.all([
-                        frame.observe(),
-                        frame
-                          .snapshot()
-                          .then(async (snapshot) => {
-                            if (!project || dirty) return undefined
-                            const saved = await storeRecording(
-                              project.id,
-                              project.revision,
-                              snapshot,
-                              false,
-                            )
-                            setRecordingsRefresh((r) => r + 1)
-                            return saved.id
-                          })
-                          .catch((error) => {
-                            setNotice(
-                              error instanceof Error
-                                ? error.message
-                                : 'Could not save the annotation snapshot.',
-                            )
-                            return undefined
-                          }),
-                      ])
-                        .then(([observation, snapshotRecordingId]) => ({
-                          viewport: { width: 1280, height: 720 },
-                          moment,
-                          observation,
-                          snapshotRecordingId,
-                        }))
-                        .catch(() => ({
-                          viewport: { width: 1280, height: 720 },
-                          moment,
-                        }))
-                    : undefined
-                  setDraft(g)
-                  setRight('notes')
-                  showRightPanel(true)
-                }}
-                onSelect={(a) => {
-                  setRight('notes')
-                  showRightPanel(true)
-                  setNotice(a.body)
-                }}
-              />
+                {browserRun && !isManagedBrowserGame(document) ? (
+                  <div
+                    className="studio-agent-input-shield"
+                    aria-hidden="true"
+                    title="Use the Test Arena controls while this session is running"
+                  />
+                ) : null}
+                <AnnotationLayer
+                  tool={view === 'test' ? 'select' : tool}
+                  notes={visibleNotes}
+                  onCreate={(g) => {
+                    const frame = compiledRef.current
+                    const moment = frame?.moment()
+                    annotationContext.current = frame
+                      ? Promise.all([
+                          frame.observe(),
+                          frame
+                            .snapshot()
+                            .then(async (snapshot) => {
+                              if (!project || dirty) return undefined
+                              const saved = await storeRecording(
+                                project.id,
+                                project.revision,
+                                snapshot,
+                                false,
+                              )
+                              setRecordingsRefresh((r) => r + 1)
+                              return saved.id
+                            })
+                            .catch((error) => {
+                              setNotice(
+                                error instanceof Error
+                                  ? error.message
+                                  : 'Could not save the annotation snapshot.',
+                              )
+                              return undefined
+                            }),
+                        ])
+                          .then(([observation, snapshotRecordingId]) => ({
+                            viewport: { width: 1280, height: 720 },
+                            moment,
+                            observation,
+                            snapshotRecordingId,
+                          }))
+                          .catch(() => ({
+                            viewport: { width: 1280, height: 720 },
+                            moment,
+                          }))
+                      : undefined
+                    setDraft(g)
+                    setRight('notes')
+                    showRightPanel(true)
+                  }}
+                  onSelect={(a) => {
+                    setRight('notes')
+                    showRightPanel(true)
+                    setNotice(a.body)
+                  }}
+                />
+              </div>
             </div>
             <div className="studio-preview-footer">
               <span className="studio-status-dot" />
