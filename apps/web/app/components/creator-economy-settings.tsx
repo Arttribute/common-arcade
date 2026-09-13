@@ -1,7 +1,9 @@
 'use client'
 import { useState } from 'react'
 import {
-  gameMonetizationSchema,
+  platformGameMonetizationSchema,
+  CREATOR_SHARE_BPS,
+  SUCCESS_FEE_BPS,
   type GameMonetization,
 } from '@common-arcade/protocol'
 import { SwitchField } from './ui/switch'
@@ -17,11 +19,18 @@ export function CreatorEconomySettings({
   onChange: (value: GameMonetization) => void
   disabled?: boolean
 }) {
-  const policy = value ?? { mode: 'free' }
+  const policy: GameMonetization =
+    value?.mode === 'revenue-share'
+      ? {
+          ...value,
+          creatorShareBps: CREATOR_SHARE_BPS,
+          feeBps: SUCCESS_FEE_BPS,
+        }
+      : (value ?? { mode: 'free' })
   const [network, setNetwork] = useState<
     'base-sepolia' | 'arc-testnet' | 'hedera-testnet' | 'celo-sepolia'
   >('base-sepolia')
-  const validation = gameMonetizationSchema.safeParse(policy)
+  const validation = platformGameMonetizationSchema.safeParse(policy)
   const earningMode =
     policy.mode === 'revenue-share' && policy.allowedModes.length === 2
       ? 'both'
@@ -92,34 +101,26 @@ export function CreatorEconomySettings({
             </RadioGroup>
           </Field>
           <Field
-            label="Creator share of the success fee"
-            hint={`One 2.5% success fee. On a 10 USDC prize pool: 9.75 to the winner, ${(
-              (0.25 * policy.creatorShareBps) /
-              10000
-            ).toFixed(3)} to the creator pool (including source royalties), ${(
-              (0.25 * (10000 - policy.creatorShareBps)) /
-              10000
-            ).toFixed(
-              3,
-            )} to the platform. Draws and cancellations refund contributions without a fee.`}
+            label="Earnings split"
+            hint="Arcade sets one 2.5% success fee. On a 10 USDC pool: 9.75 goes to the winner, 0.175 to creators (including source royalties), and 0.075 to Arcade. Draws and cancellations have no success fee."
           >
-            <Select
-              ariaLabel="Creator share of the success fee"
-              disabled={disabled}
-              value={String(policy.creatorShareBps)}
-              onValueChange={(value) =>
-                onChange({ ...policy, creatorShareBps: Number(value) })
-              }
-            >
-              {[0, 5000, 7000, 9000].map((n) => (
-                <SelectOption
-                  key={n}
-                  value={String(n)}
-                  title={`${n / 100}% creator / ${(10000 - n) / 100}% platform`}
-                />
-              ))}
-            </Select>
+            <p className="field-hint">70% to creators · 30% to Arcade</p>
           </Field>
+          {value?.mode === 'revenue-share' &&
+            value.creatorShareBps !== CREATOR_SHARE_BPS && (
+              <p className="studio-notice" role="status">
+                This draft has older terms. New paid releases use the platform
+                split.{' '}
+                <button
+                  type="button"
+                  className="secondary compact"
+                  disabled={disabled}
+                  onClick={() => onChange(policy)}
+                >
+                  Apply current terms
+                </button>
+              </p>
+            )}
           <Field label="Payout network">
             <Select
               ariaLabel="Payout network"

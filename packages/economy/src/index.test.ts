@@ -8,6 +8,17 @@ import {
 } from './index.js'
 const contract = '0x1111111111111111111111111111111111111111'
 describe('optional game-neutral economy', () => {
+  it('rejects host overrides of the platform success fee', () => {
+    const payment = {
+      mode: 'escrow',
+      network: 'base-sepolia',
+      stakeUnits: '1000000',
+    }
+    expect(readEconomyConfig(payment)).toMatchObject({ feeBps: 250 })
+    for (const feeBps of [0, 100, 500, 1000])
+      expect(() => readEconomyConfig({ ...payment, feeBps })).toThrow()
+  })
+
   it('defaults to free and rejects implicit or mainnet activation', () => {
     expect(readEconomyConfig()).toEqual({ mode: 'free' })
     expect(() => readEconomyConfig({ network: 'base-sepolia' })).toThrow()

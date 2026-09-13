@@ -401,3 +401,46 @@ details[open] > .payment-summary > .payment-summary-chevron {
   max-width: 100%;
   white-space: normal;
 }
+
+.agent-network-balances {
+  display: grid;
+  gap: 12px;
+}
+.agent-network-balances > code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  color: var(--ink-muted);
+}
+.agent-network-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.agent-network-balance {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  min-width: 0;
+}
+.agent-network-balance > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.agent-network-balance strong {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.agent-network-balance small {
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 480px) {
+  .agent-network-grid {
+    grid-template-columns: 1fr;
+  }
+}

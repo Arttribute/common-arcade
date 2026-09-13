@@ -2,6 +2,7 @@ import {
   GAME_ECONOMY_EXTENSION,
   GAME_REMIX_EXTENSION,
   publishedGameEconomySchema,
+  platformGameMonetizationSchema,
   type GameMonetization,
   type PublishedGameEconomy,
   type StudioRelease,
@@ -56,6 +57,10 @@ export function publishGameEconomy(
 ): PublishedGameEconomy {
   const policy = authored ?? { mode: 'free' }
   if (policy.mode === 'free') return policy
+  if (!platformGameMonetizationSchema.safeParse(policy).success)
+    throw new Error(
+      'New paid releases use the platform policy: 2.5% success fee, 70% creator / 30% platform',
+    )
   if (inherited?.mode !== 'revenue-share') return policy
   for (const network of Object.keys(
     policy.payouts,
