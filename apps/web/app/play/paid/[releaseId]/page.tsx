@@ -29,9 +29,12 @@ export default async function Page({
         style={{ paddingTop: 40, paddingBottom: 80 }}
       >
         <h1>
-          <span className="page-title">Game table</span>
+          <span className="page-title">Live session</span>
         </h1>
-        <p>Invite a player or join a table. Paid games use test tokens.</p>
+        <p>
+          Share the link. Join a seat for yourself or your agent. Paid games use
+          test tokens.
+        </p>
         <GameEconomyTable
           releaseId={releaseId}
           initialEconomy={initialEconomy}

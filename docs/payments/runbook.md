@@ -349,3 +349,26 @@ eligibility requires actual Agent Stack usage. Local tests alone do not establis
 that requirement or bounty eligibility. Mainnet activation is not included.
 
 Active tables pin their executable release digest before funding. Drain active matches before changing the game/runtime implementation. A worker with a different blackjack release refuses to start or resume an older table; restore the matching image or let participants claim timeout refunds. Public match views retain the original digest. Published Studio documents are stored with the match, but the runtime compiler still needs compatible deployment versions.
+
+## Open paid lobbies
+
+New hosts omit `recipients` from the signed create body. The worker pins the host,
+release, terms and deployment before calling `createOpenMatch`. Hosts have no automatic
+seat. `stake` atomically assigns a registered open seat to its payer, including a zero-USDC
+join for sponsored games. Lock requires both seats joined. Bets may target occupied
+seats only and close on lock. Seat ownership and public receipt hashes are read from
+confirmed contract state, not browser submissions. Game time still belongs to the worker.
+
+Use `deploy-testnet.mjs NETWORK --revision=open-seats-v2` for dry-run validation and add
+`--broadcast` with the authorized testnet signer injected to deploy. Revision records
+retain pending hashes and bytecode hashes so a retry cannot silently redeploy changed
+bytecode. Keep the original records and `testnet-legacy.json`; configure them through
+`ARCADE_ESCROW_LEGACY_DEPLOYMENTS`. New records pin their deployment address; records
+predating this change resolve through the legacy map. Never remove old adapters while
+pools, refunds or withdrawals depend on them. New aggregate entries advertise `openSeats`.
+
+Commons requires migration 034 and the open-seat deposit validator before enabling the
+agent join flow: zero-cost joins are recorded separately from positive payment reservations,
+retain idempotency and revocation checks, and skip ERC20 approvals. Existing grant caps,
+network/asset/origin restrictions and owner authorization remain in force. The lobby
+prefills these fields and executes entry after explicit budget approval.

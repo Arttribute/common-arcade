@@ -23,6 +23,7 @@ export function createTableApi(host: MatchHost) {
   app.get('/v1/economy/config', (c) =>
     c.json({
       networks: host.configuredNetworks(),
+      openSeatNetworks: host.openSeatNetworks(),
       defaultMode: 'free',
       gameModes: ['turn-based', 'realtime'],
       testnetOnly: true,

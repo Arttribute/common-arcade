@@ -38,7 +38,11 @@ export function HostPaymentSettings({
       })
       .then((result) => {
         if (!controller.signal.aborted) {
-          setNetworks(Array.isArray(result.networks) ? result.networks : [])
+          setNetworks(
+            Array.isArray(result.openSeatNetworks)
+              ? result.openSeatNetworks
+              : [],
+          )
           setGameModes(
             Array.isArray(result.gameModes) ? result.gameModes : ['turn-based'],
           )

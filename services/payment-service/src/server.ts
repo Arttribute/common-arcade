@@ -27,19 +27,34 @@ const rails: PaidServiceRail[] = JSON.parse(
 const deployments: Partial<
   Record<
     PaymentNetwork,
-    { contract: Address; treasury?: Address; safe?: Address; rpcUrl?: string }
+    {
+      contract: Address
+      treasury?: Address
+      safe?: Address
+      rpcUrl?: string
+      openSeats?: boolean
+    }
   >
 > = JSON.parse(process.env.ARCADE_ESCROW_DEPLOYMENTS ?? '{}')
+const legacyDeployments: typeof deployments = JSON.parse(
+  process.env.ARCADE_ESCROW_LEGACY_DEPLOYMENTS ?? '{}',
+)
 const adapters: Record<string, MatchSettlementAdapter> = {}
-for (const [id, deployment] of Object.entries(deployments)) {
+for (const [key, deployment] of [
+  ...Object.entries(deployments),
+  ...Object.entries(legacyDeployments).map(
+    ([id, value]) => [`${id}:legacy`, value] as const,
+  ),
+]) {
+  const id = key.split(':')[0]!
   const network = NETWORKS[id as PaymentNetwork]
   if (!network?.testnet) throw new Error('Escrow service is testnet only')
   const treasury = deployment.treasury ?? deployment.safe
   if (!treasury || !isAddress(treasury) || /^0x0{40}$/i.test(treasury))
     throw new Error(`Missing or invalid treasury for ${id}`)
-  const key = process.env[`ARCADE_RESOLVER_KEY_${network.chain.id}`] as
+  const signingKey = process.env[`ARCADE_RESOLVER_KEY_${network.chain.id}`] as
     Hex | undefined
-  if (!key) throw new Error(`Missing resolver key for ${id}`)
+  if (!signingKey) throw new Error(`Missing resolver key for ${id}`)
   const reader = createPublicClient({
     chain: network.chain,
     transport: http(deployment.rpcUrl),
@@ -47,18 +62,20 @@ for (const [id, deployment] of Object.entries(deployments)) {
   const wallet = createWalletClient({
     chain: network.chain,
     transport: http(deployment.rpcUrl),
-    account: privateKeyToAccount(key),
+    account: privateKeyToAccount(signingKey),
   })
-  adapters[id] = createSettlementAdapter(
+  adapters[key] = createSettlementAdapter(
     {
       chainId: network.chain.id,
       contract: deployment.contract,
       token: network.token,
+      openSeats: deployment.openSeats,
     },
     reader,
     wallet,
     treasury,
   )
+  adapters[`${id}:${deployment.contract.toLowerCase()}`] = adapters[key]!
 }
 const host = new MatchHost(
   new FileMatchStore(process.env.ARCADE_PAYMENT_DATA_DIR ?? './.payment-data'),

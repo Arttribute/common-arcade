@@ -154,3 +154,18 @@ temporary administrator wallet. The production frontend rebuild consumes the
 configured payment URL.
 
 See [deployment runbook](runbook.md) for remaining network deployment commands.
+
+## Open-seat deployment revision
+
+`packages/contracts/deployments/open-seats-v2/` records four newly deployed testnet
+escrows with canonical USDC and the resolver authorized. Hedera association also
+succeeded. These enable atomic seat admission and staking after hosting a session.
+`compiler-input.json` retains the exact deployed Solidity source and compiler settings;
+subsequent source formatting changes metadata, not execution. The old deployments
+remain configured through `testnet-legacy.json` for existing pools and claims.
+
+Local validation passed the full payment suite with actual Anvil deposits for both
+legacy and open seats, plus browser hosting, scoped agent budget creation, automatic
+entry submission and explorer links. Browser wallet endpoints were mocked for that
+UI test; it is not proof of a live Commons backend deposit. Commons open-seat support
+is tracked in PR #368 and still depends on the existing AWS capacity/recovery issue.

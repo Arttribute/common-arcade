@@ -1,4 +1,5 @@
 'use client'
+import { hostPaidSession } from '../../lib/paid-session'
 import { PaymentSummary } from './payment-disclosure'
 import './payments.css'
 import { ArrowLeft, Code2, Copy, ExternalLink, Users } from 'lucide-react'
@@ -59,6 +60,11 @@ export function MatchLauncher({
   const [copied, setCopied] = useState(false)
   const [economy, setEconomy] = useState<EconomyConfig>({ mode: 'free' })
   const setup = useRef<HTMLDivElement>(null)
+  const paidCreation = useRef<{
+    id: string
+    releaseId: string
+    economy: EconomyConfig
+  }>(undefined)
   useEffect(() => {
     void fetch('/api/auth/session')
       .then((response) => response.json())
@@ -95,9 +101,19 @@ export function MatchLauncher({
     try {
       if (economy.mode === 'escrow') {
         const selection = economyConfigSchema.parse(economy)
-        router.push(
-          `/play/paid/${encodeURIComponent(releaseId)}?economy=${encodeURIComponent(JSON.stringify(selection))}`,
+        if (
+          JSON.stringify(paidCreation.current?.economy) !==
+            JSON.stringify(selection) ||
+          paidCreation.current?.releaseId !== releaseId
         )
+          paidCreation.current = {
+            id: crypto.randomUUID(),
+            releaseId,
+            economy: selection,
+          }
+        const match = await hostPaidSession(paidCreation.current!)
+        paidCreation.current = undefined
+        router.push(`/play/${encodeURIComponent(match.id)}?paid=1`)
         return
       }
       const match = await browserControlClient().createMatch({
@@ -427,9 +443,7 @@ export function MatchLauncher({
                         ? 'Preparing room…'
                         : browserGame
                           ? 'Open creator workspace or remix'
-                          : economy.mode === 'escrow'
-                            ? 'Continue to paid lobby'
-                            : 'Host a live session'}
+                          : 'Host a live session'}
                     </button>
                   </div>
                 ) : (

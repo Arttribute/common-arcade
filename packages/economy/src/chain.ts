@@ -21,6 +21,7 @@ export interface EscrowDeployment {
   chainId: number
   contract: Address
   token: Address
+  openSeats?: boolean
   confirmations?: number
 }
 /** Wallet-agnostic boundary: humans, agent key custody, and Safe can submit the same calls. */

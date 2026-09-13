@@ -1,22 +1,26 @@
 {
   "base-sepolia": {
-    "contract": "0x45699ed8ccda0d7b29008e7af90e287a79de08de",
+    "contract": "0x3b3a3302effb91631a25732582e8823879690f85",
     "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
-    "rpcUrl": "https://sepolia.base.org"
+    "rpcUrl": "https://sepolia.base.org",
+    "openSeats": true
   },
   "arc-testnet": {
-    "contract": "0xbe529edf75ebeb609dcf7ab26783dc558b735851",
+    "contract": "0xd912b9b7715d7dcefb2b65daf876ca6efc8e3ce9",
     "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
-    "rpcUrl": "https://rpc.testnet.arc.io"
+    "rpcUrl": "https://rpc.testnet.arc.io",
+    "openSeats": true
   },
   "hedera-testnet": {
-    "contract": "0xbe529edf75ebeb609dcf7ab26783dc558b735851",
+    "contract": "0x15f3eb03fce4b11ae62df7e6e03ba63ead94d875",
     "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
-    "rpcUrl": "https://testnet.hashio.io/api"
+    "rpcUrl": "https://testnet.hashio.io/api",
+    "openSeats": true
   },
   "celo-sepolia": {
-    "contract": "0xbe529edf75ebeb609dcf7ab26783dc558b735851",
+    "contract": "0x957e41e77ac48bcef425d24eed903133b398b23c",
     "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
-    "rpcUrl": "https://forno.celo-sepolia.celo-testnet.org"
+    "rpcUrl": "https://forno.celo-sepolia.celo-testnet.org",
+    "openSeats": true
   }
 }
