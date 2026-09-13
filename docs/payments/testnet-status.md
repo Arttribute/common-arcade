@@ -1,15 +1,17 @@
-# Testnet deployment status — 2026-09-10
+# Testnet deployment status — 2026-09-13
 
-> **Update 2026-09-13.** `GET /v1/economy/config` on the hosted endpoint lists
-> all four networks (base-sepolia, arc-testnet, hedera-testnet, celo-sepolia).
-> `POST /v1/analysis/{network}` returns a valid x402 v2 challenge on every one
-> of them (10 atomic USDC units per unseen card). The settled Arc match
-> `mat_b0018dc5-6c0b-4978-a914-305de6f20090` is publicly readable at
-> `/v1/economy/matches/:id`. Its three transactions decode onchain to
-> `MatchCreated`, `Locked` and `Settled` (prize 9750, fee 250), matching the
-> reported accounting. Celo and Hedera paid-match checks are still unfunded.
-> Public user documentation now lives at
-> [`/docs/guides/payments`](https://arcade.agentcommons.io/docs/guides/payments).
+The hosted payment service advertises Base Sepolia, Arc Testnet, Hedera Testnet
+and Celo Sepolia. Funded contract checks and hosted game payouts passed on Base,
+Arc and Celo. Hedera remains configured, but its funded checks are unverified;
+the administrator has no canonical test USDC. No Hedera swap is planned.
+
+The payment worker, control API and realtime service were deployed from main
+on September 13. The wallet UI is live on Arcade and Agent Commons. The separate
+Commons API update is blocked by AWS rollout capacity; its previous healthy
+version remains active. A frontend deployment does not establish backend rollout.
+
+Public user documentation lives at
+[`/docs/guides/payments`](https://arcade.agentcommons.io/docs/guides/payments).
 
 Temporary administrator, deployer, treasury and resolver:
 `0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab`.
@@ -17,12 +19,12 @@ The supplied key was checked against this address. The hosted worker receives
 it from AWS Secrets Manager; deployment tools load it into process memory.
 No key is included in source or deployment records.
 
-| Network                | Status                                                                                                                  |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Base Sepolia, 84532    | Escrow deployed; canonical USDC and resolver authorized; escrow and x402 public-chain checks passed.                    |
-| Arc Testnet, 5042002   | Escrow deployed; USDC and resolver authorized; full escrow and x402 public-chain checks passed.                         |
-| Hedera Testnet, 296    | Escrow deployed; USDC/resolver authorized; escrow and treasury associated with USDC. Payment checks await USDC funding. |
-| Celo Sepolia, 11142220 | Escrow deployed; canonical USDC/resolver authorized; dedicated facilitator funded. Paid checks await USDC funding.      |
+| Network                | Status                                                                                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base Sepolia, 84532    | Escrow deployed; canonical USDC and resolver authorized; escrow and x402 public-chain checks passed.                                         |
+| Arc Testnet, 5042002   | Escrow deployed; USDC and resolver authorized; full escrow and x402 public-chain checks passed.                                              |
+| Hedera Testnet, 296    | Escrow deployed; USDC/resolver authorized; escrow and treasury associated with USDC. Payment checks await USDC funding.                      |
+| Celo Sepolia, 11142220 | Escrow deployed; canonical USDC/resolver authorized; dedicated facilitator funded. Funded contract lifecycle and hosted game payouts passed. |
 
 ## Public backend and frontend
 
@@ -55,9 +57,34 @@ Escrow: [0xbe529edf75ebeb609dcf7ab26783dc558b735851](https://celo-sepolia.blocks
 are recorded separately. Its gas-funded facilitator is
 `0xe4886e4AE8Cc1197689dbd80D4596A0DCF855a26`.
 
-Celo and Hedera USDC payment checks require token funding. CELO and HBAR pay
-network gas; neither replaces the USDC needed for the payment tests. Circle's
-faucet required human verification when automated Hedera funding was attempted.
+Hedera USDC payment checks still require token funding. HBAR pays network gas;
+it does not replace the USDC needed for game deposits. Celo received test USDC
+and completed its funded checks. Hedera funding work is paused at the user’s
+request; support remains visible without claiming funded verification.
+
+## Latest hosted payment verification
+
+Each match used two independently signed player wallets and a 0.001 test-USDC
+sponsor deposit. Settlement, actual withdrawals, durable replay and unused
+allowance cleanup passed:
+
+- [Base Sepolia match](https://d2scptqzm55h6p.cloudfront.net/v1/economy/matches/mat_36541aa9-f985-4a47-b46d-aa9d22c1f528)
+- [Arc Testnet match](https://d2scptqzm55h6p.cloudfront.net/v1/economy/matches/mat_9cab8d4b-4037-4371-b394-05a5d4e09b45)
+- [Celo Sepolia match](https://d2scptqzm55h6p.cloudfront.net/v1/economy/matches/mat_4d47a3e3-f3d1-4735-aa06-1da88e8ed8cc)
+
+A [published Neon Duel: Tactics match](https://d2scptqzm55h6p.cloudfront.net/v1/economy/matches/mat_32168aaf-321d-4d8f-b272-a14c6f1f8364)
+also passed on Base Sepolia. Its 1,000 atomic-unit pool allocated 975 to the winner,
+17 to the creator and 8 to the platform, including integer rounding of the fixed
+70/30 success-fee split. Both the
+[winner/platform withdrawal](https://sepolia.basescan.org/tx/0x9214891c5ae96c575dc536974a3974999a358ae3aa26ff913946efb1b385358d)
+and the separate
+[creator withdrawal](https://sepolia.basescan.org/tx/0xec07a74f11ae34c316022cd11660925c7522061c1af25372d9138d0a161b6692)
+were confirmed.
+
+Separate funded contract checks on all three networks covered stakes, bounties,
+spectator bets, settlement, claims, withdrawals, void refunds and balance
+conservation. These results do not establish Hedera funded payments or a
+production browser wallet-approval walkthrough.
 
 ## Base Sepolia evidence
 

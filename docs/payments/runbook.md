@@ -4,8 +4,8 @@
 
 Free play remains the default. Studio authors and agents can publish optional
 sponsored or staked matches. One 2.5% success fee is split between creator and
-platform (default 70/30). A 10 USDC prize pool pays 9.75 to the winner, 0.175 to
-creator earnings and 0.075 to the Safe treasury. Spectator fees apply to the
+platform (fixed 70/30 for new releases; creators cannot configure this split). A 10 USDC prize pool pays 9.75 to the winner, 0.175 to
+creator earnings and 0.075 to the configured platform treasury. Spectator fees apply to the
 losing pool only. Draws, cancelled matches and expired unfilled matches refund
 contributions. Spectators claim separately from players/sponsors.
 
