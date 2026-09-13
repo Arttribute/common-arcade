@@ -31,9 +31,16 @@ Games remain independent of blockchains; only the match economy adapter signs.
 `GET /v1/economy/config` advertises `gameModes: ["turn-based", "realtime"]`.
 The frontend leaves realtime formats disabled until this capability is present.
 Release digests, two-player compatibility, published payment formats and payout
-addresses are validated before pool creation. `ARCADE_PAYMENT_CREATORS` remains
-an allowlist for hosts spending resolver gas; deployment includes the approved
-creator wallet `0x9AE39751dD3ABc21f7ebB1d278D9b178B0837ca5`.
+addresses are validated before pool creation. The live testnet deployment sets
+`ARCADE_PAYMENT_HOSTING=public`: any wallet can host with a valid expiring signature.
+No wallet enrollment is required. The browser wallet picker uses EIP-6963 discovery
+with legacy injection fallback, so the selected extension handles hosting, seat
+stakes, prize funding, spectator bets, refunds and withdrawals. Account changes
+clear the previous seat identity. Compatible smart-wallet signatures are verified
+on the session network through the RPC client; invalid signatures fail closed.
+Host-only and seated-player permissions still apply. Discovery follows
+[EIP-6963](https://eips.ethereum.org/EIPS/eip-6963); wallets must expose an EVM
+provider to the browser. No WalletConnect/mobile deep-link integration is implied.
 
 After deposits and the host's signed `start`, a seated wallet signs the existing
 command envelope with operation `realtime-session`, body `{}`, and the service
@@ -266,8 +273,9 @@ Configure `ARCADE_ESCROW_DEPLOYMENTS` as a JSON map, for example:
 
 Set `ARCADE_RESOLVER_KEY_84532` (or `_5042002`, `_296`), HTTPS
 `ARCADE_PAYMENT_DOMAIN`, allowed `ARCADE_PAYMENT_ORIGINS`, and
-`ARCADE_PAYMENT_CREATORS` (comma-separated preview creator EOAs). An empty creator
-list denies paid creation. The service is one worker with a durable private
+`ARCADE_PAYMENT_HOSTING=public` for open testnet hosting. For a private deployment,
+leave hosting unset or use `restricted` and configure `ARCADE_PAYMENT_CREATORS`
+(comma-separated allowed host addresses); an empty restricted list denies paid creation. The service is one worker with a durable private
 volume; do not horizontally scale its file store or share resolver keys between
 workers. Use an encrypted disk, backups, HTTPS/WebSocket reverse proxy and
 connection/request limits. No private checkpoint, seed or key goes into public

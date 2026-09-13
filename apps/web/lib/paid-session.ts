@@ -1,15 +1,9 @@
-import { createWalletClient, custom, type EIP1193Provider } from 'viem'
+import { connectedPaymentWallet } from './browser-wallets'
 import { economyConfigSchema, type EconomyConfig } from '@common-arcade/economy'
 
 export const paymentService =
   process.env.NEXT_PUBLIC_ARCADE_PAYMENTS_URL ??
   (process.env.NODE_ENV === 'development' ? 'http://localhost:4021' : '')
-export function paymentProvider() {
-  const provider = (window as unknown as { ethereum?: EIP1193Provider })
-    .ethereum
-  if (!provider) throw new Error('Connect an EVM wallet to continue.')
-  return provider
-}
 /** The caller retains the body across retries so a lost response cannot create a second pool. */
 export async function hostPaidSession(input: {
   id: string
@@ -22,9 +16,10 @@ export async function hostPaidSession(input: {
     economy: economyConfigSchema.parse(input.economy),
   }
   if (!paymentService) throw new Error('Paid sessions are unavailable')
-  const wallet = createWalletClient({ transport: custom(paymentProvider()) })
-  const [address] = await wallet.requestAddresses()
-  if (!address) throw new Error('Connect a wallet to host this session')
+  const wallet = await connectedPaymentWallet(
+    body.economy.mode === 'escrow' ? body.economy.network : undefined,
+  )
+  const address = wallet.account.address
   const expiresAt = Date.now() + 60000
   const signature = await wallet.signMessage({
     account: address,

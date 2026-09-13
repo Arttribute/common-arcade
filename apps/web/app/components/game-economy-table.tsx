@@ -1,4 +1,9 @@
 'use client'
+import { BrowserWalletPicker, useBrowserWallet } from './browser-wallet-picker'
+import {
+  paymentProvider as provider,
+  connectedPaymentWallet,
+} from '../../lib/browser-wallets'
 import { hostPaidSession } from '../../lib/paid-session'
 import { PaidSeatJoin } from './paid-seat-join'
 import { PaymentSummary } from './payment-disclosure'
@@ -13,7 +18,6 @@ import {
   custom,
   http,
   type Address,
-  type EIP1193Provider,
   type Hex,
 } from 'viem'
 import {
@@ -80,14 +84,6 @@ interface Table {
   settlementDeadline?: number
   replay?: unknown
 }
-function provider() {
-  const value = (window as unknown as { ethereum?: EIP1193Provider }).ethereum
-  if (!value)
-    throw new Error(
-      'Connect an EVM wallet extension to play. Spectating needs no wallet.',
-    )
-  return value
-}
 export function GameEconomyTable({
   releaseId,
   matchId,
@@ -97,6 +93,7 @@ export function GameEconomyTable({
   matchId?: string
   initialEconomy?: EconomyConfig
 } = {}) {
+  const { provider: selectedProvider } = useBrowserWallet()
   const [localReceipts, setLocalReceipts] = useState<
     { operation: string; hash: Hex }[]
   >([])
@@ -146,12 +143,12 @@ export function GameEconomyTable({
     return address!
   }
   async function auth(id: string, operation: string, body: unknown) {
-    const address = account ?? (await connect()),
+    const wallet = await connectedPaymentWallet(
+      table?.economy.mode === 'escrow' ? table.economy.network : undefined,
+    )
+    const address = wallet.account.address,
       expiresAt = Date.now() + 60000
-    const wallet = createWalletClient({
-      transport: custom(provider()),
-      account: address,
-    })
+    setAccount(address)
     const signature = await wallet.signMessage({
       message: JSON.stringify({
         domain: service,
@@ -232,30 +229,24 @@ export function GameEconomyTable({
     }
   }, [table?.id, table?.stage, table?.openSeats])
   useEffect(() => {
-    const ethereum = (
-      window as unknown as {
-        ethereum?: {
-          on?: (event: string, listener: (accounts: string[]) => void) => void
-          removeListener?: (
-            event: string,
-            listener: (accounts: string[]) => void,
-          ) => void
-        }
-      }
-    ).ethereum
+    let active = true
+    setAccount(undefined)
+    setObservation(undefined)
     const changed = (accounts: string[]) => {
+      if (!active) return
       setAccount(accounts[0] as Address | undefined)
       setObservation(undefined)
     }
-    try {
-      void provider()
-        .request({ method: 'eth_accounts' })
-        .then((value) => changed(value as string[]))
-        .catch(() => {})
-    } catch {}
-    ethereum?.on?.('accountsChanged', changed)
-    return () => ethereum?.removeListener?.('accountsChanged', changed)
-  }, [])
+    void selectedProvider
+      ?.request({ method: 'eth_accounts' })
+      .then((value) => changed(value as string[]))
+      .catch(() => {})
+    selectedProvider?.on?.('accountsChanged', changed)
+    return () => {
+      active = false
+      selectedProvider?.removeListener?.('accountsChanged', changed)
+    }
+  }, [selectedProvider])
   async function create() {
     if (economy.mode === 'free') {
       const address = account ?? (await connect())
@@ -358,20 +349,10 @@ export function GameEconomyTable({
   ) {
     if (!table?.deployment || !table.pool || table.economy.mode !== 'escrow')
       return
-    const address = account ?? (await connect()),
-      config = NETWORKS[table.economy.network],
-      wallet = createWalletClient({
-        account: address,
-        chain: config.chain,
-        transport: custom(provider()),
-      })
-    try {
-      await wallet.switchChain({ id: config.chain.id })
-    } catch (error) {
-      if ((error as { code?: number }).code === 4902)
-        await wallet.addChain({ chain: config.chain })
-      else throw error
-    }
+    const config = NETWORKS[table.economy.network]
+    const wallet = await connectedPaymentWallet(table.economy.network)
+    const address = wallet.account.address
+    setAccount(address)
     const adapter = createViemAdapter(
         table.deployment,
         wallet,
@@ -440,21 +421,24 @@ export function GameEconomyTable({
   const ended =
     table?.stage === 'settled' || table?.stage === 'settlement-pending'
   const connectButton = (
-    <button
-      className={account ? 'secondary' : 'primary'}
-      disabled={busy}
-      onClick={() =>
-        run(async () => {
-          await connect()
-        })
-      }
-    >
-      {account
-        ? `${account.slice(0, 8)}…${account.slice(-6)}`
-        : ended
-          ? 'Connect wallet to claim'
-          : 'Connect wallet'}
-    </button>
+    <>
+      <BrowserWalletPicker disabled={busy} />
+      <button
+        className={account ? 'secondary' : 'primary'}
+        disabled={busy}
+        onClick={() =>
+          run(async () => {
+            await connect()
+          })
+        }
+      >
+        {account
+          ? `${account.slice(0, 8)}…${account.slice(-6)}`
+          : ended
+            ? 'Connect wallet to claim'
+            : 'Connect wallet'}
+      </button>
+    </>
   )
   return (
     <div className="game-economy-table">

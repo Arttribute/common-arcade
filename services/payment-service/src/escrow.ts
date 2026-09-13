@@ -27,6 +27,11 @@ export interface PoolTerms {
 }
 export interface MatchSettlementAdapter {
   deployment: EscrowDeployment
+  verifySignature?(input: {
+    address: Address
+    message: string
+    signature: Hex
+  }): Promise<boolean>
   create(terms: PoolTerms): Promise<Hex>
   lock(id: Hex): Promise<Hex | undefined>
   settle(
@@ -112,6 +117,7 @@ export function createSettlementAdapter(
     return operation
   }
   return {
+    verifySignature: (input) => reader.verifyMessage(input),
     deployment,
     async create(t) {
       const existing = await read(t.id)

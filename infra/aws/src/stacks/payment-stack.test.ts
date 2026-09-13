@@ -57,6 +57,15 @@ describe('PaymentStack', () => {
     const payment = containers.find(
       (c: { Name: string }) => c.Name === 'payments',
     )
+    expect(payment.Environment).toContainEqual({
+      Name: 'ARCADE_PAYMENT_HOSTING',
+      Value: 'public',
+    })
+    expect(
+      payment.Environment.some(
+        (entry: { Name: string }) => entry.Name === 'ARCADE_PAYMENT_CREATORS',
+      ),
+    ).toBe(false)
     expect(payment.DependsOn).toHaveLength(containers.length - 1)
     expect(payment.Secrets.map((s: { Name: string }) => s.Name)).toEqual(
       expect.arrayContaining([

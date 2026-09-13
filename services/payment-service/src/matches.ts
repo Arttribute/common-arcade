@@ -133,6 +133,7 @@ export class MatchHost {
     operation: string,
     body: unknown,
     auth: SignedCommand,
+    network?: string,
   ) {
     const now = Date.now()
     if (
@@ -141,19 +142,20 @@ export class MatchHost {
       auth.expiresAt > now + 300_000
     )
       throw new Error('Signature expired or validity too long')
-    if (
-      !(await verifyMessage({
-        address: auth.address,
-        message: commandMessage(
-          id,
-          operation,
-          body,
-          auth.expiresAt,
-          this.domain,
-        ),
-        signature: auth.signature,
-      }))
-    )
+    const input = {
+      address: auth.address,
+      message: commandMessage(id, operation, body, auth.expiresAt, this.domain),
+      signature: auth.signature,
+    }
+    if (await verifyMessage(input).catch(() => false)) return
+    // Smart-wallet signatures must be checked on this session's chain.
+    const record = network ? undefined : await this.store.get<TableRecord>(id)
+    const adapter = network
+      ? this.adapters[network]
+      : record
+        ? this.adapter(record)
+        : undefined
+    if (!(await adapter?.verifySignature?.(input).catch(() => false)))
       throw new Error('Invalid wallet signature')
   }
   private adapter(record: TableRecord) {
@@ -180,7 +182,13 @@ export class MatchHost {
       id = `mat_${body.id}`
     if (body.economy.mode === 'escrow' && body.economy.feeBps !== 250)
       throw new Error('The platform fee is 250 basis points')
-    await this.verify(id, 'create', body, auth)
+    await this.verify(
+      id,
+      'create',
+      body,
+      auth,
+      body.economy.mode === 'escrow' ? body.economy.network : undefined,
+    )
     if (!body.recipients && body.economy.mode !== 'escrow')
       throw new Error('Open lobbies require a paid session')
     if (

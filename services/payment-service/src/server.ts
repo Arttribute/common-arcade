@@ -1,3 +1,4 @@
+import { paidHostAllowlist } from './hosting-policy.js'
 import { attachPaymentSocket } from './realtime-socket.js'
 import { releaseLoader } from './releases.js'
 import { serve } from '@hono/node-server'
@@ -82,11 +83,9 @@ const host = new MatchHost(
   adapters,
   process.env.ARCADE_PAYMENT_DOMAIN ?? 'http://localhost:4021',
   undefined,
-  new Set(
-    (process.env.ARCADE_PAYMENT_CREATORS ?? '')
-      .split(',')
-      .map((a) => a.trim().toLowerCase())
-      .filter(Boolean),
+  paidHostAllowlist(
+    process.env.ARCADE_PAYMENT_HOSTING,
+    process.env.ARCADE_PAYMENT_CREATORS,
   ),
   process.env.ARCADE_REGISTRY_URL
     ? releaseLoader(process.env.ARCADE_REGISTRY_URL)
