@@ -44,18 +44,11 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    },
-                    "testnetOnly": {
-                      "type": "boolean"
-                    }
+                    "ok": { "type": "boolean" },
+                    "testnetOnly": { "type": "boolean" }
                   }
                 },
-                "example": {
-                  "ok": true,
-                  "testnetOnly": true
-                }
+                "example": { "ok": true, "testnetOnly": true }
               }
             }
           }
@@ -79,17 +72,10 @@
                   "properties": {
                     "networks": {
                       "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Network"
-                      }
+                      "items": { "$ref": "#/components/schemas/Network" }
                     },
-                    "defaultMode": {
-                      "type": "string",
-                      "enum": ["free"]
-                    },
-                    "testnetOnly": {
-                      "type": "boolean"
-                    }
+                    "defaultMode": { "type": "string", "enum": ["free"] },
+                    "testnetOnly": { "type": "boolean" }
                   }
                 },
                 "example": {
@@ -120,10 +106,7 @@
             "in": "path",
             "required": true,
             "description": "Paid match identifier, `mat_` followed by a UUID.",
-            "schema": {
-              "type": "string",
-              "pattern": "^mat_[0-9a-f-]{36}$"
-            },
+            "schema": { "type": "string", "pattern": "^mat_[0-9a-f-]{36}$" },
             "example": "mat_b0018dc5-6c0b-4978-a914-305de6f20090"
           }
         ],
@@ -132,9 +115,7 @@
             "description": "Paid match record.",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaidMatch"
-                }
+                "schema": { "$ref": "#/components/schemas/PaidMatch" }
               }
             }
           },
@@ -144,11 +125,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
+                  "properties": { "error": { "type": "string" } }
                 }
               }
             }
@@ -177,19 +154,10 @@
         "type": "object",
         "required": ["id", "stage"],
         "properties": {
-          "id": {
-            "type": "string"
-          },
-          "game": {
-            "type": "string",
-            "description": "Game title."
-          },
-          "releaseId": {
-            "type": "string"
-          },
-          "releaseDigest": {
-            "type": "string"
-          },
+          "id": { "type": "string" },
+          "game": { "type": "string", "description": "Game title." },
+          "releaseId": { "type": "string" },
+          "releaseDigest": { "type": "string" },
           "stage": {
             "type": "string",
             "enum": [
@@ -203,32 +171,17 @@
           "economy": {
             "type": "object",
             "properties": {
-              "mode": {
-                "type": "string",
-                "enum": ["escrow"]
-              },
-              "network": {
-                "$ref": "#/components/schemas/Network"
-              },
-              "stakeUnits": {
-                "$ref": "#/components/schemas/Units"
-              },
-              "bounties": {
-                "type": "boolean"
-              },
-              "spectatorBets": {
-                "type": "boolean"
-              },
+              "mode": { "type": "string", "enum": ["escrow"] },
+              "network": { "$ref": "#/components/schemas/Network" },
+              "stakeUnits": { "$ref": "#/components/schemas/Units" },
+              "bounties": { "type": "boolean" },
+              "spectatorBets": { "type": "boolean" },
               "feeBps": {
                 "type": "integer",
                 "description": "Success fee in basis points of the prize pool (250 = 2.5%)."
               },
-              "fundingSeconds": {
-                "type": "integer"
-              },
-              "settlementSeconds": {
-                "type": "integer"
-              }
+              "fundingSeconds": { "type": "integer" },
+              "settlementSeconds": { "type": "integer" }
             }
           },
           "pool": {
@@ -238,9 +191,7 @@
           "deployment": {
             "type": "object",
             "properties": {
-              "chainId": {
-                "type": "integer"
-              },
+              "chainId": { "type": "integer" },
               "contract": {
                 "type": "string",
                 "description": "ArcadeEscrow contract address."
@@ -253,9 +204,7 @@
           },
           "recipients": {
             "type": "array",
-            "items": {
-              "type": "string"
-            },
+            "items": { "type": "string" },
             "description": "The two player wallet addresses committed before funding. Creator and royalty terms are in revenue; allocations include the platform."
           },
           "revenue": {
@@ -270,18 +219,10 @@
                 "enum": ["allocated", "refundable"],
                 "description": "`refundable` means a draw or void: contributions are returned and no fee is taken."
               },
-              "prizePoolUnits": {
-                "$ref": "#/components/schemas/Units"
-              },
-              "spectatorPoolUnits": {
-                "$ref": "#/components/schemas/Units"
-              },
-              "feeUnits": {
-                "$ref": "#/components/schemas/Units"
-              },
-              "spectatorPayoutUnits": {
-                "$ref": "#/components/schemas/Units"
-              },
+              "prizePoolUnits": { "$ref": "#/components/schemas/Units" },
+              "spectatorPoolUnits": { "$ref": "#/components/schemas/Units" },
+              "feeUnits": { "$ref": "#/components/schemas/Units" },
+              "spectatorPayoutUnits": { "$ref": "#/components/schemas/Units" },
               "allocations": {
                 "type": "array",
                 "items": {
@@ -291,12 +232,8 @@
                       "type": "string",
                       "enum": ["winner", "creator", "royalty", "platform"]
                     },
-                    "recipient": {
-                      "type": "string"
-                    },
-                    "amountUnits": {
-                      "$ref": "#/components/schemas/Units"
-                    }
+                    "recipient": { "type": "string" },
+                    "amountUnits": { "$ref": "#/components/schemas/Units" }
                   }
                 }
               }
@@ -308,22 +245,15 @@
           },
           "transactions": {
             "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^0x[0-9a-fA-F]{64}$"
-            },
+            "items": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
             "description": "Transaction hashes submitted by the payment service for this pool, in order."
           },
           "commitment": {
             "type": "string",
             "description": "Commitment to the secret shuffle published before funding."
           },
-          "rulesHash": {
-            "type": "string"
-          },
-          "rules": {
-            "type": "string"
-          },
+          "rulesHash": { "type": "string" },
+          "rules": { "type": "string" },
           "seed": {
             "type": "string",
             "description": "Revealed seed once the match completes."
@@ -336,18 +266,9 @@
             "type": "integer",
             "description": "Unix seconds."
           },
-          "events": {
-            "type": "array",
-            "items": {
-              "type": "object"
-            }
-          },
-          "state": {
-            "type": "object"
-          },
-          "replay": {
-            "type": "object"
-          }
+          "events": { "type": "array", "items": { "type": "object" } },
+          "state": { "type": "object" },
+          "replay": { "type": "object" }
         }
       }
     }
