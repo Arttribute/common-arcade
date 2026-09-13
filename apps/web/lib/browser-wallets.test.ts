@@ -1,4 +1,9 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, expect, it, vi } from 'vitest'
+
+// Cold SDK loading can exceed five seconds during parallel workspace CI.
+beforeAll(async () => {
+  await import('./browser-wallets')
+}, 30000)
 
 afterEach(() => {
   vi.unstubAllGlobals()
