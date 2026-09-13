@@ -360,14 +360,15 @@
  * Agent Commons' studio page title: bold 16px type sitting fully inside a
  * marker highlight.
  *
- * Arcade's signature is one electric tangerine — a colour neither Commons app
- * uses — spent the way Commons spends colour: vividly, in one place at a time.
- * It marks the logo, page titles, hero highlights and the hero animation, and
- * never chrome, borders or buttons. --hl-secondary is its lighter tint, used
- * only inside the animation. Ink text on it is 6.9:1. */
+ * Arcade's signature is a bright marigold orange, pulled toward yellow so black
+ * type sits on it cleanly (11:1), with an electric sky blue as its complement
+ * (10:1). Colour is spent the way Commons spends it — vividly, one place at a
+ * time: marigold marks the logo and page titles; the pair appear together only
+ * where there is room to play (the landing hero, its animation, Studio's
+ * prompt). Neither is ever used for chrome, borders or buttons. */
 :root {
-  --hl-primary: #ff7849;
-  --hl-secondary: #ffb899;
+  --hl-primary: #ffb547;
+  --hl-secondary: #6cb6ff;
   --title-highlight: var(--hl-primary);
   --title-highlight-ink: #0c0a09;
   --highlight-warm: var(--hl-secondary);
@@ -1518,8 +1519,8 @@
   background: var(--title-highlight);
   color: var(--title-highlight-ink);
 }
-.arcade .hero-mark.is-warm {
-  background: var(--title-highlight);
+.arcade .hero-mark.is-cool {
+  background: var(--hl-secondary);
 }
 .hero-foot {
   display: flex;
@@ -1700,14 +1701,52 @@
   margin: 0 var(--space-1) var(--space-3);
 }
 /* Closed, the sidebar keeps the mark on top and the toggle beneath it. */
+/* Closed, the rail shows icons only. (This rule was lost with the old
+   wordmark clean-up, which is what let labels spill out of the rail.) */
+.arcade .app-sidebar.is-collapsed .nav-links a span,
+.arcade .app-sidebar.is-collapsed .arcade-account-name,
+.arcade .app-sidebar.is-collapsed .arcade-account summary > svg {
+  display: none;
+}
 .arcade .app-sidebar.is-collapsed .sidebar-brand-row {
-  height: auto;
-  flex-direction: column;
-  gap: var(--space-3);
+  height: 32px;
+  justify-content: center;
   margin: 0 0 var(--space-5);
 }
 .arcade .app-sidebar.is-collapsed .brand {
   display: inline-flex;
+}
+/* The logo doubles as the expand control: on hover the mark gives way to the
+   panel icon, so the affordance is discoverable without a second button. */
+.arcade .brand-toggle {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.brand-toggle > * {
+  grid-area: 1 / 1;
+  transition: opacity var(--duration-fast) var(--ease);
+}
+.arcade .brand-toggle-hint {
+  opacity: 0;
+  color: var(--ink);
+}
+.arcade .brand-toggle:hover .arcade-logo,
+.arcade .brand-toggle:focus-visible .arcade-logo {
+  opacity: 0;
+}
+.arcade .brand-toggle:hover .brand-toggle-hint,
+.arcade .brand-toggle:focus-visible .brand-toggle-hint {
+  opacity: 1;
+}
+.arcade .brand-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-wash);
 }
 
 /* Recents: the Commons dashboard list — a quiet label, then one-line rows
@@ -1738,41 +1777,21 @@
   padding: var(--space-1) 0 var(--space-2);
 }
 .arcade .sidebar-recent {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  display: block;
   height: 32px;
   padding: 0 var(--space-2);
+  overflow: hidden;
   border-radius: var(--radius-sm);
   color: var(--ink-muted);
   font-size: var(--text-sm);
+  line-height: 32px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .arcade .sidebar-recent:hover,
 .arcade .sidebar-recent[aria-current='page'] {
   background: var(--sunken);
   color: var(--ink);
-}
-.sidebar-recent-dot {
-  width: 6px;
-  height: 6px;
-  flex-shrink: 0;
-  border-radius: var(--radius-full);
-  background: var(--line-strong);
-}
-.sidebar-recent-dot[data-live='yes'] {
-  background: var(--live);
-}
-.sidebar-recent-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.arcade .sidebar-recent-status {
-  flex-shrink: 0;
-  font-size: var(--text-xs);
-  color: var(--ink-subtle);
 }
 .sidebar-recents-skeleton {
   display: block;
@@ -1812,4 +1831,49 @@
   line-height: 1;
   letter-spacing: 0;
   text-shadow: 0 1px 1px rgba(255, 255, 255, 0.35);
+}
+
+/* Studio copilot: the composer runs nearly edge to edge. The panel and the
+   composer wrapper each added their own side padding (28px a side in all);
+   now the panel keeps 8px and the conversation keeps its reading inset. */
+.arcade.studio-workspace .studio-copilot {
+  padding-inline: var(--space-2);
+}
+.arcade.studio-workspace .studio-copilot .arcade-composer-wrap {
+  padding: var(--space-2) 0 0;
+}
+.arcade.studio-workspace .studio-copilot .studio-conversation,
+.arcade.studio-workspace .studio-copilot .copilot-session-name {
+  padding-inline: var(--space-2);
+}
+
+/* Studio's prompt echoes the landing hero's pair. */
+.arcade .studio-home-create h2 .hero-mark {
+  display: inline-block;
+  padding: 0 0.14em;
+  border-radius: 4px;
+  line-height: 1.15;
+  background: var(--hl-secondary);
+  color: var(--title-highlight-ink);
+}
+
+/* Closed rail: the account row is the avatar (or sign-in icon) alone, centred.
+   The label is clipped rather than removed, so the link keeps its name. */
+.arcade .app-sidebar.is-collapsed .arcade-sign-in span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.arcade .app-sidebar.is-collapsed .arcade-sign-in,
+.arcade .app-sidebar.is-collapsed .arcade-account summary {
+  justify-content: center;
+  padding-inline: 0;
+  min-width: 0;
+  width: 100%;
+}
+.arcade .app-sidebar.is-collapsed .sidebar-footer {
+  justify-items: center;
 }

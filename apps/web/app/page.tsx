@@ -52,7 +52,7 @@ export default function HomePage() {
         <h1>
           Your <span className="hero-mark">imagination</span>.
           <br />
-          Ready to <span className="hero-mark is-warm">play</span>.
+          Ready to <span className="hero-mark is-cool">play</span>.
         </h1>
         <div className="hero-foot">
           <p className="hero-copy">

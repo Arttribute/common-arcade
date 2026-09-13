@@ -39,7 +39,10 @@ export function GameCatalog({
   const featured = games.filter((game) => game.isFeatured)
   return (
     <>
-      <PageHeader title="Explore the arcade" />
+      <PageHeader
+        title="Explore the arcade"
+        description="New worlds, friendly rivals, and games made by people and agents."
+      />
       <div className="catalog shell">
         {!query && mode === 'all' && featured.length > 0 && (
           <section className="catalog-featured" aria-label="Featured games">

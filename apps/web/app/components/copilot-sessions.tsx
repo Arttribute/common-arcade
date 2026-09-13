@@ -30,7 +30,10 @@ export function useProjectCopilot(
   projectId: string,
   agentId: string,
   onMessages: (messages: Message[]) => void,
+  initialSessionId?: string,
 ) {
+  // A deep-linked conversation wins over the remembered one, once.
+  const pendingInitial = useRef(initialSessionId)
   const [sessions, setSessions] = useState<Conversation[]>([])
   const [sessionId, setSessionId] = useState('')
   const [changes, setChanges] = useState<Change[]>([])
@@ -74,6 +77,10 @@ export function useProjectCopilot(
       setJobError('')
       try {
         let selected = id
+        if (!selected && pendingInitial.current) {
+          selected = pendingInitial.current
+          pendingInitial.current = undefined
+        }
         if (!selected) {
           try {
             selected = sessionStorage.getItem(storageKey) ?? ''

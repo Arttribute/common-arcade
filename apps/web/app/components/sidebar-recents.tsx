@@ -1,64 +1,116 @@
 'use client'
-import type { LiveMatch } from '@common-arcade/control-client'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
-import { browserControlClient } from '../../lib/api'
+import type { StudioProject } from '@common-arcade/studio'
+import { arcade } from '../../lib/api'
+
+type CopilotSession = {
+  sessionId: string
+  agentId: string
+  title?: string
+  createdAt: string
+  updatedAt?: string
+}
+type BrowserRun = { id: string; createdAt: string }
+type Recent = { key: string; title: string; href: string; at: string }
+
+// Sessions are listed per project, so Recents reads the most recently touched
+// projects only — enough to fill the list without a request per project.
+const PROJECT_LIMIT = 8
+const RECENT_LIMIT = 20
+
+async function loadRecents(): Promise<Recent[]> {
+  const { projects } = await arcade<{ projects: StudioProject[] }>('projects')
+  const recent = [...projects]
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, PROJECT_LIMIT)
+  const perProject = await Promise.all(
+    recent.map(async (project) => {
+      const game = project.document.title || 'Untitled game'
+      const [chats, runs] = await Promise.all([
+        arcade<{ sessions: CopilotSession[] }>(
+          `projects/${project.id}/copilot-sessions`,
+        ).catch(() => ({ sessions: [] })),
+        arcade<{ runs: BrowserRun[] }>(
+          `projects/${project.id}/browser-runs`,
+        ).catch(() => ({ runs: [] })),
+      ])
+      return [
+        ...chats.sessions.map((session) => ({
+          key: `chat:${session.sessionId}`,
+          title: session.title || game,
+          href: `/studio/${project.id}?session=${encodeURIComponent(session.sessionId)}&agent=${encodeURIComponent(session.agentId)}`,
+          at: session.updatedAt ?? session.createdAt,
+        })),
+        ...runs.runs.map((run) => ({
+          key: `run:${run.id}`,
+          title: `${game} playtest`,
+          href: `/studio/${project.id}?run=${encodeURIComponent(run.id)}`,
+          at: run.createdAt,
+        })),
+      ]
+    }),
+  )
+  return perProject
+    .flat()
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, RECENT_LIMIT)
+}
 
 /**
- * Recent sessions in the sidebar, like the Recents list on the Agent Commons
- * dashboard: the signed-in player's own sessions — ones they host or hold a
- * seat in — newest activity first. Signed-out readers see nothing here.
+ * Recents, like the Agent Commons dashboard: the reader's latest Studio work —
+ * game-building conversations with their copilot and playtest sessions —
+ * newest first, each opening straight back into Studio. One line per item,
+ * the title and nothing else. Signed-out readers see nothing here.
  */
 export function SidebarRecents() {
   const path = usePathname()
-  const [sessions, setSessions] = useState<readonly LiveMatch[] | null>(null)
-  const [signedIn, setSignedIn] = useState(false)
+  const search = useSearchParams()
+  const [recents, setRecents] = useState<Recent[] | null>(null)
+  const [signedIn, setSignedIn] = useState(true)
 
   useEffect(() => {
     let active = true
-    const abort = new AbortController()
     const refresh = async () => {
       try {
-        const session = await fetch('/api/auth/session', {
-          signal: abort.signal,
-        }).then((response) => response.json())
-        if (!active) return
-        setSignedIn(Boolean(session.user))
-        if (!session.user) return setSessions([])
-        const mine = await browserControlClient().listLiveMatches(
-          abort.signal,
-          'mine',
+        const session = await fetch('/api/auth/session').then((response) =>
+          response.json(),
         )
-        if (active) setSessions(mine)
+        if (!active) return
+        if (!session.user) {
+          setSignedIn(false)
+          return
+        }
+        setSignedIn(true)
+        const next = await loadRecents()
+        if (active) setRecents(next)
       } catch {
-        if (active) setSessions((current) => current ?? [])
+        if (active) setRecents((current) => current ?? [])
       }
     }
     void refresh()
-    const timer = window.setInterval(() => void refresh(), 15000)
     window.addEventListener('focus', refresh)
     return () => {
       active = false
-      abort.abort()
-      window.clearInterval(timer)
       window.removeEventListener('focus', refresh)
     }
-  }, [])
+    // Studio work changes as the reader moves around, so re-read on navigation.
+  }, [path])
 
-  if (!signedIn && sessions !== null) return null
-  const current = path.match(/^\/play\/([^/]+)/)?.[1]
+  if (!signedIn) return null
+  const here = `${path}?${search.toString()}`
   return (
-    <section className="sidebar-recents" aria-label="Recent sessions">
+    <section className="sidebar-recents" aria-label="Recent Studio sessions">
       <div className="sidebar-recents-label">
         <span>Recents</span>
-        {sessions === null ? (
+        {recents === null ? (
           <Loader2 size={12} className="spin" aria-hidden />
         ) : null}
       </div>
       <div className="sidebar-recents-list">
-        {sessions === null ? (
+        {recents === null ? (
           [0, 1, 2].map((index) => (
             <span
               key={index}
@@ -66,28 +118,20 @@ export function SidebarRecents() {
               style={{ opacity: 1 - index * 0.25 }}
             />
           ))
-        ) : sessions.length === 0 ? (
+        ) : recents.length === 0 ? (
           <p className="sidebar-recents-empty">
-            Sessions you host or join will appear here.
+            Your Studio conversations and playtests will appear here.
           </p>
         ) : (
-          sessions.slice(0, 20).map((match) => (
+          recents.map((recent) => (
             <Link
-              key={match.id}
-              href={`/play/${match.id}`}
+              key={recent.key}
+              href={recent.href}
               className="sidebar-recent"
-              aria-current={match.id === current ? 'page' : undefined}
-              title={match.gameTitle}
+              aria-current={here === recent.href ? 'page' : undefined}
+              title={recent.title}
             >
-              <span
-                className="sidebar-recent-dot"
-                data-live={match.status === 'running' ? 'yes' : 'no'}
-                aria-hidden
-              />
-              <span className="sidebar-recent-title">{match.gameTitle}</span>
-              <span className="sidebar-recent-status">
-                {match.status === 'running' ? 'Live' : 'Lobby'}
-              </span>
+              {recent.title}
             </Link>
           ))
         )}

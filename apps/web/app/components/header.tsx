@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import {
   Compass,
   Radio,
@@ -45,26 +45,41 @@ export function Header({
       aria-label="Main navigation"
     >
       <div className="sidebar-brand-row">
-        <Link
-          className="brand"
-          href="/"
-          aria-label="Common Arcade home"
-          title="Common Arcade"
-        >
-          <Brand />
-        </Link>
-        {!locked && (
+        {collapsed && !locked ? (
+          // Closed, the mark itself is the way back in: one control where
+          // there used to be a logo stacked over an expand button.
+          <button
+            type="button"
+            className="brand brand-toggle"
+            onClick={toggle}
+            aria-label="Expand sidebar"
+            title="Expand sidebar"
+          >
+            <Brand />
+            <PanelLeftOpen
+              size={16}
+              className="brand-toggle-hint"
+              aria-hidden
+            />
+          </button>
+        ) : (
+          <Link
+            className="brand"
+            href="/"
+            aria-label="Common Arcade home"
+            title="Common Arcade"
+          >
+            <Brand />
+          </Link>
+        )}
+        {!locked && !collapsed && (
           <button
             className="sidebar-toggle"
             onClick={toggle}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
           >
-            {collapsed ? (
-              <PanelLeftOpen size={16} />
-            ) : (
-              <PanelLeftClose size={16} />
-            )}
+            <PanelLeftClose size={16} />
           </button>
         )}
       </div>
@@ -90,7 +105,11 @@ export function Header({
           </Link>
         ))}
       </div>
-      {!collapsed ? <SidebarRecents /> : null}
+      {!collapsed ? (
+        <Suspense fallback={null}>
+          <SidebarRecents />
+        </Suspense>
+      ) : null}
       <div className="sidebar-footer">
         <AccountMenu beforeSignOut={beforeSignOut} />
       </div>

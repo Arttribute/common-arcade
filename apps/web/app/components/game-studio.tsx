@@ -228,7 +228,17 @@ type Log = {
   source: { seatId?: string; kind: string }
   data: unknown
 }
-export function GameStudio({ projectId }: { projectId: string }) {
+export function GameStudio({
+  projectId,
+  initialSession,
+  initialRunId,
+}: {
+  projectId: string
+  /** Opens this copilot conversation, with its own agent, on arrival. */
+  initialSession?: { sessionId: string; agentId: string }
+  /** Resumes this playtest in the Testing panel on arrival. */
+  initialRunId?: string
+}) {
   const router = useRouter()
   const activeCopilotRun = useRef<AbortController | undefined>(undefined)
   useEffect(
@@ -544,7 +554,7 @@ export function GameStudio({ projectId }: { projectId: string }) {
   const [draft, setDraft] = useState<AnnotationGeometry>(),
     [note, setNote] = useState('')
   const [agents, setAgents] = useState<Agent[]>([]),
-    [copilotId, setCopilotId] = useState('')
+    [copilotId, setCopilotId] = useState(initialSession?.agentId ?? '')
   const [prompt, setPrompt] = useState('')
   const [messages, setMessages] = useState<
     {
@@ -555,7 +565,12 @@ export function GameStudio({ projectId }: { projectId: string }) {
       activities?: CopilotActivity[]
     }[]
   >([])
-  const copilot = useProjectCopilot(projectId, copilotId, setMessages)
+  const copilot = useProjectCopilot(
+    projectId,
+    copilotId,
+    setMessages,
+    initialSession?.sessionId,
+  )
   const publicationProjectId = user ? project?.id : undefined
   useEffect(() => {
     let active = true
@@ -950,6 +965,20 @@ export function GameStudio({ projectId }: { projectId: string }) {
     )
     return created
   }
+  // A playtest opened from Recents resumes once its project and run list have
+  // loaded, so it replays against the document it was recorded on.
+  const pendingRunId = useRef(initialRunId)
+  useEffect(() => {
+    const runId = pendingRunId.current
+    if (!runId || !project || !browserRuns.length) return
+    const target = browserRuns.find((run) => run.id === runId)
+    pendingRunId.current = undefined
+    if (!target) return
+    setWorkspaceGroup('testing')
+    showLeftPanel(true)
+    void task('resume playtest', () => resumeBrowserRun(target))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, browserRuns])
   async function resumeBrowserRun(summary: BrowserRun) {
     const saved = await arcade<
       BrowserRun & {
