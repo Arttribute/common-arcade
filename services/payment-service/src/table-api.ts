@@ -6,7 +6,7 @@ const authSchema = z.object({
   expiresAt: z.number().int(),
   signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/),
 })
-const actionSchema = z
+export const actionSchema = z
   .object({
     actionId: z.string().uuid(),
     sequence: z.number().int().nonnegative(),
@@ -24,6 +24,7 @@ export function createTableApi(host: MatchHost) {
     c.json({
       networks: host.configuredNetworks(),
       defaultMode: 'free',
+      gameModes: ['turn-based', 'realtime'],
       testnetOnly: true,
     }),
   )
@@ -47,6 +48,16 @@ export function createTableApi(host: MatchHost) {
         c.req.param('id'),
         authSchema.parse(await c.req.json()) as Parameters<
           typeof host.observation
+        >[1],
+      ),
+    ),
+  )
+  app.post('/v1/economy/matches/:id/realtime-session', async (c) =>
+    c.json(
+      await host.realtimeSession(
+        c.req.param('id'),
+        authSchema.parse(await c.req.json()) as Parameters<
+          typeof host.realtimeSession
         >[1],
       ),
     ),

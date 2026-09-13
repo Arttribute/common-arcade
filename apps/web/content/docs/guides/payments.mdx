@@ -67,10 +67,10 @@ Spectator bets are an optional add-on, available only when the game's creator
 allowed them. Spectators back a seat before play; the fee applies to the losing
 pool only, and if nobody backed the winner every bet is refunded.
 
-Paid play currently supports **two-seat, turn-based, authoritative** releases
-(for example blackjack duel and Studio games with a sandboxed rules runtime).
-Other game modes need their own settlement adapter before they can be paid;
-unknown outcomes never authorize a payout.
+Paid play supports **two-player authoritative turn-based and realtime** releases,
+including Redline Run, blackjack duel, and supported Studio rules runtimes.
+The server runs the game and determines its result; unknown outcomes never
+authorize a payout.
 
 ---
 
@@ -92,7 +92,18 @@ unknown outcomes never authorize a payout.
    and fund the reward before starting. Deposits require a token allowance and
    a separate transaction approval; test USDC and network gas are required.
 5. Once funding is confirmed, the host chooses **Lock funding and start**.
-   The winner can withdraw the allocated prize after settlement.
+6. For realtime games, each player chooses **Enable game controls** and approves
+   one wallet signature. Choose your car and lock it in for Redline Run, then
+   race in the game window. Gameplay does not ask for payment approvals on each
+   move. After a disconnect, reconnect and enable controls again.
+7. The server settles the completed match. The winner can withdraw the allocated
+   prize; creator earnings follow the published payout terms.
+
+Paid hosting is a testnet preview restricted to enabled host wallets. A wallet
+that is not enabled receives a clear error when creating the table.
+
+The preview worker runs one paid realtime table at a time. If it is busy, wait
+for that match to finish before starting yours.
 
 Paid tables currently run one two-player match. Free live sessions’ round,
 visibility and invitation settings do not apply to this separate paid lobby.
@@ -103,9 +114,11 @@ Games without published payment settings show **Free entry**. Games with
 published payment settings show **Entry & rewards**, with an explanation if
 their paid formats are unavailable:
 
-- **Unsupported game:** realtime games (including Redline Run and Headball),
-  releases that cannot seat two players, and browser-only previews cannot run
-  paid matches yet. Enabling earnings in Studio alone does not add support.
+- **Unsupported game:** releases that cannot seat two players and browser-only
+  previews cannot run paid matches. A supported authoritative rules runtime is
+  required.
+- **Payment service updating:** realtime formats activate when the deployed
+  payment worker advertises realtime support. Reload after the rollout.
 - **Creator has not enabled payments:** the creator must turn on **Offer paid
   matches** under **Game earnings**, choose allowed formats, add a payout
   address, and choose **Save & publish payment settings**. Saving a draft does not change an
@@ -357,3 +370,17 @@ credits a match pool.
 - [Payment runbook](https://github.com/Arttribute/common-arcade/blob/main/docs/payments/runbook.md) — local verification, deployment and smoke-test commands
 - [Testnet status](https://github.com/Arttribute/common-arcade/blob/main/docs/payments/testnet-status.md) — deployment records and explorer evidence
 - [Integration plan](https://github.com/Arttribute/common-arcade/blob/main/docs/payments/integration-plan.md) — accounting and trust model
+
+### Agent payment approvals
+
+An approved spending budget lets the named agent execute permitted payments
+without another owner wallet prompt. Commons signs the exact token allowance
+and deposit using that agent’s wallet, and checks the budget, expiry, network,
+recipient and match restrictions before spending. Game commands are signed by
+the agent wallet too. A human player’s **Enable game controls** button is separate.
+
+A budget grants permission; an agent task decides when to use it. **Have agent
+stake** is a manual trigger for that same autonomous payment endpoint. External
+agent runtimes can call `/arcade/deposit` directly with the approved payment
+session and runtime session IDs. Budget approval alone does not launch a task
+or spend the budget immediately.

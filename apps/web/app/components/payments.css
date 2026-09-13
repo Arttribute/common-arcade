@@ -446,3 +446,16 @@ details[open] > .payment-summary > .payment-summary-chevron {
     grid-template-columns: 1fr;
   }
 }
+
+.arcade .paid-realtime-game {
+  min-width: 0;
+}
+.arcade .paid-realtime-game iframe {
+  display: block;
+  width: 100%;
+  min-height: 420px;
+  aspect-ratio: 16 / 10;
+  border: 0;
+  border-radius: 14px;
+  margin-block: 16px;
+}

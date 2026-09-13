@@ -34,11 +34,9 @@ describe('paid hosting discovery', () => {
     expect(offersPaidHosting(game())).toBe(true)
     expect(paidHostingUnavailable(game())).toBeUndefined()
   })
-  it('excludes realtime games even when their creator enabled earnings', () => {
-    expect(offersPaidHosting(game({ mode: 'realtime' }))).toBe(false)
-    expect(paidHostingUnavailable(game({ mode: 'realtime' }))).toContain(
-      'game mode',
-    )
+  it('offers paid hosting for authoritative realtime games', () => {
+    expect(offersPaidHosting(game({ mode: 'realtime' }))).toBe(true)
+    expect(paidHostingUnavailable(game({ mode: 'realtime' }))).toBeUndefined()
   })
   it('explains the seat constraint without calling a turn-based game realtime', () => {
     const three = game({ seats: { ...game().spec.seats, min: 3, max: 3 } })

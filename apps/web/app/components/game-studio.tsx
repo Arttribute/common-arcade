@@ -1564,12 +1564,14 @@ export function GameStudio({
                   </p>
                   {document.monetization?.mode === 'revenue-share' &&
                     isBrowserGame(document) &&
-                    document.play?.mode !== 'turn-based' && (
+                    !['turn-based', 'realtime'].includes(
+                      document.play?.mode ?? '',
+                    ) && (
                       <p className="studio-help" role="status">
                         You can publish these earnings settings, but stakes and
                         prize pools are not supported for this game mode yet.
-                        Paid hosting currently requires a two-player, turn-based
-                        game.
+                        Paid hosting requires a supported two-player turn-based
+                        or realtime game.
                       </p>
                     )}
                   {isOwner && (

@@ -19,10 +19,55 @@ Free intermediate releases retain inherited obligations. Commercial remix
 permission is separate and cannot be expanded beyond the source license.
 
 The escrow supports any bounded single-winner pool. The initial worker/UI preview
-supports two-seat turn-based authoritative Studio releases and blackjack duel.
-Other game modes need their runtime admission/settlement adapter before paid play
-is available. Unknown outcomes do not authorize arbitrary payout destinations.
+supports two-player turn-based and realtime authoritative Studio releases and
+blackjack duel. Realtime tables use a fixed-step clock in the single payment
+worker, independently of reads or connected clients. The current 0.5-vCPU preview worker admits one running realtime
+table at a time, leaving capacity for payment requests. Other game modes need runtime admission before
+paid play is available. Unknown outcomes do not authorize arbitrary payout destinations.
 Games remain independent of blockchains; only the match economy adapter signs.
+
+## Paid realtime gameplay
+
+`GET /v1/economy/config` advertises `gameModes: ["turn-based", "realtime"]`.
+The frontend leaves realtime formats disabled until this capability is present.
+Release digests, two-player compatibility, published payment formats and payout
+addresses are validated before pool creation. `ARCADE_PAYMENT_CREATORS` remains
+an allowlist for hosts spending resolver gas; deployment includes the approved
+creator wallet `0x9AE39751dD3ABc21f7ebB1d278D9b178B0837ca5`.
+
+After deposits and the host's signed `start`, a seated wallet signs the existing
+command envelope with operation `realtime-session`, body `{}`, and the service
+origin as its domain. POST the signed auth object to
+`/v1/economy/matches/:id/realtime-session`. Its random ticket expires after 30
+seconds and is usable once for that match and seat. Connect to
+`/v1/economy/live?matchId=:id`, then send:
+
+```json
+{ "type": "authenticate", "token": "ticket from the signed endpoint" }
+```
+
+Only that connection receives `{type:"observation", observation}` with the
+player's projection. It can send `{type:"action", body:{actionId, sequence,
+payload}}`, where actionId is a UUID and sequence comes from the observation.
+Wait for `{type:"ack", actionId}` before another command. Existing signed HTTP
+actions remain available for agents. Spectator sockets retain public table
+snapshots and cannot submit moves. These capabilities grant gameplay only;
+allowances, deposits and withdrawals retain their onchain approvals.
+
+A connection lasts at most 30 minutes, never beyond the settlement deadline.
+Reconnecting fences its predecessor; disconnects and worker recovery release
+advertised held inputs. The renderer's existing authoritative bridge is used
+without trusting browser scores. Accepted actions are saved before acknowledgement;
+clock progress is saved at least once per second and on graceful shutdown. An
+abrupt crash may rewind less than a second of ticks, but acknowledged actions
+survive. Recovery verifies the durable replay and restarts the clock. Completed
+results are durable before settlement; failed settlement remains retryable.
+Runtime failures or deadlines do not invent winners; users retain timeout refunds.
+
+Retain one worker and the existing stop-before-start deployment policy for the
+shared EFS store and resolver authority. An update briefly disconnects payment
+sockets; players reconnect after the worker is ready. Do not scale this service
+to overlapping writers without an ownership/fencing design.
 
 ## Local verification
 

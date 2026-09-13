@@ -59,6 +59,7 @@ export interface TableRecord {
   replay?: Replay
   transactions: Hex[]
   actions: Record<string, string>
+  runtimeError?: string
 }
 export interface SignedCommand {
   address: Address
@@ -78,6 +79,16 @@ export class MatchHost {
   configuredNetworks() {
     return Object.keys(this.adapters)
   }
+  private closing = false
+  private starting = new Set<string>()
+  private runtimes = new Map<string, AuthoritativeMatch<unknown, unknown>>()
+  private liveRecords = new Map<string, TableRecord>()
+  private clocks = new Map<string, ReturnType<typeof setInterval>>()
+  private controllers = new Map<string, symbol>()
+  private tickets = new Map<
+    string,
+    { id: string; seat: number; expiresAt: number }
+  >()
   private operations = new Map<string, Promise<unknown>>()
   private listeners = new Map<string, Set<(value: unknown) => void>>()
   constructor(
@@ -152,6 +163,8 @@ export class MatchHost {
         'This wallet is not enabled for the testnet paid-match preview',
       )
     return this.exclusive(id, async () => {
+      if (this.closing)
+        throw new Error('Payment worker is restarting; try again shortly')
       let record = await this.store.get<TableRecord>(id)
       const requestHash = hashArcadeId(JSON.stringify(body))
       if (record && record.requestHash !== requestHash)
@@ -251,6 +264,8 @@ export class MatchHost {
     })
   }
   private async runtime(record: TableRecord) {
+    const cached = this.runtimes.get(record.id)
+    if (cached) return cached
     const game = record.release
       ? await compileGame(
           record.release.document,
@@ -262,44 +277,93 @@ export class MatchHost {
       throw new Error(
         'Match release is unavailable in this worker; restore its version or claim timeout refunds',
       )
-    return record.replay
-      ? AuthoritativeMatch.recover(
+    const runtime = record.replay
+      ? await AuthoritativeMatch.recover(
           game,
           record.replay,
           record.stage === 'playing' ? 'running' : 'completed',
           1,
         )
-      : AuthoritativeMatch.create({
+      : await AuthoritativeMatch.create({
           matchId: record.id,
           game,
           seed: record.seed,
           configuration: {},
-          roster: [
-            { seatId: 'sea_player_1', role: 'player' },
-            { seatId: 'sea_player_2', role: 'player' },
-          ],
+          roster: (() => {
+            const roles = record.release?.manifest.spec.seats.roles.flatMap(
+              (role) =>
+                Array.from({ length: role.count }, () => ({
+                  role: role.id,
+                  ...(role.team ? { team: role.team } : {}),
+                })),
+            ) ?? [{ role: 'player' }, { role: 'player' }]
+            return (roles.length === 1 ? [roles[0]!, roles[0]!] : roles)
+              .slice(0, 2)
+              .map((role, index) => ({
+                ...role,
+                seatId: `sea_player_${index + 1}`,
+              }))
+          })(),
         })
+    if (
+      record.release?.manifest.spec.mode === 'realtime' &&
+      record.stage !== 'settled' &&
+      !record.runtimeError
+    ) {
+      this.runtimes.set(record.id, runtime)
+      this.liveRecords.set(record.id, record)
+    }
+    return runtime
   }
   async start(id: string, auth: SignedCommand) {
     await this.verify(id, 'start', {}, auth)
     return this.exclusive(id, async () => {
       const record = await this.require(id)
+      if (this.closing)
+        throw new Error('Payment worker is restarting; try again shortly')
       if (record.recipients[0]!.toLowerCase() !== auth.address.toLowerCase())
         throw new Error('Only the table creator can start')
       if (record.stage !== 'funding') return this.viewRecord(record)
       if (Date.now() / 1000 >= record.fundingDeadline)
         throw new Error('Funding expired; claim refunds')
-      const runtime = await this.runtime(record)
-      const adapter = this.adapter(record)
-      if (adapter) {
-        const hash = await adapter.lock(record.pool!)
-        if (hash) record.transactions.push(hash)
+      // The 0.5-vCPU preview task also serves payment/facilitator requests.
+      if (
+        record.release?.manifest.spec.mode === 'realtime' &&
+        this.clocks.size + this.starting.size >= 1
+      )
+        throw new Error(
+          'Paid realtime tables are at capacity. Try starting again shortly.',
+        )
+      if (record.release?.manifest.spec.mode === 'realtime')
+        this.starting.add(id)
+      try {
+        const runtime = await this.runtime(record)
+        const adapter = this.adapter(record)
+        try {
+          if (adapter) {
+            const hash = await adapter.lock(record.pool!)
+            if (hash) record.transactions.push(hash)
+          }
+        } catch (error) {
+          this.runtimes.delete(id)
+          this.liveRecords.delete(id)
+          throw error
+        }
+        runtime.start()
+        record.replay = runtime.exportReplay()
+        record.stage = 'playing'
+        try {
+          await this.store.put(id, record)
+        } catch (error) {
+          this.runtimes.delete(id)
+          this.liveRecords.delete(id)
+          throw error
+        }
+        this.startClock(record)
+        return this.broadcast(record)
+      } finally {
+        this.starting.delete(id)
       }
-      runtime.start()
-      record.replay = runtime.exportReplay()
-      record.stage = 'playing'
-      await this.store.put(id, record)
-      return this.broadcast(record)
     })
   }
   async action(
@@ -313,48 +377,92 @@ export class MatchHost {
     auth: SignedCommand,
   ) {
     await this.verify(id, 'action', body, auth)
+    const record = await this.require(id)
+    const seat = record.recipients.findIndex(
+      (a) => a.toLowerCase() === auth.address.toLowerCase(),
+    )
+    return this.playerAction(id, seat, body)
+  }
+  private async playerAction(
+    id: string,
+    seat: number,
+    body: {
+      actionId: string
+      sequence: number
+      type?: 'hit' | 'stand'
+      payload?: JsonValue
+    },
+    check = () => {},
+  ) {
     return this.exclusive(id, async () => {
-      const record = await this.require(id),
-        seat = record.recipients.findIndex(
-          (a) => a.toLowerCase() === auth.address.toLowerCase(),
-        )
-      if (seat < 0) throw new Error('Spectators cannot submit player actions')
-      const encoded = JSON.stringify([auth.address.toLowerCase(), body])
-      if (record.actions[body.actionId]) {
-        if (record.actions[body.actionId] !== encoded)
-          throw new Error('Action ID conflict')
-        return this.viewRecord(record)
-      }
-      if (
-        record.stage !== 'playing' ||
-        Date.now() / 1000 >= record.settlementDeadline
-      )
-        throw new Error('Match is not running or has expired')
-      const runtime = await this.runtime(record)
-      const submission = {
-        actionId: `act_${body.actionId}`,
-        matchId: id,
-        seatId: seat === 0 ? 'sea_player_1' : 'sea_player_2',
-        basedOnStateSequence: body.sequence,
-        payload: body.payload ?? { type: body.type },
-        clientSequence: body.sequence + 1,
-        controlLease: 'wallet-signature',
-      } as ActionSubmission
-      const result = await runtime.submitAction(submission, 1)
-      if (result.disposition !== 'accepted')
-        throw new Error(JSON.stringify(result))
-      record.actions[body.actionId] = encoded
-      record.replay = runtime.exportReplay()
-      if (runtime.getStatus() === 'completed') {
-        record.stage = 'settlement-pending'
-        record.result = (await runtime.snapshot()).result
-      }
-      await this.store.put(id, record)
-      this.broadcast(record)
-      // Result is durable before broadcasting a settlement transaction. Failure remains retryable.
-      if (record.stage === 'settlement-pending') await this.settleRecord(record)
-      return this.broadcast(record)
+      const record = await this.require(id)
+      check()
+      if (this.closing)
+        throw new Error('Payment worker is restarting; try again shortly')
+      return this.applyPlayerAction(record, seat, body)
     })
+  }
+  private async applyPlayerAction(
+    record: TableRecord,
+    seat: number,
+    body: {
+      actionId: string
+      sequence: number
+      type?: 'hit' | 'stand'
+      payload?: JsonValue
+    },
+  ) {
+    const id = record.id
+    if (seat < 0 || seat > 1)
+      throw new Error('Spectators cannot submit player actions')
+    if (record.runtimeError) throw new Error(record.runtimeError)
+    const encoded = JSON.stringify([
+      record.recipients[seat]!.toLowerCase(),
+      body,
+    ])
+    if (record.actions[body.actionId]) {
+      if (record.actions[body.actionId] !== encoded)
+        throw new Error('Action ID conflict')
+      return this.viewRecord(record)
+    }
+    if (
+      record.stage !== 'playing' ||
+      record.runtimeError ||
+      Date.now() / 1000 >= record.settlementDeadline
+    )
+      throw new Error('Match is not running or has expired')
+    const runtime = await this.runtime(record)
+    const submission = {
+      actionId: `act_${body.actionId}`,
+      matchId: id,
+      seatId: seat === 0 ? 'sea_player_1' : 'sea_player_2',
+      basedOnStateSequence: body.sequence,
+      payload: body.payload ?? { type: body.type },
+      clientSequence: body.sequence + 1,
+      controlLease: 'wallet-signature',
+    } as ActionSubmission
+    const result = await runtime.submitAction(submission, 1)
+    if (result.disposition !== 'accepted')
+      throw new Error(JSON.stringify(result))
+    record.actions[body.actionId] = encoded
+    record.replay = runtime.exportReplay()
+    if (runtime.getStatus() === 'completed') {
+      this.stopClock(id)
+      record.stage = 'settlement-pending'
+      record.result = (await runtime.snapshot()).result
+    }
+    try {
+      await this.store.put(id, record)
+    } catch (error) {
+      this.stopClock(id)
+      record.runtimeError =
+        'Game progress could not be saved. Claim timeout refunds after the deadline.'
+      throw error
+    }
+    this.broadcast(record)
+    // Result is durable before broadcasting a settlement transaction. Failure remains retryable.
+    if (record.stage === 'settlement-pending') await this.settleRecord(record)
+    return this.broadcast(record)
   }
   async settle(id: string) {
     return this.exclusive(id, async () => {
@@ -374,6 +482,13 @@ export class MatchHost {
       snapshot = await runtime.snapshot()
     const result = snapshot.result as { outcome: string; winnerSeatId?: string }
     if (!result) throw new Error('Missing runtime result')
+    if (
+      result.winnerSeatId &&
+      !['sea_player_1', 'sea_player_2'].includes(result.winnerSeatId)
+    )
+      throw new Error('Runtime returned an unknown winning seat')
+    // Also re-flush on retries: an earlier disk failure must never authorize an undurable payout.
+    await this.store.put(record.id, record)
     const adapter = this.adapter(record)
     if (adapter) {
       const hash = await adapter.settle(
@@ -387,6 +502,9 @@ export class MatchHost {
     record.stage = 'settled'
     await this.store.put(record.id, record)
     await this.refreshAccounting(record)
+    this.stopClock(record.id)
+    this.runtimes.delete(record.id)
+    this.liveRecords.delete(record.id)
   }
   private async refreshAccounting(record: TableRecord) {
     if (record.stage !== 'settled' || record.accounting) return
@@ -402,7 +520,8 @@ export class MatchHost {
     }
   }
   async require(id: string) {
-    const record = await this.store.get<TableRecord>(id)
+    const record =
+      this.liveRecords.get(id) ?? (await this.store.get<TableRecord>(id))
     if (!record) throw new Error('Match not found')
     return record
   }
@@ -439,6 +558,8 @@ export class MatchHost {
     return {
       id: record.id,
       game: record.release?.document.title ?? 'Blackjack duel',
+      mode: record.release?.manifest.spec.mode ?? 'turn-based',
+      runtimeError: record.runtimeError,
       releaseId: record.release?.id ?? blackjackGame.releaseId,
       releaseDigest: record.releaseDigest,
       revenue: record.revenue,
@@ -471,6 +592,269 @@ export class MatchHost {
         'Testnet trusted dealer and result resolver; onchain accounting and payouts',
     }
   }
+  /** One wallet approval grants a short-lived, match/seat-bound gameplay connection only. */
+  async realtimeSession(id: string, auth: SignedCommand) {
+    await this.verify(id, 'realtime-session', {}, auth)
+    const record = await this.require(id)
+    const seat = record.recipients.findIndex(
+      (a) => a.toLowerCase() === auth.address.toLowerCase(),
+    )
+    if (
+      seat < 0 ||
+      record.stage !== 'playing' ||
+      record.runtimeError ||
+      record.release?.manifest.spec.mode !== 'realtime'
+    )
+      throw new Error('A seated player in a running realtime match is required')
+    for (const [token, ticket] of this.tickets)
+      if (
+        ticket.expiresAt <= Date.now() ||
+        (ticket.id === id && ticket.seat === seat)
+      )
+        this.tickets.delete(token)
+    const token = randomBytes(32).toString('hex')
+    const expiresAt = Math.min(
+      Date.now() + 30_000,
+      record.settlementDeadline * 1000,
+    )
+    this.tickets.set(token, { id, seat, expiresAt })
+    return { token, expiresAt }
+  }
+  async connectRealtime(id: string, token: string) {
+    const ticket = this.tickets.get(token)
+    if (!ticket || ticket.id !== id || ticket.expiresAt <= Date.now())
+      throw new Error('Invalid or expired gameplay ticket')
+    this.tickets.delete(token)
+    return this.exclusive(id, async () => {
+      const record = await this.require(id)
+      if (this.closing || record.stage !== 'playing' || record.runtimeError)
+        throw new Error('Match is not running')
+      const runtime = await this.runtime(record)
+      // A new controller never inherits a disconnected controller's held keys.
+      await this.releaseInputs(record, ticket.seat)
+      const expiresAt = Math.min(
+        Date.now() + 30 * 60_000,
+        record.settlementDeadline * 1000,
+      )
+      let closed = false
+      const controllerKey = `${id}:${ticket.seat}`,
+        epoch = Symbol()
+      this.controllers.set(controllerKey, epoch)
+      const check = () => {
+        if (
+          this.closing ||
+          closed ||
+          this.controllers.get(controllerKey) !== epoch ||
+          Date.now() >= expiresAt
+        )
+          throw new Error('Gameplay session expired; reconnect your wallet')
+      }
+      return {
+        observation: () => {
+          check()
+          return runtime.observation(`sea_player_${ticket.seat + 1}`)
+        },
+        action: (body: {
+          actionId: string
+          sequence: number
+          payload: JsonValue
+        }) => {
+          check()
+          return this.playerAction(id, ticket.seat, body, check)
+        },
+        close: async () => {
+          closed = true
+          await this.exclusive(id, async () => {
+            if (this.controllers.get(controllerKey) !== epoch) return
+            this.controllers.delete(controllerKey)
+            if (!this.closing)
+              await this.releaseInputs(await this.require(id), ticket.seat)
+          })
+        },
+      }
+    })
+  }
+  /** Neutralize advertised held inputs on disconnect, takeover, and worker recovery. */
+  private async releaseInputs(record: TableRecord, seat: number) {
+    if (
+      record.stage !== 'playing' ||
+      record.runtimeError ||
+      Date.now() >= record.settlementDeadline * 1000
+    )
+      return
+    const runtime = await this.runtime(record)
+    const legal = runtime.observation(`sea_player_${seat + 1}`).legalActions
+    const releases = new Set(
+      legal.flatMap((action) => {
+        if (!action || typeof action !== 'object' || Array.isArray(action))
+          return []
+        const control = action.control as
+          { releaseActionId?: string } | undefined
+        return control?.releaseActionId ? [control.releaseActionId] : []
+      }),
+    )
+    for (const action of legal) {
+      if (record.stage !== 'playing') break
+      if (
+        action &&
+        typeof action === 'object' &&
+        !Array.isArray(action) &&
+        releases.has(String(action.id))
+      ) {
+        await this.applyPlayerAction(record, seat, {
+          actionId: randomUUID(),
+          sequence: runtime.observation(`sea_player_${seat + 1}`).stateSequence,
+          payload: action,
+        })
+      }
+    }
+  }
+  /** Recover durable paid matches once at process startup; reads never drive time. */
+  async recoverRealtime() {
+    for (const id of await this.store.ids()) {
+      await this.exclusive(id, async () => {
+        const record = await this.require(id)
+        if (
+          record.release?.manifest.spec.mode !== 'realtime' ||
+          record.runtimeError
+        )
+          return
+        if (record.stage === 'playing') {
+          await this.runtime(record)
+          await this.releaseInputs(record, 0)
+          await this.releaseInputs(record, 1)
+          this.startClock(record)
+        } else if (record.stage === 'settlement-pending') {
+          await this.settleRecord(record)
+        }
+      }).catch((error) =>
+        console.error(
+          'Paid match recovery failed',
+          id,
+          error instanceof Error ? error.message : 'Unknown failure',
+        ),
+      )
+    }
+  }
+  private startClock(record: TableRecord) {
+    if (
+      this.closing ||
+      record.release?.manifest.spec.mode !== 'realtime' ||
+      this.clocks.has(record.id)
+    )
+      return
+    const runtime = this.runtimes.get(record.id)
+    if (!runtime || runtime.getStatus() !== 'running' || record.runtimeError)
+      return
+    const deltaMs = Math.max(
+      1,
+      Math.round(
+        1000 / (record.release.manifest.spec.clock.simulationHz ?? 30),
+      ),
+    )
+    const networkMs = Math.max(
+      deltaMs,
+      1000 / (record.release.manifest.spec.clock.networkHz ?? 20),
+    )
+    let last = Date.now(),
+      persisted = last,
+      broadcast = last,
+      pending = false
+    const timer = setInterval(() => {
+      if (pending) return
+      pending = true
+      void this.exclusive(record.id, async () => {
+        if (this.closing || record.stage !== 'playing' || record.runtimeError)
+          return
+        const now = Date.now()
+        if (
+          now >= record.settlementDeadline * 1000 ||
+          (await runtime.snapshot()).elapsedMs >=
+            (record.release!.manifest.spec.clock.maxDurationSeconds ?? 600) *
+              1000
+        ) {
+          this.stopClock(record.id)
+          record.runtimeError = 'Match deadline reached. Claim timeout refunds.'
+          await this.store.put(record.id, record)
+          this.broadcast(record)
+          return
+        }
+        const due = Math.min(8, Math.floor((now - last) / deltaMs))
+        if (due < 1) return
+        last = Math.max(last, now - 1000)
+        for (let step = 0; step < due; step++) {
+          if (!(await runtime.advanceTick(deltaMs))) break
+          last += deltaMs
+          if (runtime.getStatus() === 'completed') break
+        }
+        const finished = runtime.getStatus() === 'completed'
+        if (finished || now - persisted >= 1000) {
+          record.replay = runtime.exportReplay()
+          if (finished) {
+            this.stopClock(record.id)
+            record.stage = 'settlement-pending'
+            record.result = (await runtime.snapshot()).result
+          }
+          await this.store.put(record.id, record)
+          persisted = now
+        }
+        if (finished || now - broadcast >= networkMs) {
+          this.broadcast(record)
+          broadcast = now
+        }
+        if (finished) {
+          // A confirmed, durable replay is required before any payout.
+          try {
+            await this.settleRecord(record)
+          } catch (error) {
+            console.error(
+              'Paid realtime settlement remains retryable',
+              record.id,
+              error instanceof Error ? error.message : 'Unknown failure',
+            )
+          }
+          this.broadcast(record)
+        }
+      })
+        .catch(async (error) => {
+          this.stopClock(record.id)
+          record.runtimeError =
+            'The game runtime stopped. Claim timeout refunds after the deadline.'
+          console.error(
+            'Paid realtime clock failed',
+            record.id,
+            error instanceof Error ? error.message : 'Unknown failure',
+          )
+          await this.store.put(record.id, record).catch(() => undefined)
+          this.broadcast(record)
+        })
+        .finally(() => {
+          pending = false
+        })
+    }, deltaMs)
+    timer.unref()
+    this.clocks.set(record.id, timer)
+  }
+  private stopClock(id: string) {
+    clearInterval(this.clocks.get(id))
+    this.clocks.delete(id)
+  }
+  async close() {
+    this.closing = true
+    for (const id of this.clocks.keys()) this.stopClock(id)
+    await Promise.all(
+      [...this.operations.values()].map((p) => p.catch(() => undefined)),
+    )
+    for (const record of this.liveRecords.values()) {
+      const runtime = this.runtimes.get(record.id)
+      if (runtime) record.replay = runtime.exportReplay()
+      await this.store.put(record.id, record)
+    }
+    this.tickets.clear()
+    this.controllers.clear()
+    this.runtimes.clear()
+    this.liveRecords.clear()
+  }
   subscribe(id: string, listener: (value: unknown) => void) {
     let set = this.listeners.get(id)
     if (!set) {
@@ -485,7 +869,13 @@ export class MatchHost {
   }
   private broadcast(record: TableRecord) {
     const view = this.viewRecord(record)
-    for (const listener of this.listeners.get(record.id) ?? []) listener(view)
+    for (const listener of this.listeners.get(record.id) ?? []) {
+      try {
+        listener(view)
+      } catch {
+        /* A disconnected subscriber never owns the clock. */
+      }
+    }
     return view
   }
 }

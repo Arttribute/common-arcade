@@ -24,6 +24,7 @@ export function MatchLauncher({
   paymentTerms,
   paidMatchSupported = false,
   paymentUnavailableReason,
+  gameMode = 'turn-based',
 }: {
   releaseId: string
   gameId: string
@@ -33,6 +34,7 @@ export function MatchLauncher({
   paymentTerms?: GameMonetization
   paidMatchSupported?: boolean
   paymentUnavailableReason?: string
+  gameMode?: string
 }) {
   const router = useRouter()
   const [signedIn, setSignedIn] = useState(false)
@@ -257,6 +259,7 @@ export function MatchLauncher({
                   terms={paymentTerms}
                   supported={paidMatchSupported}
                   unavailableReason={paymentUnavailableReason}
+                  gameMode={gameMode}
                 />
                 {!browserGame && economy.mode === 'free' ? (
                   <details className="payment-disclosure">

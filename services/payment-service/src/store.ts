@@ -1,9 +1,10 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 /** Single-worker durable store. Use one replica; failover must be fenced before reusing signing authority. */
 export interface MatchStore {
   get<T>(id: string): Promise<T | undefined>
   put(id: string, value: unknown): Promise<void>
+  ids(): Promise<string[]>
 }
 export class FileMatchStore implements MatchStore {
   constructor(private directory: string) {}
@@ -19,6 +20,16 @@ export class FileMatchStore implements MatchStore {
       throw e
     }
   }
+  async ids() {
+    try {
+      return (await readdir(this.directory))
+        .filter((name) => /^mat_[a-f0-9-]{36}\.json$/.test(name))
+        .map((name) => name.slice(0, -5))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw error
+    }
+  }
   async put(id: string, value: unknown) {
     await mkdir(this.directory, { recursive: true, mode: 0o700 })
     const path = this.path(id)
@@ -31,6 +42,9 @@ export class FileMatchStore implements MatchStore {
 }
 export class MemoryMatchStore implements MatchStore {
   private values = new Map<string, unknown>()
+  async ids() {
+    return [...this.values.keys()]
+  }
   async get<T>(id: string) {
     return structuredClone(this.values.get(id)) as T | undefined
   }

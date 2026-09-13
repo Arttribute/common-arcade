@@ -1,3 +1,4 @@
+import { attachPaymentSocket } from './realtime-socket.js'
 import { releaseLoader } from './releases.js'
 import { serve } from '@hono/node-server'
 import { WebSocketServer } from 'ws'
@@ -75,6 +76,7 @@ const host = new MatchHost(
     : undefined,
 )
 const app = await createApp(rails, host)
+await host.recoverRealtime()
 const server = serve({
   fetch: app.fetch,
   port: Number(process.env.PORT ?? 4021),
@@ -96,27 +98,23 @@ wss.on('connection', (socket, request) => {
     new URL(request.url ?? '/', 'http://localhost').searchParams.get(
       'matchId',
     ) ?? ''
-  let closed = false
-  const send = (value: unknown) => {
-    if (socket.readyState === socket.OPEN) {
-      if (socket.bufferedAmount > 1_000_000) {
-        socket.close(1013, 'Slow consumer')
-        return
-      }
-      socket.send(JSON.stringify(value))
-    }
-  }
-  const unsubscribe = host.subscribe(id, send)
-  socket.on('close', () => {
-    closed = true
-    unsubscribe()
-  })
-  host
-    .view(id)
-    .then((value) => {
-      if (!closed) send(value)
-    })
-    .catch(() => socket.close(1008, 'Unknown match'))
-  // Spectator channel is read-only; signed actions share the HTTP capability boundary.
-  socket.on('message', () => socket.close(1008, 'Use signed action endpoint'))
+  attachPaymentSocket(host, socket, id)
 })
+let shuttingDown = false
+for (const signal of ['SIGTERM', 'SIGINT'] as const)
+  process.on(signal, () => {
+    if (shuttingDown) return
+    shuttingDown = true
+    // Preserve the single-writer handoff and the last confirmed game state.
+    for (const socket of wss.clients)
+      socket.close(1012, 'Worker restarting; reconnect')
+    wss.close()
+    server.close()
+    void host
+      .close()
+      .then(() => process.exit(0))
+      .catch((error) => {
+        console.error('Payment worker shutdown failed', error)
+        process.exit(1)
+      })
+  })
