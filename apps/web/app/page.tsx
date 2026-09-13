@@ -3,6 +3,7 @@ import { ArrowRight, ChevronRight } from 'lucide-react'
 import { GameArtwork } from './components/game-artwork'
 import { legacyGameCovers } from './lib/legacy-game-covers'
 import { Header } from './components/header'
+import { HeroBackdrop } from './components/hero-backdrop'
 
 /**
  * The landing page. One claim, one pair of actions, then the games themselves —
@@ -47,6 +48,7 @@ export default function HomePage() {
     <main className="arcade" id="main">
       <Header />
       <section className="hero shell">
+        <HeroBackdrop />
         <h1>
           Your <span className="hero-mark">imagination</span>.
           <br />

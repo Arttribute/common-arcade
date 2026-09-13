@@ -18,19 +18,21 @@ export function Header({
   beforeSignOut,
 }: { beforeSignOut?: () => Promise<unknown> } = {}) {
   const path = usePathname()
-  const [preference, setPreference] = useState(false)
+  // `null` until the reader has chosen; until then the landing page opens
+  // with the sidebar closed so the hero has the full width, and every other
+  // page opens with it expanded.
+  const [preference, setPreference] = useState<boolean | null>(null)
   const locked =
     /^\/(games|studio)\/[^/]+/.test(path) || /^\/play\/[^/]+/.test(path)
-  const collapsed = locked || preference
+  const collapsed = locked || (preference ?? path === '/')
   useEffect(() => {
     try {
-      setPreference(
-        sessionStorage.getItem('arcade-sidebar-collapsed') === 'true',
-      )
+      const stored = sessionStorage.getItem('arcade-sidebar-collapsed')
+      if (stored !== null) setPreference(stored === 'true')
     } catch {}
   }, [])
   function toggle() {
-    const value = !preference
+    const value = !collapsed
     setPreference(value)
     try {
       sessionStorage.setItem('arcade-sidebar-collapsed', String(value))
