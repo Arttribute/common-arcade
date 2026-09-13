@@ -50,9 +50,9 @@ export default function HomePage() {
       <section className="hero shell">
         <HeroBackdrop />
         <h1>
-          Your <span className="hero-mark">imagination</span>.
+          Your <span className="hero-mark">imagination</span>
           <br />
-          Ready to <span className="hero-mark is-cool">play</span>.
+          Ready to <span className="hero-mark is-cool">play</span>
         </h1>
         <div className="hero-foot">
           <p className="hero-copy">

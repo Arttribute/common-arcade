@@ -366,9 +366,9 @@
  * time: marigold marks the logo and page titles; the pair appear together only
  * where there is room to play (the landing hero and its animation). Neither is ever used for chrome, borders or buttons. */
 :root {
-  --hl-primary: #ffb547;
+  --hl-primary: #ffbe45;
   --hl-secondary: #22d3ee;
-  --hl-primary-soft: #ffd9a0;
+  --hl-primary-soft: #ffdea0;
   --title-highlight: var(--hl-primary);
   --title-highlight-ink: #0c0a09;
   --highlight-warm: var(--hl-secondary);
@@ -1478,11 +1478,6 @@
     transparent 80%
   );
 }
-.hero-field,
-.hero-field-lit {
-  position: absolute;
-  inset: 0;
-}
 .hero-pixel {
   position: absolute;
   border-radius: 1px;
@@ -1512,14 +1507,14 @@
 .arcade .hero h1 span {
   color: inherit;
 }
-/* Infisical-style marks: square-cornered blocks. As inline-blocks they keep
+/* Infisical-style marks: near-square blocks, softened by 3px. As inline-blocks they keep
    their box on their own line, so a highlight never runs into the descenders
    of the line above or the caps below. */
 .arcade .hero-mark {
   display: inline-block;
   padding: 0 0.1em;
   line-height: 1.12;
-  border-radius: 0;
+  border-radius: 3px;
   background: var(--title-highlight);
   color: var(--title-highlight-ink);
 }
@@ -1541,6 +1536,10 @@
   color: var(--ink-muted);
 }
 .arcade .hero .actions {
+  /* Equal columns sized to the wider label, so both buttons match. */
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   flex-shrink: 0;
   gap: var(--space-3);
   margin: 0;
@@ -1549,6 +1548,7 @@
 .arcade .hero .actions .secondary {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
   height: 46px;
   padding: 0 var(--space-5);
