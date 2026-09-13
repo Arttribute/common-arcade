@@ -67,10 +67,15 @@ Spectator bets are an optional add-on, available only when the game's creator
 allowed them. Spectators back a seat before play; the fee applies to the losing
 pool only, and if nobody backed the winner every bet is refunded.
 
-Paid play currently supports **two-seat, turn-based, authoritative** releases
-(for example blackjack duel and Studio games with a sandboxed rules runtime).
-Other game modes need their own settlement adapter before they can be paid;
-unknown outcomes never authorize a payout.
+Paid play currently supports **turn-based, authoritative** releases whose seat
+range includes two seats (for example blackjack duel and Studio games with a
+sandboxed rules runtime). Other game modes need their own settlement adapter
+before they can be paid; unknown outcomes never authorize a payout.
+
+Settlement reads the runtime's recorded result. Report `outcome: "win"` with the
+winning `winnerSeatId`, or `outcome: "draw"` when nobody wins; a result without
+a `winnerSeatId` settles as no winner and refunds. See
+[Results, Testing and Publishing](/docs/guides/designing-live-games/results-testing-publishing#report-a-result-arcade-can-act-on).
 
 ---
 

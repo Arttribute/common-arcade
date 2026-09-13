@@ -19,6 +19,7 @@
     "verify": "pnpm check:workspace && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "clean": "turbo run clean && rm -rf .turbo",
     "check:workspace": "node scripts/check-workspace.mjs",
+    "sync:agent-practices": "pnpm --filter @common-arcade/studio build && node scripts/sync-agent-practices.mjs",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release:packages": "./scripts/publish.sh",

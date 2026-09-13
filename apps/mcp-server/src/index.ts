@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-import { gameDocumentSchema } from '@common-arcade/studio'
+import {
+  LIVE_GAME_DOCS_BASE,
+  LIVE_GAME_PRACTICES,
+  formatLiveGamePractices,
+  gameDocumentSchema,
+} from '@common-arcade/studio'
 import { ControlClient } from '@common-arcade/control-client'
 import { McpServer } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
@@ -7,6 +12,7 @@ import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 
 export const MCP_TOOL_NAMES = [
+  'arcade.authoring_guide',
   'arcade.create_project',
   'arcade.get_project',
   'arcade.update_project',
@@ -18,9 +24,6 @@ export const MCP_TOOL_NAMES = [
   'arcade.join_match',
   'arcade.get_match',
   'arcade.get_replay',
-  'arcade.create_test_run',
-  'arcade.get_test_run',
-  'arcade.query_test_logs',
 ] as const
 
 export interface ArcadeMcpOptions {
@@ -59,15 +62,37 @@ export function createArcadeMcpServer(
     { name: 'common-arcade', version: '0.1.0-v0alpha1' },
     {
       instructions:
-        'Use discovery and durable control tools here. For autonomous or realtime play, obtain a session with arcade.join_match and connect a policy runner to the returned realtimeUrl; do not drive a realtime tick loop through MCP.',
+        'Before creating or revising a game, call arcade.authoring_guide and follow its practices; they apply to every genre, mode, seat count and control scheme. Test every revision with arcade.test_project and repair failures and warnings before publishing. Use discovery and durable control tools here. For autonomous or realtime play, obtain a session with arcade.join_match and connect a policy runner to the returned realtimeUrl; do not drive a realtime tick loop through MCP.',
     },
   )
 
   server.registerTool(
+    'arcade.authoring_guide',
+    {
+      title: 'Common Arcade live-game practices',
+      description:
+        'Return the practices and contract for building a live Common Arcade game of any genre: game shape, authoritative state and performance, actions, observations and feedback, rendering for players and spectators, results, testing and publishing. Call before creating or revising a game.',
+      inputSchema: z.object({}),
+    },
+    async () => ({
+      content: [
+        {
+          type: 'text' as const,
+          text: `${formatLiveGamePractices()}\n\nFull guide: ${LIVE_GAME_DOCS_BASE}`,
+        },
+      ],
+      structuredContent: {
+        docs: LIVE_GAME_DOCS_BASE,
+        schema: '/v1/schemas/v0alpha1/game-document',
+        sections: LIVE_GAME_PRACTICES,
+      },
+    }),
+  )
+  server.registerTool(
     'arcade.create_project',
     {
       description:
-        'Create a durable game project from the supported declarative game document.',
+        'Create a durable project from a game document of any genre. A live game is a browser document with play and runtime (kind "sandboxed-script") blocks, a presentation that assigns window.arcade.render, and a rules file that assigns globalThis.arcadeGame. Follow arcade.authoring_guide.',
       inputSchema: z.object({ document: gameDocumentSchema }),
     },
     async ({ document }) =>
@@ -87,7 +112,7 @@ export function createArcadeMcpServer(
     'arcade.update_project',
     {
       description:
-        'Save a new revision. Rejects stale edits. Never overwrites changes made by another collaborator.',
+        'Save a new revision of the whole document with the revision you read. Rejects stale edits and never overwrites changes made by another collaborator; reload and reconcile on conflict. Run arcade.test_project afterwards.',
       inputSchema: z.object({
         projectId: z.string(),
         revision: z.number().int().positive(),
@@ -116,19 +141,28 @@ export function createArcadeMcpServer(
   server.registerTool(
     'arcade.test_project',
     {
+      title: 'Test a game headlessly',
       description:
-        'Execute a bounded deterministic test to completion and return its authoritative replay and correlated diagnostics.',
+        'Run the seeded headless runtime test for any game with authoritative rules, whatever its genre, mode or seat count. Returns determinism, per-step timing against the simulation budget, perception and feedback warnings, the replay and the recorded result. Script seats with actions to reach later phases; a long or slow game reports the steps that fit the test budget with truncated true.',
       inputSchema: z.object({
         projectId: z.string(),
-        seed: z.string().optional(),
+        seed: z.string().max(200).optional(),
+        steps: z.number().int().min(1).max(600).optional(),
+        configuration: z.json().optional(),
+        actions: z
+          .array(
+            z.object({
+              step: z.number().int().nonnegative(),
+              seat: z.number().int().nonnegative(),
+              action: z.json(),
+            }),
+          )
+          .max(1000)
+          .optional(),
       }),
     },
-    async ({ projectId, seed }) => {
-      let run = await client.createProjectRun(projectId, { seed })
-      while (run.status === 'running' && run.steps < 64)
-        run = await client.stepProjectRun(run.runId, run.steps)
-      return response('run', run)
-    },
+    async ({ projectId, ...input }) =>
+      response('runtimeTest', await client.testRuntime(projectId, input)),
   )
 
   server.registerTool(
@@ -257,52 +291,6 @@ export function createArcadeMcpServer(
       inputSchema: z.object({ matchId: z.string().min(1) }),
     },
     async ({ matchId }) => response('replay', await client.getReplay(matchId)),
-  )
-
-  server.registerTool(
-    'arcade.create_test_run',
-    {
-      title: 'Create an autonomous Test Arena run',
-      description:
-        'Run or step two deterministic policies against an exact Tic-tac-toe build and retain structured diagnostics.',
-      inputSchema: z.object({
-        seed: z.string().min(1).optional(),
-        firstPreference: z.array(z.number().int().min(0).max(8)).optional(),
-        secondPreference: z.array(z.number().int().min(0).max(8)).optional(),
-        execution: z.enum(['step', 'complete']).optional(),
-        idempotencyKey: z.string().min(8).max(200).optional(),
-      }),
-    },
-    async (input) => response('testRun', await client.createTestRun(input)),
-  )
-
-  server.registerTool(
-    'arcade.get_test_run',
-    {
-      title: 'Inspect a Test Arena run',
-      description: 'Return its status, replay, assertions, and diagnostics.',
-      inputSchema: z.object({ runId: z.string().min(1) }),
-    },
-    async ({ runId }) => response('testRun', await client.getTestRun(runId)),
-  )
-
-  server.registerTool(
-    'arcade.query_test_logs',
-    {
-      title: 'Query Test Arena diagnostics',
-      description:
-        'Filter the structured observation, decision, action, runtime, adaptation, and coordination timeline.',
-      inputSchema: z.object({
-        runId: z.string().min(1),
-        category: z.string().optional(),
-        seatId: z.string().optional(),
-        level: z.string().optional(),
-        type: z.string().optional(),
-        afterSequence: z.number().int().nonnegative().optional(),
-      }),
-    },
-    async ({ runId, ...query }) =>
-      response('diagnostics', await client.getTestDiagnostics(runId, query)),
   )
 
   return server

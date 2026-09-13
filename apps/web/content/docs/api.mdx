@@ -44,17 +44,17 @@ skip auth entirely.
 
 ## Projects (Studio)
 
-| Method           | Route                                 | Purpose                                                  |
-| ---------------- | ------------------------------------- | -------------------------------------------------------- |
-| `GET` / `POST`   | `/v1/projects`                        | List / create a project                                  |
-| `GET` / `PUT`    | `/v1/projects/:id`                    | Read / update (requires `If-Match: {revision}`)          |
-| `GET`            | `/v1/projects/:id/revisions`          | Revision history                                         |
-| `POST` / `PATCH` | `/v1/projects/:id/annotations`        | Create / update an annotation                            |
-| `POST`           | `/v1/projects/:id/publish`            | Publish an immutable release                             |
-| `PUT`            | `/v1/projects/:id/collaborators`      | Manage project collaborators                             |
-| `POST`           | `/v1/projects/:id/runs`               | Headless determinism/timing test for a live game's rules |
-| `GET`            | `/v1/studio/releases/:id`, `/preview` | Read a release / render its preview                      |
-| `POST`           | `/v1/studio/releases/:id/fork`        | Fork a release into a new editable project               |
+| Method           | Route                                 | Purpose                                                                    |
+| ---------------- | ------------------------------------- | -------------------------------------------------------------------------- |
+| `GET` / `POST`   | `/v1/projects`                        | List / create a project                                                    |
+| `GET` / `PUT`    | `/v1/projects/:id`                    | Read / update (requires `If-Match: {revision}`)                            |
+| `GET`            | `/v1/projects/:id/revisions`          | Revision history                                                           |
+| `POST` / `PATCH` | `/v1/projects/:id/annotations`        | Create / update an annotation                                              |
+| `POST`           | `/v1/projects/:id/publish`            | Publish an immutable release                                               |
+| `PUT`            | `/v1/projects/:id/collaborators`      | Manage project collaborators                                               |
+| `POST`           | `/v1/projects/:id/runs`               | Runtime test: determinism and timing for any game with authoritative rules |
+| `GET`            | `/v1/studio/releases/:id`, `/preview` | Read a release / render its preview                                        |
+| `POST`           | `/v1/studio/releases/:id/fork`        | Fork a release into a new editable project                                 |
 
 ## Playtesting (browser runs)
 
@@ -83,14 +83,9 @@ skip auth entirely.
 See [Live Matches](/docs/guides/live-matches) for the full seat-claim →
 session → realtime-protocol flow.
 
-## Test Arena
-
-| Method | Route                           | Purpose                             |
-| ------ | ------------------------------- | ----------------------------------- |
-| `POST` | `/v1/test-runs`                 | Run two policies against each other |
-| `GET`  | `/v1/test-runs/:id`             | Inspect a run                       |
-| `POST` | `/v1/test-runs/:id/step`        | Step a run forward                  |
-| `GET`  | `/v1/test-runs/:id/diagnostics` | Structured agent diagnostics        |
+`POST /v1/projects/:id/runs` accepts `{ seed?, steps?, configuration?, actions? }`
+and returns the report described in
+[Results, Testing and Publishing](/docs/guides/designing-live-games/results-testing-publishing#test-every-change).
 
 ## Commons integration
 

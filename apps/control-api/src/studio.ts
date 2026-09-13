@@ -22,14 +22,11 @@ import {
   isBrowserGame,
   isManagedBrowserGame,
   defaultGameDistribution,
+  formatLiveGamePractices,
   type StudioProject,
   type StudioRelease,
 } from '@common-arcade/studio'
 import { compileGame, testGameRuntime } from '@common-arcade/studio/runtime'
-import {
-  createPreferencePolicy,
-  TicTacToeTestRun,
-} from '@common-arcade/test-arena'
 import {
   IdentityError,
   arcadeScopes,
@@ -120,20 +117,13 @@ type StudioConversationMessage = {
   jobId?: string
 }
 type ReleaseRecord = StoredDocument & { release: StudioRelease }
-type RunRecord = StoredDocument & {
-  id: string
-  project: StudioProject
-  seed: string
-  steps: number
-  agents: string[]
-  preferences: number[][]
-  createdAt: string
-}
 const COPILOT_INSTRUCTIONS =
   'You are a Common Arcade copilot. Use the assigned build-common-arcade-games skill and the supplied Arcade tools. The Arcade tools are the complete creation path; Agent Computer is not required and its availability is never a blocker. Read the current project before editing. Build the game the creator actually requested—never substitute a grid, line-building, or tic-tac-toe game unless they explicitly asked for one. If older skill text says live-managed games are grid-only, that statement is obsolete and this contract supersedes it. arcade_write_live_game accepts any genre through a custom web presentation plus a sandboxed authoritative server module, including realtime action, racing, sports, strategy, cards, simulations, teams, and 2D/3D games. For a managed live game, browser files are presentation only: assign window.arcade with render(authoritativeState, context), and have human controls call window.arcade.submit(action). Do not define submit yourself; Arcade installs it. Human controls must provide readable action labels and authoritative feedback; continuous actions declare control:{mode:"hold",releaseActionId:"stop"} with a legal stop action. render receives a player visibleState when context.observation is present and public runtime state for spectators; support both shapes. Respect context.inputEnabled and never send idle input on every render or run local simulation during live play. Arcade provides standard controls, seat handoff, and the shared ended-session screen. Do not duplicate authoritative seats, observations, legal actions, or state transitions in the browser. The separate server module owns those concerns and assigns globalThis.arcadeGame with pure synchronous initialize(context), validateAction(state, action, context), applyAction(state, action, context), observe(state, seatId, context), result(state), and—for realtime/hybrid games—tick(state, context). Every state, action, observation, event, and result must be JSON-serializable. Server functions receive only their arguments; use context.elapsedMs, context.deltaMs, and the initialization seed, never Date, network, filesystem, process, or Math.random. Each transition returns {state,events}; each event has a dotted type, visibility, and payload. result returns null until terminal. Realtime observations must expose decision-useful semantic state, not only render data: phase, objectives/progress, self status and position, visible opponents/obstacles, derived timing such as time-to-impact, and an arcadeDecisionContext with rewardDelta when an outcome is attributable. For unusual controls, arcadeDecisionContext may include bounded actionScores keyed by legal action ID plus preferredActions or avoidActions, derived only from state visible to that seat. observe must return {visibleState, legalActions}, with concrete JSON actions accepted by validateAction for that seat. Use context.roster seat IDs; never hardcode home/away as seat IDs. Ensure every realtime player gets actionable controls after any countdown and ongoing games cannot deadlock with no legal actions. Render players, objectives, goals and the ball from the supplied visible state on the first render. Studio previews run the saved server rules locally; hosted sessions use the authoritative match worker. Only preview-only browser games need the local seats(), observe(), actions(), and step() bridge. Use arcade_write_preview_game only when the creator explicitly asks for a local non-live prototype. Declare persistent worlds, teams, 3D presentation, and future payment hooks when relevant. Blender assets must be exported to glTF/GLB. After every write, run arcade_test_game and repair failures. Use arcade_publish_game only when asked to publish or make live. Report only actions confirmed by tools.' +
   ' For every genre, distinguish instantaneous commands from continuous intent. In realtime or hybrid browser previews, action entries may declare control:{mode:"hold",releaseActionId:"stop"} for input that persists until replaced, or control:{mode:"pulse",refreshMs:50,releaseActionId:"stop"} for a short input lease needing renewal; omit control for discrete commands such as jump, shoot, confirm, or card play. Provide release(seatId) or a legal releaseActionId so pause, disconnect and seat takeover cancel movement. Studio runs these policies on the local animation clock and uploads sampled diagnostics asynchronously. Use play.maxDecisionsPerSecond to bound new decisions; input lease renewal is independent. In managed live games, applyAction should set durable seat intent, tick consumes it using deltaMs, and an explicit stop/replacement clears it; render only authoritative state with interpolation. Do not integrate physics or advance time in an input handler, and do not require a network request per animation frame. These control semantics apply equally to driving, movement, aiming, dragging, and continuous tools.'
 const LIVE_AUTHORING_GUIDANCE =
-  'Never use initialization context.seats: only context.roster exists. Validate every context.seatId against that roster; unknown IDs must be rejected instead of falling back to player one. During testing exercise each seat independently, including movement, attacks, stopping and terminal outcomes, not just the first idle action. Put all decision inputs (including you/opponent and actionScores) inside observe().visibleState. render must support both seat observations and spectator public state, and must never reset or resubmit held inputs on every snapshot. Timed test histories are sampled diagnostics, not resumable replays.  All game genres use the same contract. Declare asymmetric roles and teams in play.roles, optional play.lateJoin and play.spectators, and a bounded play.maxDurationSeconds. Use opaque roster seat IDs. Return observation.feedback with reward, outcome, summary and metrics explaining the effects of prior actions; prefer you, others and standings for multi-seat observations. Optional prepare(context) caches immutable JSON in globalThis.arcadePrepared for expensive level data, while all mutable state remains in transitions. Runtime state, transitions and observations are bounded to 192 KiB serialized. arcade_test_game includes a headless determinism and timing test for managed games.'
+  'Never use initialization context.seats: only context.roster exists. Validate every context.seatId against that roster; unknown IDs must be rejected instead of falling back to player one. During testing exercise each seat independently, including movement, attacks, stopping and terminal outcomes, not just the first idle action. Put all decision inputs (including you/opponent and actionScores) inside observe().visibleState. render must support both seat observations and spectator public state, and must never reset or resubmit held inputs on every snapshot. Timed test histories are sampled diagnostics, not resumable replays.  All game genres use the same contract. Declare asymmetric roles and teams in play.roles, optional play.lateJoin and play.spectators, and a bounded play.maxDurationSeconds. Use opaque roster seat IDs. Return observation.feedback with reward, outcome, summary and metrics explaining the effects of prior actions; prefer you, others and standings for multi-seat observations. Optional prepare(context) caches immutable JSON in globalThis.arcadePrepared for expensive level data, while all mutable state remains in transitions. Runtime state, transitions and observations are bounded to 192 KiB serialized. arcade_test_game includes a headless determinism and timing test for managed games.' +
+  ' Apply these Common Arcade live-game practices to every genre, mode, seat count and control scheme:\n' +
+  formatLiveGamePractices()
 const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_read_project',
@@ -155,7 +145,7 @@ const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_write_live_game',
     description:
-      'Create any genre as a live-ready Arcade game. Supply complete browser presentation files with window.arcade.render and human controls that call window.arcade.submit, plus a separate deterministic server rules file. The server file runs authoritatively in a bounded no-I/O WebAssembly sandbox and owns seats, observations, legal actions, state and results for every live session.',
+      'Create any genre as a live-ready Arcade game. Supply complete browser presentation files with window.arcade.render and human controls that call window.arcade.submit, plus a separate deterministic server rules file. The server file runs authoritatively in a bounded no-I/O WebAssembly sandbox and owns seats, observations, legal actions, state and results for every live session. Follow the live-game practices in your instructions: small derived state, bounded-effect actions, decision-ready observations with feedback, smooth timeline playback for players and spectators, and a result with outcome and winnerSeatId.',
     parameters: (() => {
       const schema = z.toJSONSchema(browserGameDocumentSchema)
       const { kind: _kind, ...properties } = schema.properties ?? {}
@@ -426,7 +416,7 @@ const ARCADE_COPILOT_TOOLS = [
   {
     name: 'arcade_test_game',
     description:
-      'Compile and validate the current saved game, including authoritative live-hosting readiness. A game may be called live-ready only when this tool returns liveReady true. Repair and retry validation failures.',
+      'Compile and validate the current saved game, including authoritative live-hosting readiness and the headless runtime test (determinism, per-step timing, perception and feedback warnings) that applies to every game with authoritative rules. A game may be called live-ready only when this tool returns liveReady true. Repair failures and address warnings, then retry.',
     parameters: { type: 'object', properties: {}, required: [] },
   },
   {
@@ -904,201 +894,51 @@ export function createStudioApi(
     )
     return c.html(compilePresentation(record.release.document))
   })
-  const executeRun = async (r: RunRecord, steps: number) => {
-    const releaseId = `rel_${r.project.id.slice(4)}_${r.project.revision}`
-    const policies = await Promise.all(
-      r.preferences.map((preferredCells, index) =>
-        createPreferencePolicy({
-          id: `pol_${r.id}_${index}`,
-          name: `arcade-player-${index + 1}`,
-          preferredCells,
-          releaseId,
-        }),
-      ),
-    )
-    const run = await TicTacToeTestRun.create({
-      runId: r.id,
-      matchId: r.id.replace('tst_', 'mat_'),
-      seed: r.seed,
-      game: await compileGame(r.project.document, releaseId, r.project.digest),
-      controllers: policies.map((policy, index) => ({
-        seatId: `sea_${r.id}_${index}`,
-        policy,
-      })),
-      now: () => new Date(r.createdAt),
-    })
-    for (let i = 0; i < steps; i++) await run.step()
-    return {
-      ...(await run.result()),
-      projectId: r.project.id,
-      document: r.project.document,
-      revision: r.project.revision,
-      digest: r.project.digest,
-      agents: r.agents,
-      seed: r.seed,
-    }
-  }
+  // One headless test for every game with authoritative rules, whatever its
+  // genre, mode, seat count or controls: seeded determinism, per-step timing,
+  // perception and feedback warnings, and the recorded result.
   app.post('/v1/projects/:id/runs', async (c) => {
     const p = await authenticate(
         c.req.header('Authorization'),
         'projects:write',
       ),
       { project } = await owned(p.id, c.req.param('id'), 'test')
-    if (isManagedBrowserGame(project.document)) {
-      const input = z
-        .object({
-          seed: z.string().max(200).optional(),
-          steps: z.number().int().min(1).max(600).optional(),
-          configuration: z.record(z.string(), z.unknown()).optional(),
-          actions: z
-            .array(
-              z
-                .object({
-                  step: z.number().int().nonnegative(),
-                  seat: z.number().int().nonnegative(),
-                  action: z.json(),
-                })
-                .strict(),
-            )
-            .max(1000)
-            .optional(),
-        })
-        .strict()
-        .parse(await c.req.json())
-      try {
-        const result = await testGameRuntime(
-          project.document,
-          project.digest,
-          input as Parameters<typeof testGameRuntime>[2],
-        )
-        return c.json(result, result.deterministic ? 200 : 422)
-      } catch (error) {
-        throw new z.ZodError([
-          {
-            code: 'custom',
-            path: ['document', 'runtime'],
-            message: error instanceof Error ? error.message : String(error),
-          },
-        ])
-      }
-    }
-    const body = z
+    const input = z
       .object({
-        seed: z.string().max(200).default('studio-42'),
-        agents: z.array(z.string().max(200)).length(2).optional(),
-        preferences: z
-          .array(z.array(z.number().int().nonnegative()).max(64))
-          .length(2)
+        seed: z.string().max(200).optional(),
+        steps: z.number().int().min(1).max(600).optional(),
+        configuration: z.record(z.string(), z.unknown()).optional(),
+        actions: z
+          .array(
+            z
+              .object({
+                step: z.number().int().nonnegative(),
+                seat: z.number().int().nonnegative(),
+                action: z.json(),
+              })
+              .strict(),
+          )
+          .max(1000)
           .optional(),
       })
       .strict()
       .parse(await c.req.json())
-    if (body.agents) {
-      if (p.provider !== 'commons')
-        throw new IdentityError(
-          403,
-          'Use a Commons session to attach Commons agents.',
-        )
-      for (const agentId of body.agents)
-        await commonsRequest(p, `/v1/agents/${encodeURIComponent(agentId)}`)
-    }
-    if (isBrowserGame(project.document))
-      throw new IdentityError(
-        403,
-        'Use browser playtesting for this project. Grid policies only apply to grid games.',
+    try {
+      const result = await testGameRuntime(
+        project.document,
+        project.digest,
+        input as Parameters<typeof testGameRuntime>[2],
       )
-    const cells = Array.from(
-      { length: project.document.boardSize ** 2 },
-      (_, i) => i,
-    )
-    let preferences = body.preferences
-    if (!preferences && body.agents) {
-      preferences = await Promise.all(
-        body.agents.map(async (agentId, index) => {
-          const result = await commonsRequest(p, '/v1/agents/run', {
-            agentId,
-            initiatorId: p.id,
-            messages: [
-              {
-                role: 'user',
-                content: `Choose a deterministic cell preference policy for seat ${index + 1}. Game: ${JSON.stringify(project.document)}. Seed: ${body.seed}. Return ONLY JSON: {"preferredCells": [all cell indices in priority order]}. Cells are row-major integers 0 through ${cells.length - 1}. Prefer winning opportunities through strong openings. No tools.`,
-              },
-            ],
-          })
-          const plan = z
-            .object({
-              preferredCells: z
-                .array(
-                  z
-                    .number()
-                    .int()
-                    .min(0)
-                    .max(cells.length - 1),
-                )
-                .min(1)
-                .max(64),
-            })
-            .parse(extractAgentJson(result))
-          return [...new Set([...plan.preferredCells, ...cells])]
-        }),
-      )
+      return c.json(result, result.deterministic ? 200 : 422)
+    } catch (error) {
+      throw new z.ZodError([
+        {
+          code: 'custom',
+          path: ['document', 'runtime'],
+          message: error instanceof Error ? error.message : String(error),
+        },
+      ])
     }
-    const r: RunRecord = {
-      version: 1,
-      id: id('tst'),
-      project: { ...project, annotations: [] },
-      seed: body.seed,
-      steps: 0,
-      agents: body.agents ?? [
-        'Built-in center policy',
-        'Built-in corner policy',
-      ],
-      preferences: preferences ?? [
-        [Math.floor(cells.length / 2), ...cells],
-        [...cells].reverse(),
-      ],
-      createdAt: new Date().toISOString(),
-    }
-    await store.put(`runs:${p.id}`, r.id, r)
-    return c.json(await executeRun(r, 0), 201)
-  })
-  app.get('/v1/studio/runs/:id', async (c) => {
-    const p = await authenticate(
-        c.req.header('Authorization'),
-        'projects:read',
-      ),
-      r = await store.get<RunRecord>(`runs:${p.id}`, c.req.param('id'))
-    if (!r) throw new IdentityError(403, 'Run is unavailable to this account.')
-    return c.json(await executeRun(r, r.steps))
-  })
-  app.post('/v1/studio/runs/:id/step', async (c) => {
-    const p = await authenticate(
-        c.req.header('Authorization'),
-        'projects:write',
-      ),
-      r = await store.get<RunRecord>(`runs:${p.id}`, c.req.param('id'))
-    if (!r) throw new IdentityError(403, 'Run is unavailable to this account.')
-    const body = z
-      .object({ steps: z.number().int().nonnegative().max(64) })
-      .strict()
-      .parse(await c.req.json())
-    if (body.steps !== r.steps) throw new StoreConflict()
-    const result = await executeRun(
-      r,
-      Math.min(
-        r.steps + 1,
-        isBrowserGame(r.project.document)
-          ? 0
-          : r.project.document.boardSize ** 2,
-      ),
-    )
-    await store.put(
-      `runs:${p.id}`,
-      r.id,
-      { ...r, steps: result.steps, version: r.version + 1 },
-      r.version,
-    )
-    return c.json(result)
   })
   app.get('/v1/access-keys', async (c) => {
     const p = await authenticate(c.req.header('Authorization'), 'keys:manage')
@@ -2166,7 +2006,7 @@ export function createStudioApi(
         const compiled = compilePresentation(project.document)
         if (liveReadiness.liveReady)
           await smokeTestRuntime(project.document, project.digest)
-        const runtimeTest = isManagedBrowserGame(project.document)
+        const runtimeTest = liveReadiness.liveReady
           ? await testGameRuntime(project.document, project.digest, {
               steps: 30,
             })

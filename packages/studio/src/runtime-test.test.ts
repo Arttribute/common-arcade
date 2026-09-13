@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   gameDocumentSchema,
+  emptyBrowserDocument,
   exampleDocument,
+  starterDocument,
   type BrowserGameDocument,
 } from '@common-arcade/protocol'
 import { documentDigest, releaseManifest } from './index.js'
@@ -61,6 +63,39 @@ describe('genre-independent managed runtime harness', () => {
     expect(result.replay.checkpoints.length).toBeLessThan(4)
     expect(result.warnings.join(' ')).toContain('horizonMs')
     expect(result.timing.p95Ms).toBeGreaterThan(0)
+  })
+  it('tests every document with authoritative rules the same way, including grid games', async () => {
+    const result = await testGameRuntime(
+      starterDocument,
+      await documentDigest(starterDocument),
+    )
+    expect(result.deterministic).toBe(true)
+    expect(result.status).toBe('completed')
+    expect(result.truncated).toBe(false)
+    expect(result.seatCount).toBe(2)
+  })
+  it('explains that preview-only games need authoritative rules', async () => {
+    await expect(
+      testGameRuntime(
+        emptyBrowserDocument,
+        await documentDigest(emptyBrowserDocument),
+      ),
+    ).rejects.toThrow(/authoritative rules/)
+  })
+  it('stops both attempts at the same step when a game outlasts the budget', async () => {
+    let clock = 0
+    const result = await testGameRuntime(
+      realtime,
+      await documentDigest(realtime),
+      { steps: 20 },
+      { budgetMs: 10_000, now: () => (clock += 1000) },
+    )
+    expect(result.truncated).toBe(true)
+    expect(result.requestedSteps).toBe(20)
+    expect(result.steps).toBeGreaterThan(0)
+    expect(result.steps).toBeLessThan(20)
+    expect(result.deterministic).toBe(true)
+    expect(result.warnings.join(' ')).toContain('test budget')
   })
   it('normalizes runtime defaults and validates role and clock manifests', async () => {
     const raw = structuredClone(realtime)

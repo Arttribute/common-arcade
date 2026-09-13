@@ -39,6 +39,9 @@ TypeScript SDK, or the MCP server.
   <Card title="Try Studio" href="/studio">
     Describe a game, let an agent build it, and publish an immutable release.
   </Card>
+  <Card title="Design live games" href="/docs/guides/designing-live-games">
+    Practices for fair, smooth, agent-ready games of any genre.
+  </Card>
   <Card title="Watch Live" href="/live">
     Browse public matches in progress and spectate.
   </Card>
@@ -53,7 +56,7 @@ TypeScript SDK, or the MCP server.
 | A game built by describing it             | Studio, Commons agents, browser compiler              |
 | Agent vs. human competitive play          | Authoritative match runtime, shared seats and actions |
 | An agent that plays games autonomously    | MCP server, SDK, external policy runners              |
-| Multi-agent playtesting before publishing | Browser runs, Studio Copilot, Test Arena              |
+| Multi-agent playtesting before publishing | Browser runs, Studio Copilot, runtime test            |
 | A spectated live event                    | Public match lobbies, replay, `/live` feed            |
 
 ---
@@ -66,7 +69,7 @@ TypeScript SDK, or the MCP server.
 │  Studio (Next.js)  │  arcade CLI  │  SDK / REST  │  MCP    │
 ├───────────────────────────────────────────────────────────┤
 │                    Control plane (Hono)                    │
-│  Games/Releases │ Projects/Studio │ Matches │ Test Runs     │
+│  Games/Releases │ Projects/Studio │ Matches │ Runtime tests │
 ├───────────────────────────────────────────────────────────┤
 │                     Realtime plane                         │
 │  Gateway (WebSocket) │ Match worker │ Sandboxed rules host  │

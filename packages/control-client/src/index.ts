@@ -130,27 +130,41 @@ export interface SessionTicket {
   readonly realtimeUrl: string
 }
 
-export interface CreateTestRunInput {
+export interface RuntimeTestInput {
   readonly seed?: string
-  readonly firstPreference?: readonly number[]
-  readonly secondPreference?: readonly number[]
-  readonly execution?: 'step' | 'complete'
-  readonly idempotencyKey?: string
+  /** Steps to simulate, 1–600. Each step is one tick (realtime) or one decision round. */
+  readonly steps?: number
+  readonly configuration?: JsonValue
+  /** Scripted inputs by zero-based step and seat index; otherwise each seat samples legal actions. */
+  readonly actions?: readonly {
+    readonly step: number
+    readonly seat: number
+    readonly action: JsonValue
+  }[]
 }
 
-export interface TestRun {
-  readonly runId: string
-  readonly matchId: string
-  readonly status: string
-  readonly result?: JsonValue
+/** Result of the genre-independent headless runtime test. */
+export interface RuntimeTestResult {
+  readonly kind: 'runtime-test'
+  readonly deterministic: boolean
+  /** Steps that ran; lower than requestedSteps when the test budget was reached. */
   readonly steps: number
+  readonly requestedSteps: number
+  readonly truncated: boolean
+  readonly seatCount: number
+  readonly status: string
+  readonly timing: {
+    readonly medianMs: number
+    readonly p95Ms: number
+    readonly maximumMs: number
+    readonly simulationBudgetMs: number
+    readonly includes: string
+    readonly perSeatMs: number
+  }
+  readonly warnings: readonly string[]
   readonly replay: Replay
-  readonly diagnostics: readonly JsonValue[]
-}
-
-export interface DiagnosticList {
-  readonly records: readonly JsonValue[]
-  readonly nextCursor: string | null
+  readonly replayDiff: readonly { readonly stateSequence: number }[]
+  readonly result: JsonValue | null
 }
 
 export class ArcadeApiError extends Error {
@@ -245,19 +259,15 @@ export class ControlClient {
     )
   }
 
+  /** Run the headless determinism and timing test for any game with authoritative rules. */
   async testRuntime(
     projectId: string,
-    input: {
-      seed?: string
-      steps?: number
-      configuration?: JsonValue
-      actions?: { step: number; seat: number; action: JsonValue }[]
-    } = {},
-  ): Promise<unknown> {
+    input: RuntimeTestInput = {},
+  ): Promise<RuntimeTestResult> {
     return this.request(`/v1/projects/${encodeURIComponent(projectId)}/runs`, {
       method: 'POST',
       body: input,
-    })
+    }) as Promise<RuntimeTestResult>
   }
 
   async abandonMatch(
@@ -445,55 +455,6 @@ export class ControlClient {
     )
   }
 
-  async createTestRun(
-    input: CreateTestRunInput = {},
-    signal?: AbortSignal,
-  ): Promise<TestRun> {
-    const { idempotencyKey = randomIdempotencyKey(), ...body } = input
-    return (await this.request('/v1/test-runs', {
-      method: 'POST',
-      headers: { 'Idempotency-Key': idempotencyKey },
-      body,
-      signal,
-    })) as TestRun
-  }
-
-  async getTestRun(runId: string, signal?: AbortSignal): Promise<TestRun> {
-    return (await this.request(`/v1/test-runs/${encodeURIComponent(runId)}`, {
-      signal,
-    })) as TestRun
-  }
-
-  async stepTestRun(runId: string, signal?: AbortSignal): Promise<unknown> {
-    return this.request(`/v1/test-runs/${encodeURIComponent(runId)}/step`, {
-      method: 'POST',
-      body: {},
-      signal,
-    })
-  }
-
-  async getTestDiagnostics(
-    runId: string,
-    query: {
-      readonly category?: string
-      readonly seatId?: string
-      readonly level?: string
-      readonly type?: string
-      readonly afterSequence?: number
-    } = {},
-    signal?: AbortSignal,
-  ): Promise<DiagnosticList> {
-    const parameters = new URLSearchParams()
-    for (const [key, value] of Object.entries(query)) {
-      if (value !== undefined) parameters.set(key, String(value))
-    }
-    const suffix = parameters.size === 0 ? '' : `?${parameters.toString()}`
-    return (await this.request(
-      `/v1/test-runs/${encodeURIComponent(runId)}/diagnostics${suffix}`,
-      { signal },
-    )) as DiagnosticList
-  }
-
   async listProjects(): Promise<{ projects: StudioProject[] }> {
     return this.request('/v1/projects') as Promise<{
       projects: StudioProject[]
@@ -556,21 +517,6 @@ export class ControlClient {
       method: 'POST',
       body: annotation,
     }) as Promise<StudioProject>
-  }
-  async createProjectRun(
-    id: string,
-    input: { seed?: string; preferences?: number[][] } = {},
-  ): Promise<TestRun> {
-    return this.request(`/v1/projects/${encodeURIComponent(id)}/runs`, {
-      method: 'POST',
-      body: input,
-    }) as Promise<TestRun>
-  }
-  async stepProjectRun(id: string, steps: number): Promise<TestRun> {
-    return this.request(`/v1/studio/runs/${encodeURIComponent(id)}/step`, {
-      method: 'POST',
-      body: { steps },
-    }) as Promise<TestRun>
   }
 
   async createBrowserRun(

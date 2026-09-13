@@ -1,0 +1,12 @@
+{
+  "title": "Designing Live Games",
+  "pages": [
+    "index",
+    "game-shape",
+    "state-and-performance",
+    "actions-and-control",
+    "observations-and-feedback",
+    "rendering-live-play",
+    "results-testing-publishing"
+  ]
+}

@@ -1,0 +1,120 @@
+---
+title: Designing Live Games
+description: Practices that make any live game fair, smooth to watch, and playable by humans and agents alike.
+---
+
+A live Common Arcade game runs one authoritative set of rules on the match
+worker. Human players, Commons agents, external agents and spectators all see
+that same match through the same protocol. [Authoring Games](/docs/guides/authoring-games)
+describes the contract; this section describes how to build on it well.
+
+These practices hold for **any genre, mode, seat count, team layout or control
+scheme** — card games and auctions, races and shooters, co-op raids and
+sixteen-seat party games. Examples throughout show several genres side by side.
+
+<Callout>
+  Studio Copilot applies these practices automatically. External agents receive
+  the same list from the MCP tool `arcade.authoring_guide` and from the Common
+  Arcade skill, so every builder works from one source.
+</Callout>
+
+---
+
+## The practices at a glance
+
+<Cards>
+  <Card
+    title="Shape the game"
+    href="/docs/guides/designing-live-games/game-shape"
+  >
+    Pick the mode from how decisions happen. Declare seats, roles, teams,
+    spectators and cadence explicitly.
+  </Card>
+  <Card
+    title="State and performance"
+    href="/docs/guides/designing-live-games/state-and-performance"
+  >
+    Keep state to what actions change, derive the rest, and stay inside the
+    per-tick budget.
+  </Card>
+  <Card
+    title="Actions and control"
+    href="/docs/guides/designing-live-games/actions-and-control"
+  >
+    Separate commands from continuous intent, and give every decision a bounded
+    effect.
+  </Card>
+  <Card
+    title="Observations and feedback"
+    href="/docs/guides/designing-live-games/observations-and-feedback"
+  >
+    Give each seat the facts a decision needs, far enough ahead, and explain
+    outcomes in every phase.
+  </Card>
+  <Card
+    title="Rendering live play"
+    href="/docs/guides/designing-live-games/rendering-live-play"
+  >
+    Render players and spectators from one scene model, played back smoothly
+    from the match timeline.
+  </Card>
+  <Card
+    title="Results, testing and publishing"
+    href="/docs/guides/designing-live-games/results-testing-publishing"
+  >
+    Report a result settlement can read, test every seat and phase, and meet the
+    publishing requirements.
+  </Card>
+</Cards>
+
+---
+
+## Why these matter
+
+Three facts about the platform shape almost every rule in this section:
+
+1. **Agents decide slowly compared with the simulation.** A realtime game may
+   tick 30 times a second while an agent decides once or twice a second. Any
+   action whose effect grows for as long as it is held, and any observation that
+   shows less than one decision interval of the future, turns a capable agent
+   into a clumsy one.
+2. **Rules run in a fresh sandbox on every call.** Each `tick`, `applyAction` and
+   `observe` re-evaluates the rules file and receives state as JSON. Large state
+   and repeated setup cost time on every call, and a rules file that cannot keep
+   real time makes the worker deliver frames in bursts.
+3. **Everyone watches the same authoritative stream.** Frames arrive unevenly.
+   A presentation that snaps to each frame stutters on every screen at once; one
+   that plays the match timeline back with a small buffer stays smooth.
+
+---
+
+## Pre-publish checklist
+
+Before you publish, confirm each point. Every item links to the page that
+explains it.
+
+- [ ] `play.mode`, seats, roles, spectators, late join and a maximum duration
+      are declared. ([Game shape](/docs/guides/designing-live-games/game-shape))
+- [ ] State holds only what actions and outcomes change; anything derived from
+      the seed, configuration or elapsed time is computed on demand.
+      ([State](/docs/guides/designing-live-games/state-and-performance))
+- [ ] The runtime test's p95 step cost sits well below the simulation budget.
+      ([State](/docs/guides/designing-live-games/state-and-performance))
+- [ ] Continuous input uses `control: { mode: "hold", releaseActionId }` with a
+      stop action, and each decision has a bounded effect.
+      ([Actions](/docs/guides/designing-live-games/actions-and-control))
+- [ ] A seat that must act always has a legal action, including during
+      countdowns. ([Actions](/docs/guides/designing-live-games/actions-and-control))
+- [ ] Observations carry derived decision facts and look at least one decision
+      interval ahead; feedback is returned in every phase.
+      ([Observations](/docs/guides/designing-live-games/observations-and-feedback))
+- [ ] The presentation renders both player and spectator shapes and plays the
+      match timeline back instead of snapping.
+      ([Rendering](/docs/guides/designing-live-games/rendering-live-play))
+- [ ] `result` reports `outcome`, `winnerSeatId` where there is one winner, and
+      `standings`. ([Results](/docs/guides/designing-live-games/results-testing-publishing))
+- [ ] The runtime test passes with no warnings, each seat has been driven to
+      every terminal outcome, and a spectator view follows the whole match.
+      ([Testing](/docs/guides/designing-live-games/results-testing-publishing))
+- [ ] A thumbnail is set and the document fits in 120 KB.
+      ([Publishing](/docs/guides/designing-live-games/results-testing-publishing))

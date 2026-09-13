@@ -89,7 +89,7 @@ import {
   type StudioProject,
   type StudioRelease,
 } from '@common-arcade/studio'
-import type { TestRun } from '@common-arcade/control-client'
+import type { RuntimeTestResult } from '@common-arcade/control-client'
 import { arcade, arcadeCopilot, type CopilotActivity } from '../../lib/api'
 import { RecordingShelf, storeRecording } from './recording-shelf'
 import { usePreviewAgents } from '../lib/use-preview-agents'
@@ -222,11 +222,10 @@ type BrowserRun = {
   events?: BrowserEvent[]
   preview?: { decisions: number; samples: number }
 }
-type Run = TestRun & {
+/** A headless runtime test, pinned to the revision it ran against. */
+type Run = RuntimeTestResult & {
   document: GameDocument
   revision: number
-  digest: string
-  agents: string[]
 }
 type Log = {
   sequence: number
@@ -634,16 +633,12 @@ export function GameStudio({
     [error, setError] = useState(''),
     [notice, setNotice] = useState('')
   const [run, setRun] = useState<Run>(),
-    [playing, setPlaying] = useState(false),
-    [seed, setSeed] = useState('studio-42')
+    [seed, setSeed] = useState('studio-42'),
+    [testSteps, setTestSteps] = useState(120)
   const [selected, setSelected] = useState<Log>(),
     [logFilter, setLogFilter] = useState('all')
   const [history, setHistory] = useState<StudioProject[]>([]),
     [previewKey, setPreviewKey] = useState(0)
-  const [selectedAgents, setSelectedAgents] = useState<[string, string]>([
-    '',
-    '',
-  ])
   const file = useRef<HTMLInputElement>(null)
   const dirty = project
     ? JSON.stringify(project.document) !== JSON.stringify(document) ||
@@ -725,7 +720,6 @@ export function GameStudio({
       setBrowserObservation(undefined)
       setBrowserControllers(defaultBrowserControllers(p.document))
       setBrowserPlaying(false)
-      setPlaying(false)
       setMessages([])
       setCopilotActivity([])
       setBusy('')
@@ -847,7 +841,6 @@ export function GameStudio({
     } catch (e) {
       if (!isCurrent()) return
       setError(e instanceof Error ? e.message : String(e))
-      setPlaying(false)
       setBrowserPlaying(false)
     } finally {
       if (isCurrent()) setBusy('')
@@ -886,7 +879,6 @@ export function GameStudio({
     setProjects((all) => [next, ...all.filter((item) => item.id !== next.id)])
   }
   function update(patch: Partial<GameDocument>) {
-    setPlaying(false)
     setDocument((d) => {
       const next = { ...d, ...patch } as GameDocument
       setSource(JSON.stringify(next, null, 2))
@@ -1123,36 +1115,18 @@ export function GameStudio({
       `${controller.label} prepared strategy ${result.controller.strategyEpoch}; applying it to the game.`,
     )
   }
+  /** The same seeded headless test for every game with authoritative rules. */
   async function startRun() {
     const p = !project || dirty ? await save() : project
-    const ids: [string, string] = [...selectedAgents]
-    for (const i of [0, 1] as const)
-      if (!ids[i])
-        ids[i] = await ensureAgent(
-          'player',
-          `${p.document.title} · Player ${i + 1}`,
-        )
-    setSelectedAgents(ids)
-    const r = await arcade<Run>(`projects/${p.id}/runs`, { seed, agents: ids })
-    setRun(r)
+    const result = await arcade<RuntimeTestResult>(`projects/${p.id}/runs`, {
+      seed,
+      steps: testSteps,
+    })
+    setRun({ ...result, document: p.document, revision: p.revision })
     setView('test')
-    setPlaying(true)
     setLogsOpen(true)
     setSelected(undefined)
   }
-  async function stepRun() {
-    if (!run) return
-    setRun(
-      await arcade<Run>(`studio/runs/${run.runId}/step`, { steps: run.steps }),
-    )
-  }
-  useEffect(() => {
-    if (!playing || busy || !run || run.status !== 'running') return
-    const timer = setTimeout(() => {
-      void task('step', stepRun)
-    }, 750)
-    return () => clearTimeout(timer)
-  }, [playing, busy, run])
   const runBrowserDecision = useCallback(async () => {
     if (browserDecisionActive.current) return
     browserDecisionActive.current = true
@@ -1217,7 +1191,7 @@ export function GameStudio({
       }
     }
   }, [previewDocument, view, board])
-  const logs = (run?.diagnostics ?? []) as unknown as Log[]
+  const logs = run ? runtimeTestReport(run) : []
   const visibleNotes =
     project?.annotations.filter(
       (a) =>
@@ -2010,46 +1984,41 @@ export function GameStudio({
                 </div>
               </div>
               <div hidden={workspaceGroup !== 'testing'}>
-                {!isBrowserGame(document) && (
-                  <>
-                    {' '}
-                    <div className="studio-section">
-                      <div className="studio-section-label">
-                        <Bot size={13} />
-                        Test players
-                      </div>
-                      {[0, 1].map((i) => (
-                        <label key={i}>
-                          Seat {i + 1}
-                          <AgentSelect
-                            agents={agents}
-                            value={selectedAgents[i] ?? ''}
-                            allowNone
-                            noneLabel="Create a Commons agent"
-                            ariaLabel={`Seat ${i + 1} agent`}
-                            onChange={(id) =>
-                              setSelectedAgents((ids) => {
-                                const next: [string, string] = [...ids]
-                                next[i] = id
-                                return next
-                              })
-                            }
-                          />
-                        </label>
-                      ))}
-                      <Field label="Scenario seed">
-                        <Input
-                          value={seed}
-                          onChange={(e) => setSeed(e.target.value)}
-                          maxLength={200}
-                        />
-                      </Field>
-                      <p className="studio-help">
-                        Commons agents choose a bounded play policy. Every move
-                        uses the same game rules.
-                      </p>
+                {hasAuthoritativeRules(document) && (
+                  <div className="studio-section">
+                    <div className="studio-section-label">
+                      <FlaskConical size={13} />
+                      Runtime test
                     </div>
-                  </>
+                    <Field label="Scenario seed">
+                      <Input
+                        value={seed}
+                        onChange={(e) => setSeed(e.target.value)}
+                        maxLength={200}
+                      />
+                    </Field>
+                    <Field label="Steps">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={600}
+                        value={testSteps}
+                        onChange={(e) =>
+                          setTestSteps(
+                            Math.min(
+                              600,
+                              Math.max(1, Number(e.target.value) || 1),
+                            ),
+                          )
+                        }
+                      />
+                    </Field>
+                    <p className="studio-help">
+                      Runs the saved rules twice from the same seed and checks
+                      determinism, per-step cost and agent-facing warnings. It
+                      works the same way for every genre and seat layout.
+                    </p>
+                  </div>
                 )}
                 {isBrowserGame(document) && (
                   <div className="studio-section">
@@ -2875,20 +2844,17 @@ export function GameStudio({
                   <strong>Test Arena</strong>
                   <span>
                     {run
-                      ? `${run.steps} decisions · ${run.status}`
-                      : 'No run started'}
+                      ? `${run.deterministic ? 'Deterministic' : 'Not deterministic'} · ${run.steps}${run.truncated ? ` of ${run.requestedSteps}` : ''} steps · ${run.status}`
+                      : 'No test run yet'}
                   </span>
                   <Select
-                    ariaLabel="Filter diagnostics"
+                    ariaLabel="Filter test report"
                     value={logFilter}
                     onValueChange={setLogFilter}
                   >
-                    <SelectOption value="all" title="All events" />
-                    <SelectOption
-                      value="policy"
-                      title="Observations & decisions"
-                    />
-                    <SelectOption value="runtime" title="Actions & state" />
+                    <SelectOption value="all" title="Whole report" />
+                    <SelectOption value="warning" title="Warnings" />
+                    <SelectOption value="state" title="Result & state" />
                   </Select>
                   <button
                     aria-label={
@@ -2921,7 +2887,7 @@ export function GameStudio({
                           url = URL.createObjectURL(blob)
                         const a = window.document.createElement('a')
                         a.href = url
-                        a.download = `${run.runId}.json`
+                        a.download = `runtime-test-r${run.revision}.json`
                         a.click()
                         URL.revokeObjectURL(url)
                       }}
@@ -2952,8 +2918,8 @@ export function GameStudio({
                       ))}
                     {!logs.length && (
                       <p className="studio-help">
-                        Start a test to inspect agent observations, policy
-                        decisions and accepted actions.
+                        Run the runtime test to check determinism, timing,
+                        warnings and the recorded result.
                       </p>
                     )}
                   </div>
@@ -3001,17 +2967,14 @@ export function GameStudio({
         )}
         <div className="studio-stage-toolbar">
           <div className="studio-segment">
-            {(isBrowserGame(document)
-              ? (['preview', 'code'] as const)
-              : (['preview', 'code', 'test'] as const)
+            {(hasAuthoritativeRules(document)
+              ? (['preview', 'code', 'test'] as const)
+              : (['preview', 'code'] as const)
             ).map((v) => (
               <button
                 key={v}
                 className={view === v ? 'is-active' : ''}
-                onClick={() => {
-                  if (v !== 'test') setPlaying(false)
-                  setView(v)
-                }}
+                onClick={() => setView(v)}
               >
                 {v === 'preview' ? (
                   <Gamepad2 size={13} />
@@ -3020,7 +2983,7 @@ export function GameStudio({
                 ) : (
                   <FlaskConical size={13} />
                 )}{' '}
-                {v === 'test' ? 'Test Arena' : v[0]!.toUpperCase() + v.slice(1)}
+                {v[0]!.toUpperCase() + v.slice(1)}
               </button>
             ))}
           </div>
@@ -3038,28 +3001,11 @@ export function GameStudio({
               <>
                 <Button
                   disabled={!user || !!busy}
-                  onClick={() => void task('prepare test', startRun)}
+                  onClick={() => void task('runtime test', startRun)}
                 >
                   <RotateCcw size={13} />
-                  {run ? 'New run' : 'Run agents'}
+                  {run ? 'Run again' : 'Run test'}
                 </Button>
-                {run && (
-                  <>
-                    {icon(
-                      playing ? <Pause size={15} /> : <Play size={15} />,
-                      playing ? 'Pause test' : 'Continue test',
-                      () => setPlaying(!playing),
-                    )}
-                    <button
-                      className="studio-icon"
-                      aria-label="Step one decision"
-                      disabled={!!busy || playing || run.status !== 'running'}
-                      onClick={() => void task('step', stepRun)}
-                    >
-                      <SkipForward size={15} />
-                    </button>
-                  </>
-                )}
               </>
             ) : (
               <>
@@ -3190,7 +3136,7 @@ export function GameStudio({
             <div className="studio-preview-meta">
               <span>
                 {view === 'test'
-                  ? `Test run · revision ${run?.revision ?? '—'}`
+                  ? `Runtime test · revision ${run?.revision ?? '—'}`
                   : 'Compiled game preview'}
               </span>
               <span>
@@ -3315,11 +3261,9 @@ export function GameStudio({
             <div className="studio-preview-footer">
               <span className="studio-status-dot" />
               {view === 'test'
-                ? run?.status === 'completed'
-                  ? 'Run complete · replay available below'
-                  : playing
-                    ? 'Agents are playing'
-                    : 'Test paused'
+                ? run
+                  ? `${run.warnings.length} warning${run.warnings.length === 1 ? '' : 's'} · final state shown · replay available below`
+                  : 'Run the test to see the final authoritative state'
                 : tool !== 'select'
                   ? `Click${tool === 'region' ? ' and drag' : ''} to annotate`
                   : isBrowserGame(document) && browserRun
@@ -3338,6 +3282,67 @@ export function GameStudio({
       </CanvasShell>
     </main>
   )
+}
+
+function hasAuthoritativeRules(document: GameDocument) {
+  return !isBrowserGame(document) || isManagedBrowserGame(document)
+}
+
+/** Turns one runtime test into readable report rows for the test log. */
+function runtimeTestReport(run: Run): Log[] {
+  const rows: Omit<Log, 'sequence'>[] = [
+    {
+      type: run.deterministic ? 'test.deterministic' : 'test.nondeterministic',
+      summary: `${run.steps}${run.truncated ? ` of ${run.requestedSteps}` : ''} steps · ${run.seatCount} seats · ${run.status}`,
+      category: 'summary',
+      source: { kind: 'runtime-test' },
+      data: {
+        deterministic: run.deterministic,
+        steps: run.steps,
+        requestedSteps: run.requestedSteps,
+        truncated: run.truncated,
+        seatCount: run.seatCount,
+        status: run.status,
+      },
+    },
+    {
+      type: 'test.timing',
+      summary: `median ${run.timing.medianMs.toFixed(1)} ms · p95 ${run.timing.p95Ms.toFixed(1)} ms · budget ${run.timing.simulationBudgetMs.toFixed(1)} ms`,
+      category: 'summary',
+      source: { kind: 'runtime-test' },
+      data: run.timing,
+    },
+    ...run.warnings.map((warning) => ({
+      type: 'test.warning',
+      summary: warning,
+      category: 'warning',
+      source: { kind: 'runtime-test' },
+      data: { warning },
+    })),
+    ...run.replayDiff.map((diff) => ({
+      type: 'test.divergence',
+      summary: `Runs diverged at state sequence ${diff.stateSequence}`,
+      category: 'warning',
+      source: { kind: 'runtime-test' },
+      data: diff,
+    })),
+    {
+      type: 'test.result',
+      summary:
+        run.result === null ? 'No result yet' : JSON.stringify(run.result),
+      category: 'state',
+      source: { kind: 'runtime-test' },
+      data: run.result,
+    },
+    {
+      type: 'test.final-state',
+      summary: `${run.replay.checkpoints.length} checkpoints recorded`,
+      category: 'state',
+      source: { kind: 'runtime-test' },
+      data: run.replay.checkpoints.at(-1) ?? null,
+    },
+  ]
+  return rows.map((row, sequence) => ({ ...row, sequence }))
 }
 
 function actionsForSeat(

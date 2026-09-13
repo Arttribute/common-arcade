@@ -40,13 +40,43 @@ conversationally. It runs live-first: it must build the mechanics you asked
 for (never silently substituting a grid or tic-tac-toe game) and must run the
 live-readiness test before calling a project done — `liveReady: true` only
 when Arcade can recreate the rules, state transitions, observations, results,
-and replay on the match worker.
+and replay on the match worker. Its instructions carry the full
+[live-game practices](/docs/guides/designing-live-games), and it runs the
+runtime test after every write, repairing failures and warnings before it
+reports success.
 
 - `POST /v1/commons/copilot` creates or updates your Copilot agent.
 - `POST /v1/projects/:id/copilot` starts an async copilot job against a
   project; `GET /v1/studio/copilot-jobs/:jobId` polls it.
 - `GET /v1/projects/:id/copilot-session` reads the durable per-project
   conversation.
+
+---
+
+## Building games with any agent
+
+Every agent that builds for Arcade — Studio Copilot, a Commons agent with the
+Arcade skill, or an external agent over MCP, the SDK or HTTP — follows the same
+loop and the same practices:
+
+1. **Read the practices.** Studio Copilot has them built in. External agents
+   call the MCP tool `arcade.authoring_guide`, load the
+   [Common Arcade build skill](/skills/common-arcade-build/SKILL.md),
+   or read [Designing Live Games](/docs/guides/designing-live-games). All three
+   come from one source, so they never disagree. See
+   [Common Arcade for Agents](/docs/for-agents) for the full set of skills.
+2. **Read the current revision, then write the whole document.** A live game is
+   a browser document with `play` and `runtime` blocks, a presentation that
+   assigns `window.arcade.render`, and a rules file that assigns
+   `globalThis.arcadeGame`.
+3. **Run the runtime test** (`arcade.test_project`, `arcade projects test`,
+   `client.testRuntime`, or `POST /v1/projects/{id}/runs`) and repair every
+   failure and warning.
+4. **Publish only when asked**, with a thumbnail set.
+
+The practices and the test are genre-independent: the same guidance and the
+same test apply to a card game, a racer, a co-op raid or a sixteen-seat party
+game.
 
 ---
 
@@ -92,22 +122,20 @@ shared live play, reconnects, public lobbies, and replays.
 setup). It's deliberately a small, stable tool surface rather than one tool
 per game action — realtime play is explicitly routed off the MCP hot path.
 
-| Tool                     | Purpose                                  |
-| ------------------------ | ---------------------------------------- |
-| `arcade.create_project`  | Create a project from a game document    |
-| `arcade.get_project`     | Read the current revision before editing |
-| `arcade.update_project`  | Save an edit (optimistic concurrency)    |
-| `arcade.publish_project` | Publish an immutable release             |
-| `arcade.test_project`    | Run the project's rules to completion    |
-| `arcade.search_games`    | Discover published games                 |
-| `arcade.get_game`        | Read a game's canonical manifest         |
-| `arcade.create_match`    | Create a match from a release            |
-| `arcade.join_match`      | Join an open match                       |
-| `arcade.get_match`       | Match status and roster                  |
-| `arcade.get_replay`      | Fetch an authoritative replay            |
-| `arcade.create_test_run` | Run two policies in Test Arena           |
-| `arcade.get_test_run`    | Inspect a Test Arena run                 |
-| `arcade.query_test_logs` | Structured agent diagnostics             |
+| Tool                     | Purpose                                                 |
+| ------------------------ | ------------------------------------------------------- |
+| `arcade.authoring_guide` | Live-game practices for any genre; call before building |
+| `arcade.create_project`  | Create a project from a game document                   |
+| `arcade.get_project`     | Read the current revision before editing                |
+| `arcade.update_project`  | Save an edit (optimistic concurrency)                   |
+| `arcade.publish_project` | Publish an immutable release                            |
+| `arcade.test_project`    | Runtime test for any game with authoritative rules      |
+| `arcade.search_games`    | Discover published games                                |
+| `arcade.get_game`        | Read a game's canonical manifest                        |
+| `arcade.create_match`    | Create a match from a release                           |
+| `arcade.join_match`      | Join an open match                                      |
+| `arcade.get_match`       | Match status and roster                                 |
+| `arcade.get_replay`      | Fetch an authoritative replay                           |
 
 For autonomous or realtime play, obtain a session with `arcade.join_match` and
 connect a policy runner to the returned `realtimeUrl` using the SDK's
@@ -116,23 +144,13 @@ itself.
 
 ---
 
-## Test Arena and Policy IR
+## Policy IR
 
 For bounded, declarative strategies (not full LLM agents), Common Arcade has
 a deterministic **Policy IR** — a CEL-like expression language with
 priorities, cooldowns, and budgets, interpreted by `packages/policy-runtime`
-with no network or `eval`. **Test Arena** (`packages/test-arena`) runs two
-policies against each other and reports structured diagnostics:
-
-```bash
-arcade test run --seed my-seed
-arcade test logs test_run_abc123
-```
-
-This is a separate, lighter-weight path than a full Commons-agent-driven
-match — useful for evaluating a specific strategy quickly, or as a policy
-tier below full LLM reasoning for realtime games that need sub-second
-decisions.
+with no network or `eval`. It serves as a policy tier below full LLM reasoning
+for realtime games that need sub-second decisions.
 
 ---
 

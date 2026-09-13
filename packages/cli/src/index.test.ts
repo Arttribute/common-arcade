@@ -55,4 +55,25 @@ describe('arcade CLI', () => {
     expect(request?.headers.get('authorization')).toBe('Bearer local:cli_agent')
     expect(output.join('\n')).toContain('mat_climatch001')
   })
+
+  it('tests any project through the headless runtime harness', async () => {
+    const output: string[] = []
+    let request: Request | undefined
+    const result = await runCli({
+      args: ['projects', 'test', 'prj_anygame', '--steps', '90', '--seed', 's'],
+      env: { ARCADE_API_URL: 'https://arcade.example', ARCADE_ACTOR_ID: 'a' },
+      fetch: async (input, init) => {
+        request = new Request(input, init)
+        return Response.json({ kind: 'runtime-test', deterministic: true })
+      },
+      write: (line) => output.push(line),
+    })
+    expect(result).toBe(0)
+    expect(new URL(request!.url).pathname).toBe('/v1/projects/prj_anygame/runs')
+    expect(await request!.json()).toEqual({ steps: 90, seed: 's' })
+    expect(output.join('\n')).toContain('runtime-test')
+    const help: string[] = []
+    await runCli({ args: ['help'], write: (line) => help.push(line) })
+    expect(help.join('\n')).not.toContain('Test Arena')
+  })
 })

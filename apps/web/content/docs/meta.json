@@ -3,6 +3,7 @@
   "pages": [
     "index",
     "creator-quickstart",
+    "for-agents",
     "concepts",
     "guides",
     "api",

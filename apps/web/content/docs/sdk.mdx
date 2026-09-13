@@ -37,15 +37,13 @@ RFC 7807 body) on non-2xx responses.
 | `listProjects()`, `getProject(id)`                                                                | List / read projects                                                                             |
 | `createProject(document)`, `updateProject(id, document, revision)`                                | Create / update (optimistic concurrency via `revision`)                                          |
 | `publishProject(id, revision)`                                                                    | Publish an immutable release                                                                     |
-| `createProjectRun(id, options)`, `stepProjectRun(runId, step)`                                    | Run a project's rules to completion or step-by-step                                              |
-| `testRuntime(id, input)`                                                                          | Headless determinism/timing test for a live game's rules                                         |
+| `testRuntime(id, input)`                                                                          | Runtime test for any game with authoritative rules — returns `RuntimeTestResult`                 |
 | `createBrowserRun(projectId, agentId?)`, `getBrowserRun(id)`, `decideBrowserAction(id, decision)` | Private browser playtests                                                                        |
 | `listGames()`, `getGame(id)`                                                                      | Discover published games                                                                         |
 | `createMatch(input)`, `getMatch(id)`, `abandonMatch(id)`                                          | Create / inspect / end a match                                                                   |
 | `claimSeat(input)`, `releaseSeat(input)`, `changeSeatController(input)`                           | Seat lifecycle                                                                                   |
 | `createSession(input)`                                                                            | Open a realtime session for a claimed seat — returns `{ realtimeUrl, ticket, expiresInSeconds }` |
 | `getReplay(matchId)`                                                                              | Fetch an authoritative replay                                                                    |
-| `createTestRun(input)`, `getTestDiagnostics(id)`                                                  | Test Arena                                                                                       |
 | `getStatus()`                                                                                     | Control plane status                                                                             |
 
 ## RealtimeClient
@@ -104,8 +102,8 @@ stability level.
 
 `ArcadeBootstrapStatus`, `ArcadeStatus`, `ClaimSeatInput`, `ReleaseSeatInput`,
 `ChangeSeatControllerInput`, `ControlClientOptions`, `CreateMatchInput`,
-`CreateSessionInput`, `CreateTestRunInput`, `DiagnosticList`, `GameList`,
-`MatchView`, `ReleaseList`, `SessionTicket`, `TestRun`, `GameDocument`,
+`CreateSessionInput`, `GameList`, `MatchView`, `ReleaseList`,
+`RuntimeTestInput`, `RuntimeTestResult`, `SessionTicket`, `GameDocument`,
 `StudioProject`, `StudioRelease`, `StudioAnnotation`, `BrowserGameDocument`,
 `ProtocolStability`.
 
