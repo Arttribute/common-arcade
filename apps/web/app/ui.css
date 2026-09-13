@@ -360,15 +360,17 @@
  * Agent Commons' studio page title: bold 16px type sitting fully inside a
  * marker highlight.
  *
- * Arcade's signature is a bright marigold orange, pulled toward yellow so black
- * type sits on it cleanly (11:1), with an electric cyan as its complement
- * (11:1). Colour is spent the way Commons spends it — vividly, one place at a
- * time: marigold marks the logo and page titles; the pair appear together only
- * where there is room to play (the landing hero and its animation). Neither is ever used for chrome, borders or buttons. */
+ * Arcade's highlights are the CommonLab (Commons courses) brand pair: the
+ * sunny yellow #FFE177 its landing page highlights with, and its aqua #71E0E7
+ * as the complement — the same pastel-vivid weight, both 15:1 with black.
+ * Colour is spent the way Commons spends it — one place at a time: yellow
+ * marks the logo and page titles; the pair appear together only in the
+ * landing hero and its animation. Neither is used for chrome, borders or
+ * buttons. */
 :root {
-  --hl-primary: #ffbe45;
-  --hl-secondary: #22d3ee;
-  --hl-primary-soft: #ffdea0;
+  --hl-primary: #ffe177;
+  --hl-secondary: #71e0e7;
+  --hl-primary-soft: #fff0b3;
   --title-highlight: var(--hl-primary);
   --title-highlight-ink: #0c0a09;
   --highlight-warm: var(--hl-secondary);
