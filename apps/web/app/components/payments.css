@@ -161,7 +161,8 @@
 .game-economy-table > *,
 .payment-panel .grant-form,
 .budget-fields,
-.budget-review {
+.budget-review,
+.payment-analysis {
   min-width: 0;
 }
 .budget-fields:not([hidden]) {
@@ -174,7 +175,8 @@
   background: transparent;
 }
 .payment-panel .grant-form > button,
-.payment-panel .budget-review button {
+.payment-panel .budget-review button,
+.payment-panel .payment-analysis > button {
   min-width: 0;
   max-width: 100%;
   white-space: normal;
