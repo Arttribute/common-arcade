@@ -20,52 +20,53 @@ read routes; the specs and recipe definitions are static files.
 Specs are served by the web app at
 `https://arcade.agentcommons.io/bazantic/<file>` and fetched server-side by
 Bazantic. They cover only credential-free `GET` routes, so gateways use auth
-type `x402-mpp` (no upstream credential).
+type `none`.
 
-| Gateway                | Upstream (`--endpoint`)                     |
-| ---------------------- | ------------------------------------------- |
-| Common Arcade          | `https://arcade.agentcommons.io/api/arcade` |
-| Common Arcade Payments | `https://d2scptqzm55h6p.cloudfront.net`     |
+## Live listings
+
+| Gateway                | Slug                         | Endpoint                                            | Upstream                                    |
+| ---------------------- | ---------------------------- | --------------------------------------------------- | ------------------------------------------- |
+| Common Arcade          | `idqnei5alresnbfes5pnwpgv6a` | `https://idqnei5alresnbfes5pnwpgv6a.bazgateway.com` | `https://arcade.agentcommons.io/api/arcade` |
+| Common Arcade Payments | `ga4s6ugwlrh57kwd7ejatxx2ni` | `https://ga4s6ugwlrh57kwd7ejatxx2ni.bazgateway.com` | `https://d2scptqzm55h6p.cloudfront.net`     |
+
+MCP servers are `<endpoint>/mcp`. Every method is priced at the default
+0.01 USDC per call on Base. Two earlier draft registrations of the same names
+(`bnu7qq5vk5c55ij5ws7xsv4riq`, `wivn5yvkm5ax3dzathcwmb77qu`) are unused.
+
+| Recipe                                            | Bindings                                                                                                            |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `audit-a-common-arcade-prize-payout-on-arc`       | Payments `getPaidMatch`; Arc `jrra4aibtzhq5fqadqf34iweia` `eth_chainId`, `eth_getTransactionReceipt`, `eth_getLogs` |
+| `find-a-common-arcade-game-an-agent-can-play-now` | Common Arcade `getArcadeStatus`, `listGames`, `listGameReleases`, `listPublicMatches`                               |
+
+Both are published at `https://bazantic.com/recipes/<handle>` and
+`https://api.bazantic.com/v1/recipes/<handle>`.
 
 The payment service's own x402 route (`POST /v1/analysis/{network}`) is
 deliberately not in the gateway spec: it already answers `402`, and a Bazantic
 gateway in front of it would double-charge.
 
-## Registering or updating a gateway
+## Re-registering a gateway
 
 ```bash
-npm i -g @bazantic/cli     # 0.8.0+ for recipes
-baz login                  # device approval in a browser
-
+npm i -g @bazantic/cli && baz login
 baz gateway add \
   --spec-url https://arcade.agentcommons.io/bazantic/common-arcade.openapi.json \
   --endpoint https://arcade.agentcommons.io/api/arcade \
-  --name "Common Arcade" --auth-type x402-mpp --status draft --json
-
-baz gateway add \
-  --spec-url https://arcade.agentcommons.io/bazantic/common-arcade-payments.openapi.json \
-  --endpoint https://d2scptqzm55h6p.cloudfront.net \
-  --name "Common Arcade Payments" --auth-type x402-mpp --status draft --json
-
+  --name "Common Arcade" --auth-type none --status active --json
 baz gateway list --json | jq -r '.listings[] | [.slug, .status, .endpointUrl] | @tsv'
 ```
 
-Then finish in the dashboard (`/gateways`): set per-method prices (default
-0.01 USDC), add the product website `https://arcade.agentcommons.io` and docs
-URL `https://arcade.agentcommons.io/docs/guides/bazantic`, and activate.
-Confirm the MCP server with a free `tools/list` on `<endpointUrl>/mcp`.
+After changing a spec, run `baz gateway resync <slug>` so the paid routes match
+the tools. Per-method prices can only be changed in the dashboard.
 
-## Recipes
+## Updating a recipe
 
-Recipe files use placeholder slugs until gateways exist: replace
-`ARCADE_GATEWAY_SLUG` and `ARCADE_PAYMENTS_GATEWAY_SLUG` with the 26-character
-slugs from `baz gateway list --json`, and confirm tool names with `tools/list`
-(they follow the spec `operationId`s). The Arc binding uses the Arc Testnet
-gateway `jrra4aibtzhq5fqadqf34iweia`.
+Published recipes are locked. Unpublish, update, test in the dashboard (free),
+then publish again:
 
 ```bash
-baz recipe create recipes/audit-arcade-prize-payout.json --json
-# test the draft in the dashboard with a real match_id (free), then:
+baz recipe unpublish <handle> --json
+baz recipe update <handle> recipes/<file>.json --json
 baz recipe publish <handle> --json
 ```
 
