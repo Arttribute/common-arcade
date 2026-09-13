@@ -1506,7 +1506,11 @@ export function createStudioApi(
     const key = `${project.id}:${c.req.param('changeId')}`
     const change = await store.get<CopilotChange>(partition, key)
     if (!change) throw new CopilotRequestError(404, 'Change not found.')
-    if (change.status !== 'pending') return c.json(change)
+    if (
+      change.status !== 'pending' &&
+      !(action === 'reject' && change.status === 'failed')
+    )
+      return c.json(change)
     if (action === 'reject') {
       const next = {
         ...change,
@@ -1867,40 +1871,51 @@ export function createStudioApi(
               currentRevision: mutationProject.revision,
             })
           } else if (mutationProject && job.approvalMode === 'manual') {
-            const project = mutationProject
-            const change: CopilotChange = {
-              version: 1,
-              id: id('chg'),
-              projectId: project.id,
-              sessionId: job.sessionId!,
-              agentId: job.agentId,
-              tool,
-              args:
-                typeof event.args === 'string'
-                  ? JSON.parse(event.args)
-                  : (event.args ?? {}),
-              baseRevision: observedRevision,
-              createdAt: new Date().toISOString(),
-              status: 'pending',
-            }
-            if (
-              new TextEncoder().encode(JSON.stringify(change)).length > 340000
-            )
-              throw new CopilotRequestError(
-                413,
-                'The proposed change is too large. Ask for a smaller change.',
+            try {
+              const project = mutationProject
+              const change: CopilotChange = {
+                version: 1,
+                id: id('chg'),
+                projectId: project.id,
+                sessionId: job.sessionId!,
+                agentId: job.agentId,
+                tool,
+                args:
+                  typeof event.args === 'string'
+                    ? JSON.parse(event.args)
+                    : (event.args ?? {}),
+                baseRevision: observedRevision,
+                createdAt: new Date().toISOString(),
+                status: 'pending',
+              }
+              // Validate proposed source without saving it, so the agent can repair
+              // incomplete games before asking the creator to approve them.
+              if (
+                tool === 'arcade_write_live_game' ||
+                tool === 'arcade_write_preview_game'
               )
-            await store.put(
-              `copilot-changes:${p.id}`,
-              `${project.id}:${change.id}`,
-              change,
-            )
-            result = JSON.stringify({
-              approvalRequired: true,
-              changeId: change.id,
-              message:
-                'Proposal saved for review. The game has NOT changed. Tests run against the saved revision, not this pending proposal.',
-            })
+                await validateCopilotGame(tool, change.args)
+              if (
+                new TextEncoder().encode(JSON.stringify(change)).length > 340000
+              )
+                throw new CopilotRequestError(
+                  413,
+                  'The proposed change is too large. Ask for a smaller change.',
+                )
+              await store.put(
+                `copilot-changes:${p.id}`,
+                `${project.id}:${change.id}`,
+                change,
+              )
+              result = JSON.stringify({
+                approvalRequired: true,
+                changeId: change.id,
+                message:
+                  'Proposal saved for review. The game has NOT changed. Tests run against the saved revision, not this pending proposal.',
+              })
+            } catch (error) {
+              result = JSON.stringify(copilotToolFailure(error))
+            }
           } else {
             result = await executeArcadeCopilotTool(
               p,
@@ -2052,15 +2067,7 @@ export function createStudioApi(
           throw new Error(
             'The project changed before approval could be applied. Prepare a new proposal.',
           )
-        const document = gameDocumentSchema.parse({ kind: 'browser', ...args })
-        if (!isManagedBrowserGame(document))
-          throw new Error(
-            'A live game needs browser presentation files and a sandboxed authoritative runtime.',
-          )
-        assertAgentPlayable(document, true)
-        const digest = await documentDigest(document)
-        await smokeTestRuntime(document, digest)
-        compilePresentation(document)
+        const { document, digest } = await validateCopilotGame(tool, args)
         const project = {
           ...record.project,
           document,
@@ -2088,21 +2095,11 @@ export function createStudioApi(
           throw new Error(
             'The project changed before approval could be applied. Prepare a new proposal.',
           )
-        const { acceptPreviewOnly, ...source } = args as Record<string, unknown>
-        if (acceptPreviewOnly !== true)
-          throw new Error(
-            'Browser projects are preview-only. Set acceptPreviewOnly to true only after acknowledging that this project cannot host a live session.',
-          )
-        const document = gameDocumentSchema.parse({
-          kind: 'browser',
-          ...source,
-        })
-        assertAgentPlayable(document)
-        compilePresentation(document)
+        const { document, digest } = await validateCopilotGame(tool, args)
         const project = {
           ...record.project,
           document,
-          digest: await documentDigest(document),
+          digest,
           revision: record.project.revision + 1,
           updatedAt: new Date().toISOString(),
         }
@@ -2295,17 +2292,7 @@ export function createStudioApi(
       }
       return JSON.stringify({ error: `Unknown Arcade tool: ${tool}` })
     } catch (error) {
-      return JSON.stringify({
-        error:
-          error instanceof z.ZodError
-            ? error.issues.map((issue) => ({
-                path: issue.path.join('.'),
-                message: issue.message,
-              }))
-            : error instanceof Error
-              ? error.message
-              : String(error),
-      })
+      return JSON.stringify(copilotToolFailure(error))
     }
   }
 
@@ -2945,4 +2932,46 @@ export class CopilotRequestError extends Error {
           ? 'CONFLICT'
           : 'REQUEST_TOO_LARGE'
   }
+}
+
+/** Both manual proposals and approved writes must contain a runnable game. */
+async function validateCopilotGame(tool: string, rawArgs: unknown) {
+  const { acceptPreviewOnly, ...source } = (rawArgs ?? {}) as Record<
+    string,
+    unknown
+  >
+  const managed = tool === 'arcade_write_live_game'
+  if (!managed && acceptPreviewOnly !== true)
+    throw new Error(
+      'Browser projects are preview-only. Set acceptPreviewOnly to true only after acknowledging that this project cannot host a live session.',
+    )
+  const document = browserGameDocumentSchema.parse({
+    kind: 'browser',
+    ...source,
+  })
+  if (managed && !isManagedBrowserGame(document))
+    throw new Error(
+      'A live game needs browser presentation files and a sandboxed authoritative runtime.',
+    )
+  assertAgentPlayable(document, managed)
+  const digest = await documentDigest(document)
+  if (managed) await smokeTestRuntime(document, digest)
+  compilePresentation(document)
+  return { document, digest }
+}
+
+function copilotToolFailure(error: unknown) {
+  if (error instanceof z.ZodError) {
+    const violations = error.issues.map((issue) => ({
+      path: issue.path.join('.'),
+      message: issue.message,
+    }))
+    return {
+      error: violations
+        .map((issue) => `${issue.path || 'game'}: ${issue.message}`)
+        .join('; '),
+      violations,
+    }
+  }
+  return { error: error instanceof Error ? error.message : String(error) }
 }
