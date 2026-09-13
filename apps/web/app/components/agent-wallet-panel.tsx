@@ -2,7 +2,7 @@
 import { PaymentSummary } from './payment-disclosure'
 import './payments.css'
 import type { Observation } from '@common-arcade/protocol'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useId } from 'react'
 import { Wallet2, X } from 'lucide-react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import {
@@ -15,6 +15,8 @@ import {
   preparePaymentBudget,
   type ReviewedPaymentBudget,
 } from '../../lib/payment-budget'
+import { useX402Recipient } from '../../lib/use-x402-recipient'
+import { analysisGrantProblem } from '../../lib/x402-service'
 import { AgentNetworkBalances } from './agent-network-balances'
 import { parseAgentBalance } from '../../lib/agent-balances'
 import { AgentSelect } from './agent-select'
@@ -99,6 +101,7 @@ export function AgentWalletPanel({
   returnTo?: string
 }) {
   const budgetDialog = useRef<HTMLDivElement>(null)
+  const analysisHelpId = useId()
   const [budgetOpen, setBudgetOpen] = useState(false)
   const [reviewBudget, setReviewBudget] = useState<ReviewedPaymentBudget>()
   const [agentRunning, setAgentRunning] = useState(false),
@@ -120,7 +123,6 @@ export function AgentWalletPanel({
     [origin, setOrigin] = useState(
       process.env.NEXT_PUBLIC_ARCADE_PAYMENTS_URL ?? '',
     ),
-    [recipient, setRecipient] = useState(''),
     [budget, setBudget] = useState('5'),
     [perPayment, setPerPayment] = useState('1'),
     [minutes, setMinutes] = useState('60'),
@@ -158,29 +160,14 @@ export function AgentWalletPanel({
   const attemptedTurn = useRef('')
   const wallet = wallets.find((w) => w.id === walletId),
     config = NETWORKS[network]
-  useEffect(() => {
-    if (
-      kind !== 'x402' ||
-      !initialRuntimeId ||
-      !origin ||
-      origin !== process.env.NEXT_PUBLIC_ARCADE_PAYMENTS_URL
-    )
-      return
-    const controller = new AbortController()
-    fetch(`${origin}/.well-known/x402`, { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) return
-        return response.json()
-      })
-      .then((value) => {
-        const rail = value?.services?.find(
-          (entry: { network: string }) => entry.network === config.x402Network,
-        )
-        if (rail?.payTo && !controller.signal.aborted) setRecipient(rail.payTo)
-      })
-      .catch(() => {})
-    return () => controller.abort()
-  }, [kind, initialRuntimeId, origin, config.x402Network])
+  const paymentServiceOrigin = process.env.NEXT_PUBLIC_ARCADE_PAYMENTS_URL ?? ''
+  const {
+    recipient,
+    setRecipient,
+    hint: recipientHint,
+    failed: recipientFailed,
+    retry: retryRecipient,
+  } = useX402Recipient(origin, network, kind === 'x402', paymentServiceOrigin)
   async function refresh() {
     setGrants(await api<Grant[]>(`wallets/agent/${agentId}/payment-sessions`))
   }
@@ -271,7 +258,6 @@ export function AgentWalletPanel({
   useEffect(() => {
     if (table?.economy.mode === 'escrow' && table.pool && table.deployment) {
       setKind('arcade')
-      setRecipient(table.deployment.contract)
       setNetwork(table.economy.network as PaymentNetwork)
     }
   }, [table?.id])
@@ -342,8 +328,8 @@ export function AgentWalletPanel({
   }
   async function paidAnalysis() {
     const active = grants.find((g) => g.id === selectedGrant)
-    if (!active || active.policy.arcade)
-      throw new Error('Select an x402 service grant first')
+    const problem = analysisGrantProblem(active, paymentServiceOrigin)
+    if (problem || !active) throw new Error(problem ?? 'Select a budget first')
     const rail = Object.values(NETWORKS).find(
       (n) => n.x402Network === active.policy.network,
     )
@@ -379,6 +365,7 @@ export function AgentWalletPanel({
     )
   }
   const grant = grants.find((g) => g.id === selectedGrant)
+  const analysisProblem = analysisGrantProblem(grant, paymentServiceOrigin)
   async function deposit() {
     if (!grant) throw new Error('Select an active Arcade grant first')
     await api(`wallets/agent/${agentId}/arcade/deposit`, {
@@ -639,7 +626,16 @@ export function AgentWalletPanel({
                               network === 'hedera-testnet' ? '0.0.…' : '0x…'
                             }
                           />
-                          <small>The service wallet this agent may pay.</small>
+                          <small aria-live="polite">{recipientHint}</small>
+                          {recipientFailed && (
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={retryRecipient}
+                            >
+                              Retry autofill
+                            </button>
+                          )}
                         </label>
                       )}
 
@@ -924,6 +920,19 @@ export function AgentWalletPanel({
               </DialogPrimitive.Content>
             </DialogPrimitive.Portal>
           </DialogPrimitive.Root>
+          <section aria-label="Test card analysis">
+            <h3>Test card analysis</h3>
+            <p>Uses test USDC from the selected Paid services budget.</p>
+            {analysisProblem && <p id={analysisHelpId}>{analysisProblem}</p>}
+            <button
+              className="secondary"
+              disabled={busy || !!analysisProblem}
+              aria-describedby={analysisProblem ? analysisHelpId : undefined}
+              onClick={() => run(paidAnalysis)}
+            >
+              Pay for test card analysis with x402
+            </button>
+          </section>
           {!!grants.length && (
             <details className="payment-disclosure">
               <PaymentSummary>
@@ -984,11 +993,6 @@ export function AgentWalletPanel({
                 ))}
               </div>
             </details>
-          )}
-          {grant && !grant.policy.arcade && !grant.revoked_at && (
-            <button disabled={busy} onClick={() => run(paidAnalysis)}>
-              Pay for test card analysis with x402
-            </button>
           )}
           {table &&
             grant?.policy.arcade?.matchId === table.id &&
