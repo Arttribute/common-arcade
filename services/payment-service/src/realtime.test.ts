@@ -10,6 +10,7 @@ import {
 import { MatchHost, commandMessage, type TableRecord } from './matches.js'
 import { MemoryMatchStore } from './store.js'
 import { releaseLoader } from './releases.js'
+import { createTableApi } from './table-api.js'
 
 const a = privateKeyToAccount(`0x${'04'.repeat(32)}`)
 const b = privateKeyToAccount(`0x${'05'.repeat(32)}`)
@@ -22,7 +23,14 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 async function fixture(
-  options: { finish?: number; lockFails?: boolean; settleFails?: boolean } = {},
+  options: {
+    finish?: number
+    lockFails?: boolean
+    settleFails?: boolean
+    delegated?: boolean
+    autoStart?: boolean
+    funded?: boolean[]
+  } = {},
 ) {
   vi.useFakeTimers()
   const document = gameDocumentSchema.parse({
@@ -47,6 +55,7 @@ async function fixture(
       applyAction: (s,a,c) => ({ state: {...s, inputs: {...s.inputs, [c.seatId]: a.id === 'go'}}, events: [] }),
       tick: (s,c) => ({ state: {...s, elapsed: s.elapsed + c.deltaMs}, events: [] }),
       observe: (s,id) => ({ visibleState: { elapsed: s.elapsed, held: s.inputs[id], privateSeat: id }, legalActions: [{id:'go', control:{mode:'hold',releaseActionId:'stop'}},{id:'stop'}] }),
+      spectate: s => ({ elapsed: s.elapsed }),
       result: s => s.elapsed >= ${options.finish ?? 3000} ? {outcome:'win',winnerSeatId:'sea_player_1'} : null
     }`,
       },
@@ -86,7 +95,19 @@ async function fixture(
     return undefined
   })
   const adapter = {
-    deployment: { chainId: 84532, contract: a.address, token: b.address },
+    deployment: {
+      chainId: 84532,
+      contract: a.address,
+      token: b.address,
+      openSeats: true,
+      seatControllers: true,
+    },
+    controller: async () => (options.delegated ? outsider.address : a.address),
+    seats: async () => ({
+      recipients: [a.address, b.address],
+      funded: options.funded ?? [true, true],
+    }),
+    cancelFunding: async () => `0x${'33'.repeat(32)}` as const,
     inspect: async () => ({ status: 0 }),
     create: async () => `0x${'11'.repeat(32)}` as const,
     lock,
@@ -108,7 +129,9 @@ async function fixture(
   const body = {
     id: randomUUID(),
     releaseId: release.id,
-    recipients: [a.address, b.address],
+    ...(options.delegated || options.autoStart
+      ? {}
+      : { recipients: [a.address, b.address] }),
     economy: {
       mode: 'escrow',
       network: 'base-sepolia',
@@ -119,6 +142,7 @@ async function fixture(
       fundingSeconds: 600,
       settlementSeconds: 3600,
     },
+    ...(options.autoStart ? { startWhenReady: true } : {}),
   }
   const id = `mat_${body.id}`
   const auth = async (
@@ -176,7 +200,7 @@ it('does not run or grant gameplay control until funding locks', async () => {
   expect((await f.host.view(f.id)).stage).toBe('funding')
   expect(f.settle).not.toHaveBeenCalled()
   await expect(f.host.realtimeSession(f.id, await f.auth())).rejects.toThrow(
-    'running realtime',
+    'running match',
   )
   await f.host.close()
   expect((await f.store.get<TableRecord>(f.id))?.replay).toBeUndefined()
@@ -217,6 +241,8 @@ it('binds single-use tickets to a match and seat, fences replaced controllers, a
   expect(replacement.observation().visibleState).toMatchObject({ held: true })
   await replacement.close()
   const record = await f.store.get<TableRecord>(f.id)
+  expect(record?.runtimeError).toBeUndefined()
+  expect((await f.host.view(f.id)).stage).toBe('playing')
   expect(record?.replay?.checkpoints.at(-1)?.state).toMatchObject({
     inputs: { sea_player_1: false },
   })
@@ -389,4 +415,101 @@ it('authenticates gameplay on the real WebSocket transport and keeps private obs
     await new Promise<void>((resolve) => wss.close(() => resolve()))
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
+})
+
+it('accepts only the controller confirmed by the escrow seat claim', async () => {
+  const delegated = await fixture({ delegated: true })
+  await delegated.begin()
+  const ticket = await delegated.host.realtimeSession(
+    delegated.id,
+    await delegated.auth(outsider),
+  )
+  const controller = await delegated.host.connectRealtime(
+    delegated.id,
+    ticket.token,
+  )
+  expect(controller.observation().seatId).toBe('sea_player_1')
+  const normal = await fixture()
+  await normal.begin()
+  await expect(
+    normal.host.realtimeSession(normal.id, await normal.auth(outsider)),
+  ).rejects.toThrow('seated player')
+})
+
+it('runs funded wallet-authorized agents without a browser and persists their actions', async () => {
+  const f = await fixture()
+  const body = { enabled: true, expiresAt: Date.now() + 2000 }
+  await expect(
+    f.host.autoplay(f.id, body, await f.auth(outsider, 'autoplay', body)),
+  ).rejects.toThrow('funded player')
+  const response = await createTableApi(f.host).request(
+    `/v1/economy/matches/${f.id}/autoplay`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body, auth: await f.auth(a, 'autoplay', body) }),
+    },
+  )
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ autoplay: ['0'] })
+  await f.begin()
+  await vi.advanceTimersByTimeAsync(1500)
+  await vi.waitFor(async () =>
+    expect(
+      (await f.store.get<TableRecord>(f.id))?.autoplay?.['0']?.step,
+    ).toBeGreaterThan(0),
+  )
+  const record = await f.store.get<TableRecord>(f.id)
+  expect(
+    record?.replay?.commands.some(
+      (command) =>
+        command.action.seatId === 'sea_player_1' &&
+        command.result.disposition === 'accepted',
+    ),
+  ).toBe(true)
+  const off = { ...body, enabled: false }
+  await f.host.autoplay(f.id, off, await f.auth(a, 'autoplay', off))
+  expect((await f.host.view(f.id)).autoplay).toEqual([])
+})
+
+it('projects spectator state without revealing private state or player observations', async () => {
+  const f = await fixture()
+  expect(await f.host.publicObservation(f.id)).toBeNull()
+  await f.begin()
+  await vi.advanceTimersByTimeAsync(500)
+  const state = await f.host.publicObservation(f.id)
+  expect(state).toMatchObject({ elapsed: expect.any(Number) })
+  expect((state as { elapsed: number }).elapsed).toBeGreaterThan(0)
+  expect(JSON.stringify(state)).not.toMatch(/private-state|privateSeat|inputs/)
+})
+
+it('starts a ready lobby without a host browser, but never starts a partially funded lobby', async () => {
+  const ready = await fixture({ autoStart: true, finish: 100000 })
+  await vi.advanceTimersByTimeAsync(14000)
+  await vi.waitFor(async () =>
+    expect((await ready.host.view(ready.id)).stage).toBe('playing'),
+  )
+  expect(ready.lock).toHaveBeenCalledOnce()
+  const waiting = await fixture({ autoStart: true, funded: [true, false] })
+  await vi.advanceTimersByTimeAsync(14000)
+  expect((await waiting.host.view(waiting.id)).stage).toBe('funding')
+  expect(waiting.lock).not.toHaveBeenCalled()
+})
+
+it('allows only the host to end an unstarted lobby, reconciles retries, and protects running games', async () => {
+  const f = await fixture()
+  await expect(
+    f.host.cancelFunding(f.id, await f.auth(outsider, 'cancel')),
+  ).rejects.toThrow('Only the host')
+  const ended = await f.host.cancelFunding(f.id, await f.auth(a, 'cancel'))
+  expect(ended.stage).toBe('settled')
+  expect(ended.result).toEqual({ outcome: 'canceled' })
+  expect(
+    (await f.host.cancelFunding(f.id, await f.auth(a, 'cancel'))).transactions,
+  ).toEqual(ended.transactions)
+  const running = await fixture()
+  await running.begin()
+  await expect(
+    running.host.cancelFunding(running.id, await running.auth(a, 'cancel')),
+  ).rejects.toThrow('started game')
 })

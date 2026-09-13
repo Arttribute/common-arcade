@@ -34,6 +34,7 @@ export interface MatchSettlementAdapter {
   }): Promise<boolean>
   create(terms: PoolTerms): Promise<Hex>
   lock(id: Hex): Promise<Hex | undefined>
+  cancelFunding?(id: Hex): Promise<Hex | undefined>
   settle(
     id: Hex,
     winner: string | undefined,
@@ -41,6 +42,7 @@ export interface MatchSettlementAdapter {
   ): Promise<Hex | undefined>
   inspect(id: Hex): Promise<unknown>
   blockNumber?(): Promise<bigint>
+  controller?(id: Hex, seat: Hex): Promise<Address>
   seats?(
     id: Hex,
     fromBlock?: string,
@@ -117,6 +119,20 @@ export function createSettlementAdapter(
     return operation
   }
   return {
+    ...(deployment.seatControllers
+      ? {
+          controller: async (id: Hex, seat: Hex) => {
+            const head = await reader.getBlockNumber({ cacheTime: 0 })
+            return reader.readContract({
+              address: deployment.contract,
+              abi: arcadeEscrowAbi,
+              functionName: 'controller',
+              args: [id, seat],
+              blockNumber: head - BigInt((deployment.confirmations ?? 2) - 1),
+            })
+          },
+        }
+      : {}),
     verifySignature: (input) => reader.verifyMessage(input),
     deployment,
     async create(t) {
@@ -155,6 +171,13 @@ export function createSettlementAdapter(
       if (m.status === 2) return undefined
       if (m.status !== 1) throw new Error('Pool is not funding')
       return send('lock', [id])
+    },
+    async cancelFunding(id) {
+      const match = await read(id)
+      if (match.status === 4) return undefined
+      if (match.status !== 1)
+        throw new Error('A started game cannot be canceled by its host')
+      return send('voidMatch', [id])
     },
     async settle(id, winner, resultHash) {
       const m = await read(id)
