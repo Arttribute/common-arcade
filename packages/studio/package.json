@@ -26,7 +26,7 @@
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {
-    "@babel/standalone": "^8.0.4",
+    "@babel/standalone": "^8.0.5",
     "@common-arcade/manifest": "workspace:^",
     "@common-arcade/match-runtime": "workspace:^",
     "@common-arcade/protocol": "workspace:^",
