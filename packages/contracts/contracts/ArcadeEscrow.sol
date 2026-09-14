@@ -6,6 +6,24 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+
+/// @notice EIP-3009 signed transfers, as used by x402 "exact" payments and Circle USDC.
+interface IERC3009 {
+    function transferWithAuthorization(
+        address from,
+        address to,
+        uint256 value,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external;
+    function authorizationState(address authorizer, bytes32 nonce) external view returns (bool);
+    function DOMAIN_SEPARATOR() external view returns (bytes32);
+}
 
 /// @notice Game-neutral, single-winner prize pools and optional pari-mutuel spectator pools.
 /// @dev The snapshotted resolver is trusted to report the authoritative game result.
@@ -41,6 +59,21 @@ contract ArcadeEscrow is Ownable2Step, ReentrancyGuard {
         RoyaltyShare[] royalties;
     }
 
+    /// @notice A payer-signed EIP-3009 transfer to this contract.
+    struct TransferAuthorization {
+        address from;
+        uint256 value;
+        uint256 validAfter;
+        uint256 validBefore;
+        bytes32 nonce;
+        uint8 v;
+        bytes32 r;
+        bytes32 s;
+    }
+    bytes32 public constant TRANSFER_WITH_AUTHORIZATION_TYPEHASH = keccak256(
+        "TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
+    );
+
     struct MatchAccount {
         Terms terms;
         Status status;
@@ -69,6 +102,8 @@ contract ArcadeEscrow is Ownable2Step, ReentrancyGuard {
     mapping(bytes32 => mapping(address => bool)) public seated;
     // Gameplay authority only. Recipients, refunds and winnings always stay with the payer.
     mapping(bytes32 => mapping(bytes32 => address)) public controller;
+    // token => payer => EIP-3009 nonce already credited to a seat.
+    mapping(address => mapping(address => mapping(bytes32 => bool))) public creditedAuthorization;
     bool public paused;
     uint16 public constant MAX_FEE_BPS = 1000;
 
@@ -80,6 +115,9 @@ contract ArcadeEscrow is Ownable2Step, ReentrancyGuard {
     event MatchCreated(bytes32 indexed matchId, address indexed token, bytes32 rulesHash, address resolver);
     event Deposited(bytes32 indexed matchId, address indexed payer, uint8 kind, bytes32 seatId, uint256 amount);
     event ControllerAssigned(bytes32 indexed matchId, bytes32 indexed seatId, address controller);
+    event AuthorizedEntry(
+        bytes32 indexed matchId, bytes32 indexed seatId, address indexed player, bytes32 nonce, bool recovered
+    );
     event Locked(bytes32 indexed matchId);
     event Settled(bytes32 indexed matchId, bytes32 indexed winner, bytes32 resultHash, uint256 prize, uint256 fee);
     event Voided(bytes32 indexed matchId);
@@ -204,25 +242,120 @@ contract ArcadeEscrow is Ownable2Step, ReentrancyGuard {
 
     function _stake(bytes32 id, bytes32 seatId, address gameController) private {
         MatchAccount storage m = _funding(id);
+        _seat(id, m, seatId, msg.sender, gameController);
+        if (m.terms.stake != 0) _receive(m.terms.token, m.terms.stake);
+    }
+
+    /// @notice Gasless x402 entry: the resolver relays the payer's signed USDC transfer.
+    /// @dev The payer, not the relayer, owns the seat, refunds and winnings. Resolver-only, so a
+    ///      copied authorization cannot be replayed here with a different seat or controller.
+    function stakeWithAuthorization(
+        bytes32 id,
+        bytes32 seatId,
+        address gameController,
+        TransferAuthorization calldata auth
+    ) external nonReentrant {
+        MatchAccount storage m = _authorizedEntry(id, gameController, auth);
+        _seat(id, m, seatId, auth.from, gameController);
+        uint256 beforeBalance = m.terms.token.balanceOf(address(this));
+        IERC3009(address(m.terms.token))
+            .transferWithAuthorization(
+                auth.from,
+                address(this),
+                auth.value,
+                auth.validAfter,
+                auth.validBefore,
+                auth.nonce,
+                auth.v,
+                auth.r,
+                auth.s
+            );
+        if (m.terms.token.balanceOf(address(this)) - beforeBalance != auth.value) revert InvalidDeposit();
+        emit AuthorizedEntry(id, seatId, auth.from, auth.nonce, false);
+    }
+
+    /// @notice Credit an entry whose signed transfer to this contract was submitted directly to the token.
+    /// @dev The signature must commit to this contract and the stake, and the token must report the nonce used.
+    ///      The resolver confirms the matching transfer event before calling, because EIP-3009
+    ///      cancelAuthorization also marks a nonce used without moving funds.
+    function recoverAuthorizedStake(
+        bytes32 id,
+        bytes32 seatId,
+        address gameController,
+        TransferAuthorization calldata auth
+    ) external nonReentrant {
+        MatchAccount storage m = _authorizedEntry(id, gameController, auth);
+        IERC3009 token = IERC3009(address(m.terms.token));
+        if (!token.authorizationState(auth.from, auth.nonce)) revert InvalidDeposit();
+        bytes32 digest = keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                token.DOMAIN_SEPARATOR(),
+                keccak256(
+                    abi.encode(
+                        TRANSFER_WITH_AUTHORIZATION_TYPEHASH,
+                        auth.from,
+                        address(this),
+                        auth.value,
+                        auth.validAfter,
+                        auth.validBefore,
+                        auth.nonce
+                    )
+                )
+            )
+        );
+        (address signer, ECDSA.RecoverError error,) = ECDSA.tryRecover(digest, auth.v, auth.r, auth.s);
+        if (error != ECDSA.RecoverError.NoError || signer != auth.from) revert InvalidDeposit();
+        _seat(id, m, seatId, auth.from, gameController);
+        emit AuthorizedEntry(id, seatId, auth.from, auth.nonce, true);
+    }
+
+    /// @notice Gasless entry to a sponsored (zero-stake) open seat, relayed for a player-signed request.
+    function claimSeatFor(bytes32 id, bytes32 seatId, address player, address gameController) external nonReentrant {
+        MatchAccount storage m = _funding(id);
+        _resolver(m);
+        if (m.terms.stake != 0 || !openSeats[id] || player == address(0) || gameController == address(0)) {
+            revert InvalidDeposit();
+        }
+        _seat(id, m, seatId, player, gameController);
+    }
+
+    function _authorizedEntry(bytes32 id, address gameController, TransferAuthorization calldata auth)
+        private
+        returns (MatchAccount storage m)
+    {
+        m = _funding(id);
+        _resolver(m);
+        if (
+            m.terms.stake == 0 || auth.value != m.terms.stake || auth.from == address(0) || gameController == address(0)
+        ) {
+            revert InvalidDeposit();
+        }
+        address token = address(m.terms.token);
+        if (creditedAuthorization[token][auth.from][auth.nonce]) revert InvalidDeposit();
+        creditedAuthorization[token][auth.from][auth.nonce] = true;
+    }
+
+    /// @dev Assigns and accounts for a seat. Callers must move exactly `terms.stake` from `payer`.
+    function _seat(bytes32 id, MatchAccount storage m, bytes32 seatId, address payer, address gameController) private {
         if (openSeats[id]) {
-            if (!registeredSeat[id][seatId] || recipient[id][seatId] != address(0) || seated[id][msg.sender]) {
+            if (!registeredSeat[id][seatId] || recipient[id][seatId] != address(0) || seated[id][payer]) {
                 revert InvalidDeposit();
             }
             // Assignment and payment are atomic: a failed transfer leaves the seat open.
-            recipient[id][seatId] = msg.sender;
-            seated[id][msg.sender] = true;
-        } else if (recipient[id][seatId] != msg.sender || m.terms.stake == 0) {
+            recipient[id][seatId] = payer;
+            seated[id][payer] = true;
+        } else if (recipient[id][seatId] != payer || m.terms.stake == 0) {
             revert InvalidDeposit();
         }
         if (staked[id][seatId]) revert InvalidDeposit();
         staked[id][seatId] = true;
         ++m.paidSeats;
         m.prizePool += m.terms.stake;
-        refundable[id][msg.sender] += m.terms.stake;
-        if (m.terms.stake != 0) _receive(m.terms.token, m.terms.stake);
+        refundable[id][payer] += m.terms.stake;
         controller[id][seatId] = gameController;
         emit ControllerAssigned(id, seatId, gameController);
-        emit Deposited(id, msg.sender, 0, seatId, m.terms.stake);
+        emit Deposited(id, payer, 0, seatId, m.terms.stake);
     }
 
     function fundBounty(bytes32 id, uint256 amount) external nonReentrant {

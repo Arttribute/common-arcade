@@ -26,6 +26,19 @@ export const arcadeEscrowAbi = [
   },
   {
     type: 'function',
+    name: 'TRANSFER_WITH_AUTHORIZATION_TYPEHASH',
+    inputs: [],
+    outputs: [
+      {
+        name: '',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     name: 'acceptOwnership',
     inputs: [],
     outputs: [],
@@ -171,6 +184,34 @@ export const arcadeEscrowAbi = [
       },
       {
         name: 'beneficiary',
+        type: 'address',
+        internalType: 'address',
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'claimSeatFor',
+    inputs: [
+      {
+        name: 'id',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'seatId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'player',
+        type: 'address',
+        internalType: 'address',
+      },
+      {
+        name: 'gameController',
         type: 'address',
         internalType: 'address',
       },
@@ -434,6 +475,35 @@ export const arcadeEscrowAbi = [
     ],
     outputs: [],
     stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'creditedAuthorization',
+    inputs: [
+      {
+        name: '',
+        type: 'address',
+        internalType: 'address',
+      },
+      {
+        name: '',
+        type: 'address',
+        internalType: 'address',
+      },
+      {
+        name: '',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [
+      {
+        name: '',
+        type: 'bool',
+        internalType: 'bool',
+      },
+    ],
+    stateMutability: 'view',
   },
   {
     type: 'function',
@@ -761,6 +831,76 @@ export const arcadeEscrowAbi = [
   },
   {
     type: 'function',
+    name: 'recoverAuthorizedStake',
+    inputs: [
+      {
+        name: 'id',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'seatId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'gameController',
+        type: 'address',
+        internalType: 'address',
+      },
+      {
+        name: 'auth',
+        type: 'tuple',
+        internalType: 'struct ArcadeEscrow.TransferAuthorization',
+        components: [
+          {
+            name: 'from',
+            type: 'address',
+            internalType: 'address',
+          },
+          {
+            name: 'value',
+            type: 'uint256',
+            internalType: 'uint256',
+          },
+          {
+            name: 'validAfter',
+            type: 'uint256',
+            internalType: 'uint256',
+          },
+          {
+            name: 'validBefore',
+            type: 'uint256',
+            internalType: 'uint256',
+          },
+          {
+            name: 'nonce',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 'v',
+            type: 'uint8',
+            internalType: 'uint8',
+          },
+          {
+            name: 'r',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 's',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+        ],
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     name: 'refundable',
     inputs: [
       {
@@ -972,6 +1112,76 @@ export const arcadeEscrowAbi = [
   },
   {
     type: 'function',
+    name: 'stakeWithAuthorization',
+    inputs: [
+      {
+        name: 'id',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'seatId',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: 'gameController',
+        type: 'address',
+        internalType: 'address',
+      },
+      {
+        name: 'auth',
+        type: 'tuple',
+        internalType: 'struct ArcadeEscrow.TransferAuthorization',
+        components: [
+          {
+            name: 'from',
+            type: 'address',
+            internalType: 'address',
+          },
+          {
+            name: 'value',
+            type: 'uint256',
+            internalType: 'uint256',
+          },
+          {
+            name: 'validAfter',
+            type: 'uint256',
+            internalType: 'uint256',
+          },
+          {
+            name: 'validBefore',
+            type: 'uint256',
+            internalType: 'uint256',
+          },
+          {
+            name: 'nonce',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 'v',
+            type: 'uint8',
+            internalType: 'uint8',
+          },
+          {
+            name: 'r',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 's',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+        ],
+      },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     name: 'stakeWithController',
     inputs: [
       {
@@ -1084,6 +1294,43 @@ export const arcadeEscrowAbi = [
     ],
     outputs: [],
     stateMutability: 'nonpayable',
+  },
+  {
+    type: 'event',
+    name: 'AuthorizedEntry',
+    inputs: [
+      {
+        name: 'matchId',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'seatId',
+        type: 'bytes32',
+        indexed: true,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'player',
+        type: 'address',
+        indexed: true,
+        internalType: 'address',
+      },
+      {
+        name: 'nonce',
+        type: 'bytes32',
+        indexed: false,
+        internalType: 'bytes32',
+      },
+      {
+        name: 'recovered',
+        type: 'bool',
+        indexed: false,
+        internalType: 'bool',
+      },
+    ],
+    anonymous: false,
   },
   {
     type: 'event',

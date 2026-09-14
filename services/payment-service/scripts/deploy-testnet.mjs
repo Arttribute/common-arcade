@@ -174,7 +174,25 @@ try {
     await write('allowUSDC', 'setToken', [network.token, true])
   if (!(await read('resolvers', [account.address])))
     await write('allowResolver', 'setResolver', [account.address, true])
-  if (revision === 'seat-controllers-v3') {
+  if (revision === 'x402-entry-v4') {
+    if (network.chain.id === 296)
+      throw new Error(
+        'Hedera USDC has no EIP-3009 transfers; keep seat-controllers-v3',
+      )
+    const typehash = await read('TRANSFER_WITH_AUTHORIZATION_TYPEHASH')
+    const tokenTypehash = await reader.readContract({
+      address: network.token,
+      abi: parseAbi([
+        'function TRANSFER_WITH_AUTHORIZATION_TYPEHASH() view returns (bytes32)',
+      ]),
+      functionName: 'TRANSFER_WITH_AUTHORIZATION_TYPEHASH',
+    })
+    if (typehash !== tokenTypehash)
+      throw new Error(
+        'Canonical USDC does not support this EIP-3009 authorization',
+      )
+  }
+  if (revision === 'seat-controllers-v3' || revision === 'x402-entry-v4') {
     const emptyId = `0x${'0'.repeat(64)}`
     if (
       (await read('controller', [emptyId, emptyId])) !== `0x${'0'.repeat(40)}`
@@ -222,12 +240,17 @@ try {
           contract: record.contract,
           treasury: account.address,
           rpcUrl,
-          ...(['open-seats-v2', 'seat-controllers-v3'].includes(revision)
+          ...([
+            'open-seats-v2',
+            'seat-controllers-v3',
+            'x402-entry-v4',
+          ].includes(revision)
             ? { openSeats: true }
             : {}),
-          ...(revision === 'seat-controllers-v3'
+          ...(['seat-controllers-v3', 'x402-entry-v4'].includes(revision)
             ? { seatControllers: true }
             : {}),
+          ...(revision === 'x402-entry-v4' ? { authorizedEntry: true } : {}),
         },
       },
       null,

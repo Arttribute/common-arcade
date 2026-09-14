@@ -21,10 +21,22 @@ import {
   economyConfigSchema,
   poolId,
   hashArcadeId,
+  entryRequirements,
+  escrowAuthorization,
+  transferAuthorizationTypedData,
   type EconomyConfig,
+  type EntryPayment,
+  type EntryRequirements,
 } from '@common-arcade/economy'
 import type { Replay, ActionSubmission } from '@common-arcade/protocol'
-import { verifyMessage, zeroAddress, type Address, type Hex } from 'viem'
+import {
+  getAddress,
+  verifyMessage,
+  verifyTypedData,
+  zeroAddress,
+  type Address,
+  type Hex,
+} from 'viem'
 import { z } from 'zod'
 import type { MatchStore } from './store.js'
 import type { MatchSettlementAdapter } from './escrow.js'
@@ -95,6 +107,34 @@ export interface SignedCommand {
   expiresAt: number
   signature: Hex
 }
+export const entryBodySchema = z
+  .object({
+    /** 1-based seat. Omit to take the first open seat. */
+    seat: z.number().int().min(1).max(2).optional(),
+    /** Game-only key allowed to play the seat. Defaults to the paying wallet. */
+    controller: address.optional(),
+    /** Let the Arcade policy play this seat on the worker until the game ends. */
+    autoplay: z.boolean().optional(),
+  })
+  .strict()
+export type EntryBody = z.infer<typeof entryBodySchema>
+/** x402 challenge: the caller pays the seat stake with a signed USDC transfer and retries. */
+export class EntryPaymentRequired extends Error {
+  constructor(
+    readonly requirements: EntryRequirements,
+    reason: string,
+  ) {
+    super(reason)
+  }
+}
+export interface EntryResult {
+  seat: number
+  player: Address
+  controller: Address
+  transaction?: Hex
+  network: string
+  table: Awaited<ReturnType<MatchHost['view']>>
+}
 export function commandMessage(
   matchId: string,
   operation: string,
@@ -113,6 +153,14 @@ export class MatchHost {
       (id) => this.adapters[id]?.deployment.openSeats,
     )
   }
+  /** Networks whose escrow accepts gasless x402 seat entry. */
+  entryNetworks() {
+    return this.configuredNetworks().filter(
+      (id) => this.adapters[id]?.deployment.authorizedEntry,
+    )
+  }
+  private entryLocks = new Map<string, Promise<unknown>>()
+  private lobbyCache?: { at: number; lobbies: unknown[] }
   private lobbyReadAt = new Map<string, number>()
   private closing = false
   private starting = new Set<string>()
@@ -753,6 +801,254 @@ export class MatchHost {
     })
   }
 
+  /**
+   * One request takes a seat. A paid seat answers with an x402 challenge; the retry carries the
+   * payer's signed USDC transfer, which the resolver relays into escrow, so the player needs no
+   * gas or allowance. A sponsored seat takes a signed `entry` command instead. The payer owns the
+   * seat, refunds and winnings; the controller can only play.
+   */
+  async entry(
+    id: string,
+    body: EntryBody,
+    payment?: EntryPayment,
+    auth?: SignedCommand,
+  ): Promise<EntryResult> {
+    const record = await this.require(id)
+    if (record.economy.mode !== 'escrow' || !record.pool)
+      throw new Error('This session has no paid entry')
+    const adapter = this.adapter(record)!
+    if (!adapter.deployment.authorizedEntry || !adapter.authorizedEntry)
+      throw new Error(
+        'Gasless entry is unavailable for this session. Take the seat from your wallet.',
+      )
+    if (record.stage !== 'funding' || record.cancelRequested)
+      throw new Error('This session is no longer taking players')
+    if (Date.now() / 1000 >= record.fundingDeadline - 30)
+      throw new Error('Entry has closed for this session')
+    const stake = BigInt(record.economy.stakeUnits)
+    if (!payment && !auth) {
+      // Say so before asking anyone to sign or pay for a seat they cannot get.
+      const lobby = await this.exclusive(id, async () => {
+        const current = await this.require(id)
+        await this.refreshSeats(current)
+        return current
+      })
+      const open = [0, 1].filter((seat) => !lobby.funded?.[seat])
+      if (!open.length) throw new Error('This session is full')
+      if (body.seat && !open.includes(body.seat - 1))
+        throw new Error('That seat is taken')
+    }
+    let player: Address
+    if (stake === 0n) {
+      if (!record.openSeats || !adapter.sponsoredEntry)
+        throw new Error('This seat is reserved for another player')
+      if (!auth)
+        throw new Error('Sign an entry request to take this sponsored seat')
+      await this.verify(id, 'entry', body, auth)
+      player = getAddress(auth.address)
+    } else {
+      const requirements = entryRequirements(
+        adapter.deployment,
+        record.economy.stakeUnits,
+      )
+      if (!payment)
+        throw new EntryPaymentRequired(
+          requirements,
+          'Pay the seat stake to enter',
+        )
+      player = await this.checkEntryPayment(requirements, payment)
+      if (adapter.tokenBalance && (await adapter.tokenBalance(player)) < stake)
+        throw new EntryPaymentRequired(requirements, 'insufficient_funds')
+    }
+    const controller = body.controller ? getAddress(body.controller) : player
+    return this.entryLock(id, async () => {
+      const latest = await this.exclusive(id, async () => {
+        const current = await this.require(id)
+        await this.refreshSeats(current)
+        return current
+      })
+      const held = latest.recipients.findIndex(
+        (recipient) => recipient.toLowerCase() === player.toLowerCase(),
+      )
+      let seat: number
+      let transaction: Hex | undefined
+      if (held >= 0 && latest.funded?.[held]) {
+        // A retry after a lost response: the seat is already paid, so do not relay again.
+        if (body.seat && body.seat - 1 !== held)
+          throw new Error('This wallet already holds another seat')
+        seat = held
+        transaction = latest.payments?.find(
+          (p) => p.kind === 0 && p.payer.toLowerCase() === player.toLowerCase(),
+        )?.hash
+      } else {
+        const available = (index: number) =>
+          !latest.funded?.[index] &&
+          (latest.openSeats
+            ? latest.recipients[index]?.toLowerCase() === zeroAddress
+            : latest.recipients[index]?.toLowerCase() === player.toLowerCase())
+        seat = body.seat ? body.seat - 1 : ([0, 1].find(available) ?? -1)
+        if (seat < 0 || !available(seat))
+          throw new Error(
+            latest.openSeats
+              ? 'That seat is taken'
+              : 'This seat is reserved for another player',
+          )
+        const seatId = hashArcadeId(`sea_player_${seat + 1}`)
+        if (stake === 0n)
+          transaction = await adapter.sponsoredEntry!({
+            id: latest.pool!,
+            seat: seatId,
+            player,
+            controller,
+          })
+        else
+          ({ transaction } = await adapter.authorizedEntry!({
+            id: latest.pool!,
+            seat: seatId,
+            controller,
+            authorization: escrowAuthorization(payment!),
+            fromBlock: latest.fundingBlock,
+          }))
+      }
+      return this.exclusive(id, async () => {
+        const current = await this.require(id)
+        await this.refreshSeats(current)
+        this.lobbyReadAt.set(id, Date.now())
+        this.lobbyCache = undefined
+        if (
+          !current.funded?.[seat] ||
+          current.recipients[seat]?.toLowerCase() !== player.toLowerCase()
+        )
+          throw new Error(
+            'Your entry is still confirming. Retry the same request to check your seat.',
+          )
+        if (body.autoplay) {
+          current.autoplay ??= {}
+          current.autoplay[String(seat)] = {
+            address: controller,
+            expiresAt: current.settlementDeadline * 1000,
+            step: 0,
+          }
+          await this.store.put(id, current)
+        }
+        this.watchFunding(current)
+        return {
+          seat: seat + 1,
+          player,
+          controller,
+          transaction,
+          network: `eip155:${adapter.deployment.chainId}`,
+          table: this.broadcast(current),
+        }
+      })
+    })
+  }
+  private async checkEntryPayment(
+    requirements: EntryRequirements,
+    payment: EntryPayment,
+  ) {
+    const reject = (reason: string) =>
+      new EntryPaymentRequired(requirements, reason)
+    const { accepted } = payment,
+      { authorization, signature } = payment.payload
+    if (
+      accepted.network !== requirements.network ||
+      accepted.asset.toLowerCase() !== requirements.asset.toLowerCase() ||
+      accepted.payTo.toLowerCase() !== requirements.payTo.toLowerCase() ||
+      accepted.amount !== requirements.amount ||
+      authorization.to.toLowerCase() !== requirements.payTo.toLowerCase() ||
+      authorization.value !== requirements.amount
+    )
+      throw reject('Payment does not match this seat')
+    const now = BigInt(Math.floor(Date.now() / 1000))
+    if (BigInt(authorization.validAfter) > now)
+      throw reject('Payment is not valid yet')
+    // Leave room for one confirmed relay before the authorization lapses.
+    if (BigInt(authorization.validBefore) < now + 20n)
+      throw reject('Payment authorization expired. Sign a new one.')
+    if (BigInt(authorization.validBefore) > now + 600n)
+      throw reject('Payment authorization lasts too long')
+    const valid = await verifyTypedData({
+      address: authorization.from as Address,
+      ...transferAuthorizationTypedData(requirements, {
+        ...authorization,
+        from: authorization.from as Address,
+        to: authorization.to as Address,
+        nonce: authorization.nonce as Hex,
+      }),
+      signature: signature as Hex,
+    }).catch(() => false)
+    if (!valid) throw reject('invalid_signature')
+    return getAddress(authorization.from)
+  }
+  private async entryLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.entryLocks.get(id) ?? Promise.resolve()
+    const operation = previous.catch(() => undefined).then(fn)
+    this.entryLocks.set(id, operation)
+    try {
+      return await operation
+    } finally {
+      if (this.entryLocks.get(id) === operation) this.entryLocks.delete(id)
+    }
+  }
+  private entryDescriptor(record: TableRecord) {
+    if (record.economy.mode !== 'escrow' || record.stage !== 'funding')
+      return undefined
+    const deployment = this.adapter(record)?.deployment
+    const free = BigInt(record.economy.stakeUnits) === 0n
+    if (!deployment?.authorizedEntry || (free && !record.openSeats))
+      return undefined
+    return {
+      path: `/v1/economy/matches/${record.id}/entry`,
+      method: free ? ('signed-command' as const) : ('x402' as const),
+      network: `eip155:${deployment.chainId}`,
+      asset: deployment.token,
+      payTo: deployment.contract,
+      amount: record.economy.stakeUnits,
+    }
+  }
+  /** Paid lobbies with an open seat, soonest deadline first, for agents looking for a game. */
+  async lobbies() {
+    if (this.lobbyCache && Date.now() - this.lobbyCache.at < 5000)
+      return this.lobbyCache.lobbies
+    const now = Date.now() / 1000,
+      lobbies = []
+    for (const id of await this.store.ids()) {
+      const record =
+        this.liveRecords.get(id) ?? (await this.store.get<TableRecord>(id))
+      if (
+        !record ||
+        record.stage !== 'funding' ||
+        record.economy.mode !== 'escrow' ||
+        record.cancelRequested ||
+        record.fundingDeadline <= now + 30
+      )
+        continue
+      const open = [0, 1].filter((seat) => !record.funded?.[seat]).length
+      if (!open) continue
+      let entry: ReturnType<MatchHost['entryDescriptor']>
+      try {
+        entry = this.entryDescriptor(record)
+      } catch {
+        continue
+      }
+      lobbies.push({
+        id,
+        game: record.release?.document.title ?? 'Blackjack duel',
+        releaseId: record.release?.id ?? blackjackGame.releaseId,
+        mode: record.release?.manifest.spec.mode ?? 'turn-based',
+        network: record.economy.network,
+        stakeUnits: record.economy.stakeUnits,
+        openSeats: open,
+        fundingDeadline: record.fundingDeadline,
+        entry,
+      })
+    }
+    lobbies.sort((a, b) => a.fundingDeadline - b.fundingDeadline)
+    this.lobbyCache = { at: Date.now(), lobbies: lobbies.slice(0, 50) }
+    return this.lobbyCache.lobbies
+  }
+
   private async playAgents(
     record: TableRecord,
     runtime: AuthoritativeMatch<unknown, unknown>,
@@ -863,6 +1159,7 @@ export class MatchHost {
       ...(record.release ? {} : { rules: BLACKJACK_RULES }),
       pool: record.pool,
       deployment: this.adapter(record)?.deployment,
+      entry: this.entryDescriptor(record),
       stage: record.stage,
       fundingDeadline: record.fundingDeadline,
       settlementDeadline: record.settlementDeadline,

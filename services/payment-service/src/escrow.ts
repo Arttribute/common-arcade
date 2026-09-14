@@ -7,11 +7,30 @@ import {
   type EconomyConfig,
 } from '@common-arcade/economy'
 import {
+  erc20Abi,
+  parseAbi,
+  parseEventLogs,
   type Address,
   type Hex,
   type PublicClient,
   type WalletClient,
 } from 'viem'
+/** The escrow contract argument for a payer-signed EIP-3009 transfer. */
+export interface RelayedAuthorization {
+  from: Address
+  value: bigint
+  validAfter: bigint
+  validBefore: bigint
+  nonce: Hex
+  v: number
+  r: Hex
+  s: Hex
+}
+const eip3009Abi = parseAbi([
+  'function authorizationState(address authorizer, bytes32 nonce) view returns (bool)',
+  'event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce)',
+  'event Transfer(address indexed from, address indexed to, uint256 value)',
+])
 export interface PoolTerms {
   id: Hex
   rulesHash: Hex
@@ -58,6 +77,22 @@ export interface MatchSettlementAdapter {
     }[]
   }>
   accounting?(id: Hex): Promise<SettlementAccounting | undefined>
+  /** Relay a signed stake transfer; the payer owns the seat. Idempotent per authorization nonce. */
+  authorizedEntry?(input: {
+    id: Hex
+    seat: Hex
+    controller: Address
+    authorization: RelayedAuthorization
+    fromBlock?: string
+  }): Promise<{ transaction?: Hex; recovered: boolean }>
+  /** Relay a player-signed request for a zero-stake open seat. */
+  sponsoredEntry?(input: {
+    id: Hex
+    seat: Hex
+    player: Address
+    controller: Address
+  }): Promise<Hex>
+  tokenBalance?(owner: Address): Promise<bigint>
 }
 const resolverQueues = new Map<string, Promise<unknown>>()
 /** All calls reconcile contract state before submission; a lost HTTP receipt never authorizes another payout. */
@@ -77,7 +112,14 @@ export function createSettlementAdapter(
   const queueKey = `${deployment.chainId}:${wallet.account?.address.toLowerCase()}`
   async function send(
     functionName:
-      'createMatch' | 'createOpenMatch' | 'lock' | 'settle' | 'voidMatch',
+      | 'createMatch'
+      | 'createOpenMatch'
+      | 'lock'
+      | 'settle'
+      | 'voidMatch'
+      | 'stakeWithAuthorization'
+      | 'recoverAuthorizedStake'
+      | 'claimSeatFor',
     args: readonly unknown[],
   ) {
     const operation = (resolverQueues.get(queueKey) ?? Promise.resolve()).then(
@@ -130,6 +172,105 @@ export function createSettlementAdapter(
               args: [id, seat],
               blockNumber: head - BigInt((deployment.confirmations ?? 2) - 1),
             })
+          },
+        }
+      : {}),
+    ...(deployment.authorizedEntry
+      ? {
+          tokenBalance: (owner: Address) =>
+            reader.readContract({
+              address: deployment.token,
+              abi: erc20Abi,
+              functionName: 'balanceOf',
+              args: [owner],
+            }),
+          async sponsoredEntry({ id, seat, player, controller }) {
+            const match = await read(id)
+            if (match.status !== 1 || match.terms.stake !== 0n)
+              throw new Error('This seat is not a sponsored open seat')
+            return send('claimSeatFor', [id, seat, player, controller])
+          },
+          async authorizedEntry({
+            id,
+            seat,
+            controller,
+            authorization,
+            fromBlock,
+          }) {
+            const args = [id, seat, controller, authorization] as const
+            const [credited, used] = await Promise.all([
+              reader.readContract({
+                address: deployment.contract,
+                abi: arcadeEscrowAbi,
+                functionName: 'creditedAuthorization',
+                args: [
+                  deployment.token,
+                  authorization.from,
+                  authorization.nonce,
+                ],
+              }),
+              reader.readContract({
+                address: deployment.token,
+                abi: eip3009Abi,
+                functionName: 'authorizationState',
+                args: [authorization.from, authorization.nonce],
+              }),
+            ])
+            // A lost response is retried with the same payment: never relay it twice.
+            if (credited) return { recovered: false }
+            if (!used)
+              return {
+                transaction: await send('stakeWithAuthorization', args),
+                recovered: false,
+              }
+            // The nonce was spent outside this contract. Credit it only for a
+            // confirmed transfer of exactly the stake into this escrow; a
+            // cancelAuthorization also marks the nonce used without moving funds.
+            const head = await reader.getBlockNumber({ cacheTime: 0 })
+            const start = fromBlock ? BigInt(fromBlock) : head - 5000n
+            let transfer: Hex | undefined
+            for (let from = start; from <= head && !transfer; from += 2000n) {
+              const logs = await reader.getContractEvents({
+                address: deployment.token,
+                abi: eip3009Abi,
+                eventName: 'AuthorizationUsed',
+                args: {
+                  authorizer: authorization.from,
+                  nonce: authorization.nonce,
+                },
+                fromBlock: from,
+                toBlock: from + 1999n < head ? from + 1999n : head,
+              })
+              for (const log of logs) {
+                const receipt = await reader.getTransactionReceipt({
+                  hash: log.transactionHash,
+                })
+                const moved = parseEventLogs({
+                  abi: eip3009Abi,
+                  eventName: 'Transfer',
+                  logs: receipt.logs,
+                }).some(
+                  (event) =>
+                    event.address.toLowerCase() ===
+                      deployment.token.toLowerCase() &&
+                    event.args.from.toLowerCase() ===
+                      authorization.from.toLowerCase() &&
+                    event.args.to.toLowerCase() ===
+                      deployment.contract.toLowerCase() &&
+                    event.args.value === authorization.value,
+                )
+                if (receipt.status === 'success' && moved)
+                  transfer = log.transactionHash
+              }
+            }
+            if (!transfer)
+              throw new Error(
+                'This payment authorization was already used or canceled',
+              )
+            return {
+              transaction: await send('recoverAuthorizedStake', args),
+              recovered: true,
+            }
           },
         }
       : {}),
