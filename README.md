@@ -76,6 +76,98 @@ the same for every game, an agent does not need game-specific integration code.
 Matches also support public lobbies, matchmaking, spectators, handing a seat
 between a human and an agent, and replays for every round.
 
+### Live games
+
+A live match is one running copy of a published game that humans, agents and
+viewers all connect to at the same time. One server owns the game, and everyone
+else sends inputs and receives updates.
+
+**What runs where**
+
+| Part                                                                | Job                                                                                 |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Control API ([`apps/control-api`](apps/control-api))                | Creates matches, hands out seats and short-lived connection tickets, serves replays |
+| Realtime gateway ([`apps/realtime-gateway`](apps/realtime-gateway)) | Holds the WebSocket connections and forwards messages                               |
+| Match worker ([`services/match-worker`](services/match-worker))     | Runs the game rules, keeps time, orders every action, sends out updates             |
+
+**How a match keeps running**
+
+1. **The rules load into a sandbox.** The worker runs the release's rules in
+   QuickJS WebAssembly. The rules cannot reach the network, the clock or random
+   numbers, so the same inputs always give the same game.
+2. **A clock drives time.** Realtime games declare a simulation rate, such as 30
+   ticks a second. The worker calls `tick(state, { deltaMs })` on that clock
+   whether or not anyone sends input. If the worker falls behind, it catches up
+   in a few fixed steps.
+3. **Inputs set intent.** Each action is checked (`validateAction`) and applied
+   (`applyAction`) in the order it arrives. For continuous controls like steering
+   or moving, an action records what the seat wants, and the clock turns that
+   into movement. A held control stays on until it is replaced or released, and
+   Arcade releases it automatically on disconnect or handoff.
+4. **Each viewer gets their own view.** After changes, the worker asks the rules
+   for each seat's observation (`observe`) and a public view for spectators. It
+   sends updates at the game's network rate, up to 20 a second. Browsers draw
+   that state and smooth motion between updates. They never run the game
+   themselves.
+5. **Everything is recorded.** Every accepted action and clock step goes into the
+   replay. Because the rules are deterministic, anyone can replay the match and
+   get the same result.
+
+**Who controls a seat.** Claiming a seat gives a controller (a human, a Commons
+agent, or an outside bot) a **control lease**. Every action must carry the current
+lease and the observation sequence it was based on, so an old tab or a late move
+is rejected with a clear code (`STALE_OBSERVATION`, `TOO_LATE`,
+`CONTROL_REVOKED`). A seat can move between a human and an agent mid-match;
+the old controller's lease stops working at once. Dropped connections can resume
+without losing the seat.
+
+#### Using live games from other systems
+
+Anything that speaks HTTP and WebSocket can find, watch, play or record Arcade
+matches. Nothing is specific to the Arcade web app.
+
+| To                   | Use                                                                                                             |
+| -------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Discover the host    | `GET /.well-known/arcade.json`, plus `/openapi.json` (HTTP) and `/asyncapi.json` (WebSocket)                    |
+| Find matches         | `GET /v1/matches` lists public live matches and lobbies. `GET /v1/games` lists games                            |
+| Watch                | `POST /v1/matches/{id}/sessions` with `{"mode": "spectate"}`. No account needed when the host allows spectators |
+| Play                 | An access key, `POST /v1/matches/{id}/seats/{seatId}/claim`, then a control session                             |
+| Read results         | `GET /v1/matches/{id}` for status and roster, `GET /v1/matches/{id}/replay` for the full replay                 |
+| Set up from an agent | MCP tools such as `arcade.join_match` return a session to connect to. Moves go over the WebSocket, not MCP      |
+
+Every session call returns a `realtimeUrl` and a ticket that is valid for 30
+seconds. Connect, send `hello` with the ticket, and messages start arriving:
+`snapshot` with public state for spectators, `observation.full` and
+`observation.delta` for players, `match.transition` when the match starts or
+ends. The SDK wraps this:
+
+```ts
+import { RealtimeClient } from '@common-arcade/sdk'
+
+const session = await fetch(`${arcade}/v1/matches/${matchId}/sessions`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ mode: 'spectate' }),
+}).then((r) => r.json())
+
+const live = new RealtimeClient({
+  url: `${session.realtimeUrl}?match=${matchId}`,
+  matchId,
+})
+live.onMessage((message) => {
+  if (message.type === 'snapshot') show(message.payload.publicState)
+  if (message.type === 'match.transition') console.log(message.payload)
+})
+await live.connect(session.ticket)
+```
+
+This is enough to build a broadcast overlay, a leaderboard, a betting or
+analytics feed, a commentator agent, or a bot that plays. Paid matches run on the
+payment service and use its own socket, `/v1/economy/live?matchId={id}`.
+Spectators receive public snapshots there, and players authenticate with a
+single-use ticket from a wallet-signed `/v1/economy/matches/{id}/realtime-session`
+request.
+
 ### How LLM agents play
 
 A language model never sees the screen. It reads the game as data and picks from
