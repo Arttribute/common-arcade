@@ -50,8 +50,16 @@ import {
   type ProjectRecord,
 } from './project-access.js'
 
-/** How long a proposal may run before the studio stops waiting on it. */
-const COPILOT_JOB_DEADLINE_MS = 590_000
+/** How long a whole build may run, across every worker that carries it. */
+const COPILOT_JOB_MAX_MS = 60 * 60_000
+/** A running job whose worker has not checked in for this long has died. It
+ * must exceed one worker's lifetime, since a worker hands off before its host
+ * stops and the next worker checks in immediately. */
+const COPILOT_JOB_STALE_MS = 16 * 60_000
+/** Time a worker keeps after detaching from the Commons run: enough to finish a
+ * tool call already in progress, save the resume point and queue the next. */
+const COPILOT_HANDOFF_MARGIN_MS = 180_000
+const COPILOT_MAX_RECONNECTS = 5
 type CopilotJob = StoredDocument & {
   id: string
   projectId: string
@@ -66,6 +74,21 @@ type CopilotJob = StoredDocument & {
   projectRevision?: number
   events: CopilotActivity[]
   error?: string
+  /** Last time a worker carrying this job was known to be alive. */
+  heartbeatAt?: string
+  /** Where the next worker re-attaches to the Commons run after a hand-off. */
+  resume?: {
+    runId: string
+    after: number
+    response: string
+    observedRevision: number
+  }
+}
+function copilotJobExpired(job: CopilotJob, now = Date.now()) {
+  return (
+    now - Date.parse(job.startedAt) > COPILOT_JOB_MAX_MS ||
+    now - Date.parse(job.heartbeatAt ?? job.startedAt) > COPILOT_JOB_STALE_MS
+  )
 }
 type CopilotActivity = {
   sequence: number
@@ -1598,10 +1621,7 @@ export function createStudioApi(
         `copilot:${p.id}`,
         conversation.record.activeJobId,
       )
-      if (
-        active?.status === 'running' &&
-        Date.now() - Date.parse(active.startedAt) < COPILOT_JOB_DEADLINE_MS
-      )
+      if (active?.status === 'running' && !copilotJobExpired(active))
         throw new CopilotRequestError(
           409,
           'Copilot is already working in this conversation.',
@@ -1709,7 +1729,13 @@ export function createStudioApi(
     )
     if (!job || job.status !== 'running')
       return c.json({ error: 'Job is unavailable' }, 404)
-    await runCopilotJob(p, job, invocation)
+    // The host's own stop time, so the worker can hand the run to a successor
+    // instead of being killed in the middle of it.
+    const deadline = Number(c.req.header('X-Arcade-Worker-Deadline'))
+    await runCopilotJob(p, job, invocation, {
+      deadline:
+        Number.isFinite(deadline) && deadline > 0 ? deadline : undefined,
+    })
     return c.json({ ok: true })
   })
   /**
@@ -1725,10 +1751,7 @@ export function createStudioApi(
     )
     if (!job)
       return c.json({ error: 'This request is no longer available.' }, 404)
-    if (
-      job.status === 'running' &&
-      Date.now() - Date.parse(job.startedAt) > COPILOT_JOB_DEADLINE_MS
-    )
+    if (job.status === 'running' && copilotJobExpired(job))
       return c.json({
         jobId: job.id,
         status: 'failed',
@@ -1771,12 +1794,14 @@ export function createStudioApi(
       attachments?: { fileId: string }[]
       model?: { provider: string; modelId: string }
     },
+    worker: { deadline?: number } = {},
   ) {
     let current = job
     const persist = async (patch: Partial<CopilotJob>, finished = false) => {
       const next: CopilotJob = {
         ...current,
         ...patch,
+        heartbeatAt: new Date().toISOString(),
         version: current.version + 1,
         ...(finished ? { finishedAt: new Date().toISOString() } : {}),
       }
@@ -1806,12 +1831,26 @@ export function createStudioApi(
       })
     }
     try {
-      await assignArcadeSkill(p, job.agentId)
-      let response = ''
+      await persist({})
+      if (Date.now() - Date.parse(job.startedAt) > COPILOT_JOB_MAX_MS)
+        throw new CommonsServiceError(
+          502,
+          'The agent did not finish in time. Try again, or ask for a smaller change.',
+        )
+      // A successor worker picks up exactly where its predecessor detached.
+      const resumed = current.resume
+      if (!resumed) await assignArcadeSkill(p, job.agentId)
+      let response = resumed?.response ?? ''
       // Each invocation must build on a revision it has actually seen. Another
       // conversation may save the project while this agent is drafting.
-      let observedRevision = (await owned(p.id, job.projectId)).project.revision
-      for await (const event of commonsAgentStream(p, {
+      let observedRevision =
+        resumed?.observedRevision ??
+        (await owned(p.id, job.projectId)).project.revision
+      let runId = resumed?.runId
+      let after = resumed?.after ?? 0
+      let finished = false
+      let reconnects = 0
+      const request = {
         agentId: job.agentId,
         sessionId: job.sessionId,
         initiatorId: p.id,
@@ -1830,152 +1869,220 @@ export function createStudioApi(
         // This makes authoritative hosting the default execution path rather
         // than a convention the model may accidentally ignore.
         cliTools: copilotToolsFor(input.message),
-      })) {
-        if (
-          event.type === 'token' &&
-          typeof event.content === 'string' &&
-          (!event.phase || event.phase === 'final_answer')
-        )
-          response += event.content
-        else if (event.type === 'final')
-          response = response.trim() || agentEventText(event)
-        else if (event.type === 'cli_tool_request') {
-          const tool = String(event.tool ?? event.toolName ?? '')
-          const requestId = String(event.requestId ?? '')
-          await activity({
-            type: 'tool',
-            tool,
-            label: copilotToolLabel(tool),
-            status: 'running',
-          })
-          let result: string
-          const mutationProject = mutatingCopilotTools.has(tool)
-            ? (await owned(p.id, job.projectId)).project
+      }
+      // A game build can outlast both a single SSE connection and the host
+      // running this worker. Commons keeps the run going independently, so a
+      // cut connection re-attaches and a worker near its stop time hands the
+      // run to a fresh worker, each resuming after the last event handled.
+      while (!finished) {
+        const handoff = new AbortController()
+        const timer =
+          worker.deadline && options.dispatchCopilotJob
+            ? setTimeout(
+                () => handoff.abort(),
+                Math.max(
+                  0,
+                  worker.deadline - COPILOT_HANDOFF_MARGIN_MS - Date.now(),
+                ),
+              )
             : undefined
-          if (
-            mutatingCopilotTools.has(tool) &&
-            job.approvalMode === 'read-only'
-          ) {
-            result = JSON.stringify({
-              error:
-                'This conversation is read-only. Discuss the proposed change without making edits.',
-            })
-          } else if (
-            mutationProject &&
-            mutationProject.revision !== observedRevision
-          ) {
-            result = JSON.stringify({
-              error:
-                'The project changed since this run read it. Read the current project and prepare the change again.',
-              expectedRevision: observedRevision,
-              currentRevision: mutationProject.revision,
-            })
-          } else if (mutationProject && job.approvalMode === 'manual') {
-            try {
-              const project = mutationProject
-              const change: CopilotChange = {
-                version: 1,
-                id: id('chg'),
-                projectId: project.id,
-                sessionId: job.sessionId!,
-                agentId: job.agentId,
-                tool,
-                args:
-                  typeof event.args === 'string'
-                    ? JSON.parse(event.args)
-                    : (event.args ?? {}),
-                baseRevision: observedRevision,
-                createdAt: new Date().toISOString(),
-                status: 'pending',
-              }
-              // Validate proposed source without saving it, so the agent can repair
-              // incomplete games before asking the creator to approve them.
-              if (
-                tool === 'arcade_write_live_game' ||
-                tool === 'arcade_write_preview_game'
-              )
-                await validateCopilotGame(tool, change.args)
-              if (
-                new TextEncoder().encode(JSON.stringify(change)).length > 340000
-              )
-                throw new CopilotRequestError(
-                  413,
-                  'The proposed change is too large. Ask for a smaller change.',
-                )
-              await store.put(
-                `copilot-changes:${p.id}`,
-                `${project.id}:${change.id}`,
-                change,
-              )
-              result = JSON.stringify({
-                approvalRequired: true,
-                changeId: change.id,
-                message:
-                  'Proposal saved for review. The game has NOT changed. Tests run against the saved revision, not this pending proposal.',
-              })
-            } catch (error) {
-              result = JSON.stringify(copilotToolFailure(error))
-            }
-          } else {
-            result = await executeArcadeCopilotTool(
-              p,
-              job.projectId,
-              tool,
-              event.args,
-              observedRevision,
+        try {
+          for await (const event of commonsAgentStream(
+            p,
+            request,
+            COPILOT_JOB_MAX_MS,
+            {
+              signal: handoff.signal,
+              resume: runId ? { runId, after } : undefined,
+            },
+          )) {
+            if (typeof event.runId === 'string' && event.runId)
+              runId = event.runId
+            if (typeof event.seq === 'number' && event.seq <= after) continue
+            if (
+              event.type === 'token' &&
+              typeof event.content === 'string' &&
+              (!event.phase || event.phase === 'final_answer')
             )
-            const outcome = JSON.parse(result)
-            if (!outcome.error) {
-              // Inspecting a historical revision must not silently rebase an
-              // old draft onto the current head. Only a current read does so.
+              response += event.content
+            else if (event.type === 'final' || event.type === 'completed') {
+              finished = true
+              response = response.trim() || agentEventText(event)
+            } else if (event.type === 'cli_tool_request') {
+              const tool = String(event.tool ?? event.toolName ?? '')
+              const requestId = String(event.requestId ?? '')
+              await activity({
+                type: 'tool',
+                tool,
+                label: copilotToolLabel(tool),
+                status: 'running',
+              })
+              let result: string
+              const mutationProject = mutatingCopilotTools.has(tool)
+                ? (await owned(p.id, job.projectId)).project
+                : undefined
               if (
-                tool === 'arcade_read_project' &&
-                outcome.project?.revision === outcome.currentRevision
-              )
-                observedRevision = outcome.currentRevision
-              else if (
                 mutatingCopilotTools.has(tool) &&
-                typeof outcome.revision === 'number'
+                job.approvalMode === 'read-only'
+              ) {
+                result = JSON.stringify({
+                  error:
+                    'This conversation is read-only. Discuss the proposed change without making edits.',
+                })
+              } else if (
+                mutationProject &&
+                mutationProject.revision !== observedRevision
+              ) {
+                result = JSON.stringify({
+                  error:
+                    'The project changed since this run read it. Read the current project and prepare the change again.',
+                  expectedRevision: observedRevision,
+                  currentRevision: mutationProject.revision,
+                })
+              } else if (mutationProject && job.approvalMode === 'manual') {
+                try {
+                  const project = mutationProject
+                  const change: CopilotChange = {
+                    version: 1,
+                    id: id('chg'),
+                    projectId: project.id,
+                    sessionId: job.sessionId!,
+                    agentId: job.agentId,
+                    tool,
+                    args:
+                      typeof event.args === 'string'
+                        ? JSON.parse(event.args)
+                        : (event.args ?? {}),
+                    baseRevision: observedRevision,
+                    createdAt: new Date().toISOString(),
+                    status: 'pending',
+                  }
+                  // Validate proposed source without saving it, so the agent can repair
+                  // incomplete games before asking the creator to approve them.
+                  if (
+                    tool === 'arcade_write_live_game' ||
+                    tool === 'arcade_write_preview_game'
+                  )
+                    await validateCopilotGame(tool, change.args)
+                  if (
+                    new TextEncoder().encode(JSON.stringify(change)).length >
+                    340000
+                  )
+                    throw new CopilotRequestError(
+                      413,
+                      'The proposed change is too large. Ask for a smaller change.',
+                    )
+                  await store.put(
+                    `copilot-changes:${p.id}`,
+                    `${project.id}:${change.id}`,
+                    change,
+                  )
+                  result = JSON.stringify({
+                    approvalRequired: true,
+                    changeId: change.id,
+                    message:
+                      'Proposal saved for review. The game has NOT changed. Tests run against the saved revision, not this pending proposal.',
+                  })
+                } catch (error) {
+                  result = JSON.stringify(copilotToolFailure(error))
+                }
+              } else {
+                result = await executeArcadeCopilotTool(
+                  p,
+                  job.projectId,
+                  tool,
+                  event.args,
+                  observedRevision,
+                )
+                const outcome = JSON.parse(result)
+                if (!outcome.error) {
+                  // Inspecting a historical revision must not silently rebase an
+                  // old draft onto the current head. Only a current read does so.
+                  if (
+                    tool === 'arcade_read_project' &&
+                    outcome.project?.revision === outcome.currentRevision
+                  )
+                    observedRevision = outcome.currentRevision
+                  else if (
+                    mutatingCopilotTools.has(tool) &&
+                    typeof outcome.revision === 'number'
+                  )
+                    observedRevision = outcome.revision
+                }
+              }
+              if (requestId)
+                await commonsRequest(p, '/v1/agents/cli-tool-result', {
+                  requestId,
+                  result,
+                })
+              await activity({
+                type: 'tool',
+                tool,
+                label: copilotToolLabel(tool),
+                status: result.includes('"error"')
+                  ? 'failed'
+                  : result.includes('"approvalRequired"')
+                    ? 'pending-approval'
+                    : 'completed',
+              })
+            } else if (event.type === 'tool') {
+              const tool = String(
+                event.toolName ?? event.tool ?? event.name ?? '',
               )
-                observedRevision = outcome.revision
+              if (tool)
+                await activity({
+                  type: 'tool',
+                  tool,
+                  label: copilotToolLabel(tool),
+                  status: String(event.status ?? 'completed'),
+                })
+            } else if (event.type === 'status' && event.content) {
+              await activity({
+                type: 'status',
+                label: String(event.content),
+                status: String(event.status ?? 'running'),
+              })
+            } else if (event.type === 'error' || event.type === 'failed') {
+              throw new CommonsServiceError(
+                502,
+                String(
+                  event.message ?? event.content ?? 'The agent run failed.',
+                ),
+              )
             }
+            if (typeof event.seq === 'number') after = event.seq
+            reconnects = 0
           }
-          if (requestId)
-            await commonsRequest(p, '/v1/agents/cli-tool-result', {
-              requestId,
-              result,
-            })
-          await activity({
-            type: 'tool',
-            tool,
-            label: copilotToolLabel(tool),
-            status: result.includes('"error"')
-              ? 'failed'
-              : result.includes('"approvalRequired"')
-                ? 'pending-approval'
-                : 'completed',
-          })
-        } else if (event.type === 'tool') {
-          const tool = String(event.toolName ?? event.tool ?? event.name ?? '')
-          if (tool)
-            await activity({
-              type: 'tool',
-              tool,
-              label: copilotToolLabel(tool),
-              status: String(event.status ?? 'completed'),
-            })
-        } else if (event.type === 'status' && event.content) {
-          await activity({
-            type: 'status',
-            label: String(event.content),
-            status: String(event.status ?? 'running'),
-          })
-        } else if (event.type === 'error' || event.type === 'failed') {
+        } catch (error) {
+          // Detaching for a hand-off surfaces as an interrupted stream too.
+          if (!runId || !(error instanceof CommonsStreamInterrupted))
+            throw error
+        } finally {
+          clearTimeout(timer)
+        }
+        if (finished) break
+        if (!runId)
           throw new CommonsServiceError(
             502,
-            String(event.message ?? event.content ?? 'The agent run failed.'),
+            'Commons agent stream ended before the agent finished. You can continue this conversation.',
           )
+        if (handoff.signal.aborted && options.dispatchCopilotJob) {
+          await persist({
+            resume: { runId, after, response, observedRevision },
+          })
+          await options.dispatchCopilotJob({
+            jobId: job.id,
+            authorization: `Bearer ${p.token}`,
+            input,
+          })
+          return
         }
+        if (++reconnects > COPILOT_MAX_RECONNECTS)
+          throw new CommonsServiceError(
+            502,
+            'The connection to the Commons agent kept dropping. You can continue this conversation.',
+          )
+        await new Promise((resolve) => setTimeout(resolve, 1000 * reconnects))
       }
       const latest = (await owned(p.id, job.projectId)).project
       await persist(
@@ -1983,6 +2090,7 @@ export function createStudioApi(
           status: 'ready',
           response: response.trim() || 'Done.',
           projectRevision: latest.revision,
+          resume: undefined,
         },
         true,
       )
@@ -2603,22 +2711,35 @@ type CommonsStreamEvent = {
   requestId?: string
   message?: string
   payload?: unknown
+  /** Commons buffers every run event under a runId with a rising sequence
+   * number, so a client can re-attach after the last event it handled. */
+  runId?: string
+  seq?: number
 }
 
 async function* commonsAgentStream(
   p: Principal,
   body: unknown,
   timeoutMs = 570_000,
+  options: {
+    signal?: AbortSignal
+    resume?: { runId: string; after: number }
+  } = {},
 ): AsyncGenerator<CommonsStreamEvent> {
   if (p.provider !== 'commons')
     throw new IdentityError(
       403,
       'Sign in with Commons to use your Commons agents.',
     )
+  const base =
+    process.env.AGENT_COMMONS_API_URL ?? 'https://api.agentcommons.io'
+  const timeout = AbortSignal.timeout(timeoutMs)
   let response: Response
   try {
     response = await fetch(
-      `${process.env.AGENT_COMMONS_API_URL ?? 'https://api.agentcommons.io'}/v1/agents/run/stream`,
+      options.resume
+        ? `${base}/v1/agents/runs/${encodeURIComponent(options.resume.runId)}/stream`
+        : `${base}/v1/agents/run/stream`,
       {
         method: 'POST',
         headers: {
@@ -2627,12 +2748,16 @@ async function* commonsAgentStream(
           Accept: 'text/event-stream',
           'x-initiator': p.id,
         },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs),
+        body: JSON.stringify(
+          options.resume ? { after: options.resume.after } : body,
+        ),
+        signal: options.signal
+          ? AbortSignal.any([timeout, options.signal])
+          : timeout,
       },
     )
   } catch (error) {
-    throw new CommonsServiceError(
+    throw new CommonsStreamInterrupted(
       502,
       `Commons agent stream could not be reached: ${error instanceof Error ? error.message : 'network error'}`,
     )
@@ -2703,7 +2828,7 @@ async function* commonsAgentStream(
       if (done) break
     }
   } catch (error) {
-    throw new CommonsServiceError(
+    throw new CommonsStreamInterrupted(
       502,
       `Commons agent stream ended unexpectedly: ${error instanceof Error ? error.message : 'connection error'}`,
     )
@@ -2915,6 +3040,9 @@ export class CommonsServiceError extends Error {
     this.name = 'Commons agent service'
   }
 }
+
+/** The connection to a Commons run was lost; the run itself may continue. */
+class CommonsStreamInterrupted extends CommonsServiceError {}
 
 /** Request errors are distinct from failures of the upstream Commons runtime. */
 export class CopilotRequestError extends Error {

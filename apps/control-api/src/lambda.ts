@@ -50,6 +50,9 @@ export const handler = async (event: unknown, context: any) => {
           Authorization: invocation.authorization,
           'Content-Type': 'application/json',
           'X-Arcade-Worker-Secret': workerSecret,
+          'X-Arcade-Worker-Deadline': String(
+            Date.now() + context.getRemainingTimeInMillis(),
+          ),
         },
         body: JSON.stringify(invocation.input),
       },
