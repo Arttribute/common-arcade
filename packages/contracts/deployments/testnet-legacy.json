@@ -42,5 +42,26 @@
     "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
     "rpcUrl": "https://forno.celo-sepolia.celo-testnet.org",
     "openSeats": true
+  },
+  "base-sepolia:seat-controllers-v3": {
+    "contract": "0xe62683ef11bdaecafa6a1bc3cd5399ddb24834e5",
+    "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+    "rpcUrl": "https://sepolia.base.org",
+    "openSeats": true,
+    "seatControllers": true
+  },
+  "arc-testnet:seat-controllers-v3": {
+    "contract": "0x39011d10b96e0b79b1ac15815c62ccf48d9ac7fe",
+    "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+    "rpcUrl": "https://rpc.testnet.arc.io",
+    "openSeats": true,
+    "seatControllers": true
+  },
+  "celo-sepolia:seat-controllers-v3": {
+    "contract": "0xf886876bb7299279aa6ae370b3d4cf8a1b3d1576",
+    "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
+    "rpcUrl": "https://forno.celo-sepolia.celo-testnet.org",
+    "openSeats": true,
+    "seatControllers": true
   }
 }

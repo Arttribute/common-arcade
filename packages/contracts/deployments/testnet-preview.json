@@ -1,17 +1,19 @@
 {
   "base-sepolia": {
-    "contract": "0xe62683ef11bdaecafa6a1bc3cd5399ddb24834e5",
+    "contract": "0x94291b6a498e831e1cdefd8d5248643ec90a00d5",
     "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
     "rpcUrl": "https://sepolia.base.org",
     "openSeats": true,
-    "seatControllers": true
+    "seatControllers": true,
+    "authorizedEntry": true
   },
   "arc-testnet": {
-    "contract": "0x39011d10b96e0b79b1ac15815c62ccf48d9ac7fe",
+    "contract": "0x043828eb9159f1a8a853219e05c37459d7eea57f",
     "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
     "rpcUrl": "https://rpc.testnet.arc.io",
     "openSeats": true,
-    "seatControllers": true
+    "seatControllers": true,
+    "authorizedEntry": true
   },
   "hedera-testnet": {
     "contract": "0xe2609fd5126a41a8b6a721d1c1502c7c50b71537",
@@ -21,10 +23,11 @@
     "seatControllers": true
   },
   "celo-sepolia": {
-    "contract": "0xf886876bb7299279aa6ae370b3d4cf8a1b3d1576",
+    "contract": "0x54e7faca6f774b48cf8a09bf993e2dc1acca55be",
     "treasury": "0xD9303DFc71728f209EF64DD1AD97F5a557AE0Fab",
     "rpcUrl": "https://forno.celo-sepolia.celo-testnet.org",
     "openSeats": true,
-    "seatControllers": true
+    "seatControllers": true,
+    "authorizedEntry": true
   }
 }

@@ -290,12 +290,12 @@ source license.
 
 All pools and prices use USDC atomic units (6 decimals: `1000000` = 1 USDC).
 
-| Network        | Chain ID | USDC                                         | Open-seat escrow                             |
-| -------------- | -------- | -------------------------------------------- | -------------------------------------------- |
-| base-sepolia   | 84532    | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` | `0x3b3a3302effb91631a25732582e8823879690f85` |
-| arc-testnet    | 5042002  | `0x3600000000000000000000000000000000000000` | `0xd912b9b7715d7dcefb2b65daf876ca6efc8e3ce9` |
-| hedera-testnet | 296      | `0.0.429274`                                 | `0x15f3eb03fce4b11ae62df7e6e03ba63ead94d875` |
-| celo-sepolia   | 11142220 | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` | `0x957e41e77ac48bcef425d24eed903133b398b23c` |
+| Network        | Chain ID | USDC                                         | Escrow for new sessions                      | x402 entry |
+| -------------- | -------- | -------------------------------------------- | -------------------------------------------- | ---------- |
+| base-sepolia   | 84532    | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` | `0x94291b6a498e831e1cdefd8d5248643ec90a00d5` | Yes        |
+| arc-testnet    | 5042002  | `0x3600000000000000000000000000000000000000` | `0x043828eb9159f1a8a853219e05c37459d7eea57f` | Yes        |
+| celo-sepolia   | 11142220 | `0x01C5C0122039549AD1493B8220cABEdD739BC44E` | `0x54e7faca6f774b48cf8a09bf993e2dc1acca55be` | Yes        |
+| hedera-testnet | 296      | `0.0.429274`                                 | `0xe2609fd5126a41a8b6a721d1c1502c7c50b71537` | No         |
 
 Previous pools retain their original escrow contracts. Hedera funded payment checks
 remain pending canonical test USDC; contract deployment alone is not a funded-payment test.
