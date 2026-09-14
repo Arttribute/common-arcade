@@ -116,24 +116,137 @@ directly through the SDK or WebSocket protocol.
 
 ### Pay
 
-Play is free by default. Paid play requires each party to opt in:
+Play is free by default. Paid play is a separate layer, and every party opts in:
 
 - **Creators** publish earning terms in the release manifest. Hosts cannot change
   them.
 - **Hosts** pick free entry, player stakes, or a sponsored prize pool for each
   match.
-- **Escrow** holds entries in USDC. The pool locks before play and pays out only
-  on the server's recorded result. Draws, cancellations, and unfilled matches
-  refund in full.
-- **Fees** are fixed at 2.5% of settled pools, split 70% to the creator and 30%
-  to the platform. Remix royalties come out of the creator's share.
-- **Agents** spend only within a budget their owner grants. The grant limits the
-  network, recipient, amount per payment, total budget, and expiry. Agents use it
-  for match entries and pay-per-call [x402](https://x402.org) services.
+- **Players and agents** choose to take a paid seat. Agents can only spend within
+  a budget their owner grants.
 
-Paid match records are public and can be checked against onchain escrow events.
 Payments run on testnets only: Base Sepolia, Arc Testnet, Celo Sepolia, and Hedera
-Testnet.
+Testnet. Paid play is not trustless; see [Trust](#trust) below.
+
+#### The pieces
+
+| Piece                   | Where                                                                 | Job                                                                                          |
+| ----------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `ArcadeEscrow` contract | [`packages/contracts`](packages/contracts/contracts/ArcadeEscrow.sol) | Holds USDC for one match, records who owns each seat, and pays out                           |
+| Payment service         | [`services/payment-service`](services/payment-service)                | Creates pools, runs paid games, relays seat entries, reports results                         |
+| Resolver wallet         | Payment service                                                       | The only wallet allowed to create, lock and settle pools, and to relay signed entries        |
+| x402                    | [x402.org](https://x402.org)                                          | HTTP payments: a server answers `402` with a price, the client retries with a signed payment |
+| Owner grants            | [Agent Commons](https://github.com/Arttribute/agent-commons) wallets  | Limit what an agent wallet may pay, to whom, how much, and until when                        |
+
+Games never touch money. The rules module only reports a result. The payment
+service reads that result and tells the escrow who won.
+
+#### A paid match from start to finish
+
+1. **Create.** The host picks a format. The payment service creates a pool in
+   `ArcadeEscrow` with fixed terms: token, stake, fee, creator share, royalties,
+   funding deadline and settlement deadline. The contract stores these terms, so
+   they cannot change after anyone pays.
+2. **Fund.** Players take seats by paying the stake into the escrow. Sponsors can
+   add to the prize and spectators can bet on a seat. Each wallet holds one seat.
+   A seat also records a **controller**, a game-only key that may play but can
+   never move funds.
+3. **Lock.** When every seat is paid, the resolver locks the pool. Funding closes
+   and the game starts. Nothing is dealt or shown before the lock confirms.
+4. **Play.** The authoritative runtime plays the match. Every action goes into a
+   replay.
+5. **Settle.** The replay is saved first. Then the resolver reports the winning
+   seat and a hash of the replay to the escrow. The contract splits the pool:
+   winner, creator, royalty holders, and treasury.
+6. **Withdraw.** Payouts become claimable balances. Anyone can trigger a
+   withdrawal, but the money only goes to its recorded owner.
+
+Draws, cancelled lobbies and unfilled matches pay no fee and refund everyone in
+full. If the resolver never settles, anyone can void the pool after the
+settlement deadline and players reclaim their stakes.
+
+The fee is fixed at 2.5% of a settled pool, split 70% to the creator and 30% to
+the platform. Remix royalties come out of the creator's share. A 10 USDC pool
+pays 9.75 to the winner, 0.175 to creator earnings, and 0.075 to the treasury.
+
+#### Taking a seat with x402
+
+A paid seat is an x402 resource. Any x402 client, human wallet or agent, takes a
+seat with one HTTP request and one signature:
+
+```mermaid
+sequenceDiagram
+  participant P as Player or agent
+  participant S as Payment service
+  participant E as ArcadeEscrow
+  participant U as USDC
+  P->>S: POST /v1/economy/matches/{id}/entry
+  S-->>P: 402 PAYMENT-REQUIRED (pay the stake to the escrow)
+  P->>P: Sign a USDC transfer (EIP-3009), no transaction
+  P->>S: Same request + PAYMENT-SIGNATURE
+  S->>E: stakeWithAuthorization(pool, seat, controller, signed transfer)
+  E->>U: transferWithAuthorization(player to escrow, stake)
+  E->>E: Seat belongs to the signer
+  S-->>P: 200 + PAYMENT-RESPONSE (seat, relay transaction)
+```
+
+- **One signature, no gas.** The player signs a transfer of exactly the stake to
+  the escrow. The resolver submits it and pays the network fee. The player needs
+  test USDC but no gas and no token allowance.
+- **The price is the stake, and `payTo` is the escrow.** The payment goes straight
+  into the pool, not to Arcade. A standard x402 client works unchanged.
+- **The signer owns the seat.** Refunds and winnings go to the wallet that signed.
+  The optional `controller` only plays. `"autoplay": true` hands the seat to the
+  Arcade policy on the match worker.
+- **Safe to retry.** A wallet that already holds the seat gets it back without a
+  second charge. The escrow credits each signed transfer once. Only the resolver
+  can relay, so a copied signature cannot be used for another seat. If someone
+  submits the transfer to the token contract first, the service finds the
+  transfer on chain and credits the seat instead of losing the money.
+- **No payment for nothing.** A full table returns `400` before asking for
+  payment. An unfunded wallet gets `402 insufficient_funds` and nothing is sent.
+
+Sponsored seats cost nothing, so they take a signed entry request instead of a
+payment. Find open seats at `GET /v1/economy/lobbies`. `GET /v1/economy/config`
+lists `entryNetworks`, the networks whose escrow supports x402 entry. It needs a
+USDC token with signed transfers (EIP-3009), so Hedera keeps the wallet deposit
+flow: approve the token, then call `stake` on the escrow.
+
+#### Agents
+
+A Commons agent pays from its own wallet within an **owner grant**. The owner
+sets the network, token, recipient, service origin, maximum per payment, total
+budget and expiry, up to 24 hours. For a match, the grant is also bound to one
+pool, one seat, and the allowed operations. The agent can use the grant but can
+never create or raise its own budget.
+
+When a Commons agent takes a seat, it pays the x402 entry within that grant. Its
+wallet signs the transfer and sends no transaction. Budget is reserved before
+signing, and a payment with an unknown outcome keeps its reservation until
+someone checks the chain. Agents also use grants for pay-per-call x402 services,
+such as the blackjack analysis at `POST /v1/analysis/{network}`. Service fees
+never credit a match pool.
+
+External agents need no Commons account. Any wallet with USDC can find a lobby
+and take a seat with an x402 client, then play through the SDK or WebSocket
+protocol.
+
+#### Trust
+
+- **The contract checks accounting, not the game.** It enforces the terms,
+  deadlines, seat ownership, one seat per wallet, fee limits and payout
+  destinations. It has no upgrade path and no admin withdrawal of player funds.
+- **The resolver is trusted to report the right winner.** Every result is backed
+  by a saved replay whose hash is stored on chain, so anyone can check it
+  afterwards. The resolver cannot send a payout to an address that is not a
+  seat's recorded owner.
+- **If the service disappears, money is not stuck.** After the deadlines, anyone
+  can void a pool and every contributor reclaims their share.
+
+Paid match records are public at `GET /v1/economy/matches/{id}` and can be checked
+against escrow events. See [Payments & Earnings](./apps/web/content/docs/guides/payments.mdx)
+for formats and APIs, and the [Payment Runbook](./docs/payments/runbook.md) for
+deployment.
 
 ## Example
 
