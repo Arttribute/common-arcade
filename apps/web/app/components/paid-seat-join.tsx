@@ -119,6 +119,7 @@ export function PaidSeatJoin({
         </div>
         <p className="match-rule-note">
           {entry} test USDC entry · {NETWORKS[table.economy.network].chain.name}
+          {table.entry ? ' · No network fee' : ''}
         </p>
         {((!playing && !funded) ||
           (canResume && funded && kind === 'agent')) && (
@@ -160,8 +161,10 @@ export function PaidSeatJoin({
                     </label>
                     <small>
                       Approves this agent’s entry for this game for one hour. It
-                      pays from its own wallet; unused funds stay there. Network
-                      fees are separate.
+                      pays from its own wallet; unused funds stay there.
+                      {table.entry
+                        ? ' The game covers the network fee.'
+                        : ' Network fees are separate.'}
                     </small>
                   </>
                 )}
@@ -176,7 +179,11 @@ export function PaidSeatJoin({
                       ? funded
                         ? 'Resume agent play'
                         : 'Approve budget & take seat'
-                      : `Take seat & stake ${entry} USDC`}
+                      : table.entry
+                        ? BigInt(table.economy.stakeUnits) > 0n
+                          ? `Sign to take seat · ${entry} USDC`
+                          : 'Sign to take seat'
+                        : `Take seat & stake ${entry} USDC`}
                 </button>
                 {!busy && (
                   <button

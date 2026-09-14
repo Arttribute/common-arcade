@@ -380,3 +380,37 @@ agent join flow: zero-cost joins are recorded separately from positive payment r
 retain idempotency and revocation checks, and skip ERC20 approvals. Existing grant caps,
 network/asset/origin restrictions and owner authorization remain in force. The lobby
 prefills these fields and executes entry after explicit budget approval.
+
+## Gasless x402 seat entry
+
+Escrow revision `x402-entry-v4` adds `stakeWithAuthorization`,
+`recoverAuthorizedStake` and `claimSeatFor`. The resolver relays a player-signed
+EIP-3009 USDC transfer to the escrow and assigns the seat to the signer in the same
+transaction, so players pay no gas and approve no allowance. It is resolver-only:
+a copied authorization cannot be replayed with another seat or controller. If the
+transfer reaches the token first, the service credits it through
+`recoverAuthorizedStake` only after finding the matching `AuthorizationUsed` and
+`Transfer` events, because `cancelAuthorization` also spends a nonce without moving
+funds. Each nonce is credited once.
+
+It deploys only where canonical USDC supports EIP-3009 (Base Sepolia, Arc Testnet,
+Celo Sepolia). Hedera stays on `seat-controllers-v3`.
+
+Rollout:
+
+1. Merge, then run **Deploy testnet x402 seat entry** from `main` with `deploy`.
+   The script checks that the escrow and token typehashes match before recording.
+2. Commit the `packages/contracts/deployments/x402-entry-v4/*.json` records. In
+   `testnet-preview.json`, point each of the three networks at its new contract
+   with `authorizedEntry: true`, and move the previous entry into
+   `testnet-legacy.json` as `<network>:seat-controllers-v3` so existing pools keep
+   their settlement and refunds.
+3. Deploy the payment service. `GET /v1/economy/config` then lists
+   `entryNetworks`, and new tables on those networks expose `entry`.
+4. The resolver key pays gas for every relayed entry. Keep it funded on each network.
+
+`POST /v1/economy/matches/:id/entry` answers `402` with `PAYMENT-REQUIRED`
+(`exact`, the escrow as `payTo`, the stake as `amount`) and settles by relaying,
+not through a facilitator. Commons agent `stake` deposits use it automatically
+when the table advertises `entry`. `ARCADE_ANVIL_URL` runs `entry-anvil.test.ts`,
+which drives the route with the official `@x402/fetch` client.

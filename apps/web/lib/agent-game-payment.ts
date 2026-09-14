@@ -16,6 +16,8 @@ export interface PaidLobby {
   economy: Extract<EconomyConfig, { mode: 'escrow' }>
   recipients: `0x${string}`[]
   funded?: boolean[]
+  /** Present when the table takes seats with one signature and no network fee. */
+  entry?: { method: 'x402' | 'signed-command' }
 }
 export interface AgentGrant {
   id: string

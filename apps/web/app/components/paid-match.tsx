@@ -16,6 +16,7 @@ import { connectedPaymentWallet } from '../../lib/browser-wallets'
 import { paymentService } from '../../lib/paid-session'
 import { agentWalletApi, type PaidLobby } from '../../lib/agent-game-payment'
 import { submitSeatPayment } from '../../lib/seat-payment'
+import { enterSeat, type SeatEntry } from '../../lib/seat-entry'
 import { AgentSelect } from './agent-select'
 import { PaidSeatJoin } from './paid-seat-join'
 import { PaidRealtimeGame } from './paid-realtime-game'
@@ -44,6 +45,7 @@ interface Table extends Omit<PaidLobby, 'economy'> {
   startWhenReady?: boolean
   readyAt?: number
   state?: JsonValue
+  entry?: SeatEntry
 }
 async function request<T>(path: string, body?: unknown): Promise<T> {
   if (!paymentService) throw new Error('Live paid sessions are unavailable')
@@ -211,6 +213,29 @@ export function PaidMatch({ matchId }: { matchId: string }) {
     const wallet = await connectedPaymentWallet(current.economy.network)
     setAccount(wallet.account.address)
     const key = gameSessionKey(matchId)!
+    if (operation === 'stake' && current.entry) {
+      // One signature, no network fee: the game service relays the signed entry.
+      await enterSeat({
+        matchId,
+        entry: current.entry,
+        deployment: current.deployment,
+        stakeUnits: current.economy.stakeUnits,
+        wallet,
+        seat,
+        controller: key.address,
+        onProgress: progress,
+      })
+      setControlAddress(key.address)
+      setJoinedWallet(wallet.account.address.toLowerCase())
+      sessionStorage.setItem(
+        `arcade:joined:${matchId}`,
+        wallet.account.address.toLowerCase(),
+      )
+      await refresh().catch(() =>
+        progress('Seat confirmed. Reconnecting to the game…'),
+      )
+      return
+    }
     const units =
       operation === 'stake'
         ? BigInt(current.economy.stakeUnits)

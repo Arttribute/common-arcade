@@ -18,6 +18,8 @@ export async function createPaidAnalysisApi(
   rails: PaidServiceRail[],
   facilitatorFactory: (url: string) => FacilitatorClient = (url) =>
     new HTTPFacilitatorClient({ url }),
+  /** Other x402 resources served by this origin, such as paid seat entry. */
+  services: () => unknown[] = () => [],
 ) {
   const app = new Hono()
   const discovery: unknown[] = []
@@ -113,7 +115,7 @@ export async function createPaidAnalysisApi(
     })
   }
   app.get('/.well-known/x402', (c) =>
-    c.json({ x402Version: 2, services: discovery }),
+    c.json({ x402Version: 2, services: [...discovery, ...services()] }),
   )
   return app
 }

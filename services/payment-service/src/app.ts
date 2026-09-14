@@ -31,7 +31,19 @@ export async function createApp(
     }),
   )
   app.get('/healthz', (c) => c.json({ ok: true, testnetOnly: true }))
-  app.route('/', await createPaidAnalysisApi(rails))
+  app.route(
+    '/',
+    await createPaidAnalysisApi(rails, undefined, () =>
+      (host?.entryNetworks() ?? []).map((network) => ({
+        path: '/v1/economy/matches/{matchId}/entry',
+        discover: '/v1/economy/lobbies',
+        network,
+        scheme: 'exact',
+        description:
+          'Take a seat in a paid match. The price is the seat stake, paid into the match escrow.',
+      })),
+    ),
+  )
   if (host) app.route('/', createTableApi(host))
   return app
 }

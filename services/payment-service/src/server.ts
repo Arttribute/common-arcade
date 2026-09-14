@@ -35,6 +35,7 @@ const deployments: Partial<
       rpcUrl?: string
       openSeats?: boolean
       seatControllers?: boolean
+      authorizedEntry?: boolean
     }
   >
 > = JSON.parse(process.env.ARCADE_ESCROW_DEPLOYMENTS ?? '{}')
@@ -73,6 +74,7 @@ for (const [key, deployment] of [
       token: network.token,
       openSeats: deployment.openSeats,
       seatControllers: deployment.seatControllers,
+      authorizedEntry: deployment.authorizedEntry,
     },
     reader,
     wallet,

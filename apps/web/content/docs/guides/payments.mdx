@@ -87,14 +87,16 @@ authorize a payout.
    player sidebar as free games. Hosting and watching require no payment-wallet
    connection or signature. Share the invitation link.
 4. In an open player card, choose **Take seat** to play yourself, or **Assign**
-   to use the selected Commons agent. A human confirms the displayed entry stake
-   in that card. The wallet batches the token allowance and deposit when it supports
-   atomic calls; other wallets may require a token allowance first. Existing
-   allowances are reused.
+   to use the selected Commons agent. On networks with
+   [gasless entry](#take-a-seat-with-x402), a human signs the displayed entry stake
+   once and pays no network fee. Elsewhere the wallet batches the token allowance
+   and deposit when it supports atomic calls; other wallets may require a token
+   allowance first.
 5. For an agent, approve its game budget in the seat card. The agent's own wallet
    pays and starts its game policy on the match worker. No human wallet signature
    is requested. A valid grant is reused; unused budget stays in the agent wallet.
-   Agent play continues if the browser closes. Network fees are separate.
+   Agent play continues if the browser closes. With gasless entry the agent pays
+   over x402 and needs no gas; elsewhere network fees are separate.
 6. Optional bets and sponsored prize contributions live in the spectator card.
    Human spectators confirm their own payment; a Commons agent can use its own
    approved budget. New sessions start automatically ten seconds after both seats
@@ -132,6 +134,70 @@ their paid formats are unavailable:
 Agent wallet budgets and the x402 card-analysis button are on the **Agents**
 page. They are separate from game stakes and do not enable paid hosting for an
 unsupported game.
+
+### Take a seat with x402
+
+On Base Sepolia, Arc Testnet and Celo Sepolia, a paid seat is an
+[x402 v2](https://x402.org) resource. Any x402 client can take one with a single
+request. The player signs a USDC transfer of exactly the entry stake to the match
+escrow; Arcade relays it and pays the network fee. The player needs test USDC but
+no gas, no token allowance and no transaction of its own. Hedera keeps the wallet
+deposit flow because its USDC has no signed transfers.
+
+Find a table with an open seat, then request entry:
+
+```http
+GET https://d2scptqzm55h6p.cloudfront.net/v1/economy/lobbies
+POST https://d2scptqzm55h6p.cloudfront.net/v1/economy/matches/{matchId}/entry
+Content-Type: application/json
+
+{ "seat": 2, "controller": "0x…", "autoplay": false }
+```
+
+All body fields are optional:
+
+| Field        | Meaning                                                                              |
+| ------------ | ------------------------------------------------------------------------------------ |
+| `seat`       | `1` or `2`. Omit it to take the first open seat.                                     |
+| `controller` | A game-only key allowed to play the seat. Defaults to the paying wallet.             |
+| `autoplay`   | `true` lets the Arcade policy play the seat on the match worker until the game ends. |
+
+- The first request returns `402` with a `PAYMENT-REQUIRED` header. Its only
+  requirement is the `exact` scheme, the table's network, canonical USDC, the
+  stake as `amount` and the match escrow as `payTo`.
+- Retry with `PAYMENT-SIGNATURE`. The response carries `PAYMENT-RESPONSE` with the
+  relay transaction and returns `seat`, `player`, `controller`, `transaction` and
+  the updated `table`.
+- The paying wallet owns the seat, its refund and any winnings. The controller can
+  only play. Each wallet holds one seat.
+- A full table returns `400` before any payment is requested. An unfunded wallet
+  gets `402` with `insufficient_funds`, and nothing is relayed.
+- Retrying a paid entry is safe. A wallet that already holds a seat gets it back
+  without a second charge, and a payment authorization is credited at most once,
+  even if someone submits it to the token contract first.
+
+A standard client handles the challenge:
+
+```ts
+import { wrapFetchWithPayment, x402Client } from '@x402/fetch'
+import { ExactEvmScheme } from '@x402/evm/exact/client'
+
+const pay = wrapFetchWithPayment(
+  fetch,
+  new x402Client().register('eip155:84532', new ExactEvmScheme(account)),
+)
+const entry = await pay(`${service}/v1/economy/matches/${matchId}/entry`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ autoplay: true }),
+})
+```
+
+A match's `entry` field, also listed in `/v1/economy/lobbies`, says how its seats
+are taken. `method` is `x402` for staked seats and `signed-command` for sponsored
+seats. A sponsored seat has no price: sign the entry body with the player wallet
+using the command envelope (operation `entry`) and send it as `auth`. The entry
+route is also listed in `/.well-known/x402`.
 
 ---
 
@@ -319,7 +385,7 @@ The agent then spends within the grant using a stable `idempotencyKey`:
 | Route (Agent Commons)                                | Purpose                                                    |
 | ---------------------------------------------------- | ---------------------------------------------------------- |
 | `POST /v1/wallets/agent/:agentId/x402-fetch`         | Call an x402 service within the grant                      |
-| `POST /v1/wallets/agent/:agentId/arcade/deposit`     | Make a typed stake or bounty deposit for a bound pool      |
+| `POST /v1/wallets/agent/:agentId/arcade/deposit`     | Take a bound seat, or make a bounty or bet deposit         |
 | `POST /v1/wallets/agent/:agentId/arcade/observation` | Read a paid match observation with a server-held signature |
 | `POST /v1/wallets/agent/:agentId/arcade/action`      | Submit a bounded game action with a server-held signature  |
 | `GET /v1/wallets/agent/:agentId/payment-sessions`    | List grants                                                |
@@ -328,7 +394,9 @@ The agent then spends within the grant using a stable `idempotencyKey`:
 
 An agent can execute an existing grant but can't issue its own budget, send
 arbitrary transaction data or make direct transfers. Budgets limit USDC
-transfers; network gas is separate. Reservations include confirmed **and**
+transfers. When the table offers gasless entry, a `stake` deposit pays over x402
+within the grant, and the agent wallet needs no gas; otherwise network gas is
+separate. Reservations include confirmed **and**
 uncertain attempts, and an uncertain result doesn't release budget
 automatically. Revocation stops new authorizations, but an already-signed
 authorization can still settle until its short expiry.
@@ -380,8 +448,9 @@ credits a match pool.
 ### Agent payment approvals
 
 An approved spending budget lets the named agent execute permitted payments
-without another owner wallet prompt. Commons signs the exact token allowance
-and deposit using that agent’s wallet, and checks the budget, expiry, network,
+without another owner wallet prompt. Commons signs the seat's x402 payment, or
+the exact token allowance and deposit where gasless entry is unavailable, using
+that agent’s wallet, and checks the budget, expiry, network,
 recipient and match restrictions before spending. Game commands are signed by
 the agent wallet too. A human player’s **Enable game controls** button is separate.
 

@@ -23,6 +23,8 @@ export interface EscrowDeployment {
   token: Address
   openSeats?: boolean
   seatControllers?: boolean
+  /** Supports `stakeWithAuthorization`: gasless x402 seat entry relayed by the resolver. */
+  authorizedEntry?: boolean
   confirmations?: number
 }
 /** Wallet-agnostic boundary: humans, agent key custody, and Safe can submit the same calls. */
