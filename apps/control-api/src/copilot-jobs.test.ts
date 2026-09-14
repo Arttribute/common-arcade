@@ -1026,3 +1026,240 @@ describe('revision provenance across concurrent conversations', () => {
     expect(saved.document.title).toBe('Follow-up edit')
   })
 })
+
+// A build routinely outlasts one SSE connection and one worker host. Commons
+// keeps the run alive, so Arcade must re-attach rather than fail the build.
+describe('builds that outlast a connection or a worker', () => {
+  const runEvents = [
+    { type: 'run_started' },
+    {
+      type: 'cli_tool_request',
+      requestId: 'req_read',
+      tool: 'arcade_read_project',
+      args: {},
+    },
+    {
+      type: 'cli_tool_request',
+      requestId: 'req_write',
+      tool: 'arcade_write_live_game',
+      args: liveGame,
+    },
+    {
+      type: 'cli_tool_request',
+      requestId: 'req_test',
+      tool: 'arcade_test_game',
+      args: {},
+    },
+    { type: 'final', content: 'Built Live Lines after a long session.' },
+  ].map((event, index) => ({ ...event, runId: 'run_long', seq: index + 1 }))
+  const frame = (event: unknown) =>
+    new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`)
+
+  /** Serves the first `cutAfter` events on the opening connection, then
+   * breaks it the way a timed-out proxy or aborted fetch does. */
+  function stubLongRun(
+    cut: (
+      controller: ReadableStreamDefaultController,
+      signal?: AbortSignal,
+    ) => void,
+    cutAfter = 2,
+  ) {
+    const calls = stubCommons()
+    const commons = globalThis.fetch
+    vi.stubGlobal('fetch', async (input: any, init: any = {}) => {
+      const url = String(input)
+      if (url.endsWith('/v1/agents/run/stream')) {
+        calls.push({ url, method: 'POST', body: JSON.parse(init.body) })
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              for (const event of runEvents.slice(0, cutAfter))
+                controller.enqueue(frame(event))
+              cut(controller, init.signal)
+            },
+          }),
+        )
+      }
+      if (url.endsWith('/v1/agents/runs/run_long/stream')) {
+        const body = JSON.parse(init.body)
+        calls.push({ url, method: 'POST', body })
+        return sse(runEvents.filter((event) => event.seq > body.after))
+      }
+      return commons(input, init)
+    })
+    return calls
+  }
+  const createProjectAndStart = async (app: any) => {
+    const project = await (
+      await app.request('/v1/projects', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ document: emptyBrowserDocument }),
+      })
+    ).json()
+    const started = await app.request(`/v1/projects/${project.id}/copilot`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ message: rawPrompt, agentId: 'agt_copilot' }),
+    })
+    return { project, jobId: (await started.json()).jobId }
+  }
+  const toolResults = (calls: Call[]) =>
+    calls
+      .filter((call) => call.url.endsWith('/v1/agents/cli-tool-result'))
+      .map((call) => call.body.requestId)
+
+  it('re-attaches after the stream times out and finishes the build once', async () => {
+    const calls = stubLongRun((controller) =>
+      setTimeout(
+        () =>
+          controller.error(
+            new DOMException(
+              'The operation was aborted due to timeout',
+              'TimeoutError',
+            ),
+          ),
+        20,
+      ),
+    )
+    const app = createApp({
+      store: new MemoryDocumentStore(),
+      logRequests: false,
+    })
+    const { project, jobId } = await createProjectAndStart(app)
+    const job = await poll(app, jobId)
+
+    expect(job).toMatchObject({
+      status: 'ready',
+      response: 'Built Live Lines after a long session.',
+      projectRevision: 2,
+    })
+    expect(
+      calls
+        .filter((call) => call.url.endsWith('/runs/run_long/stream'))
+        .map((call) => call.body),
+    ).toEqual([{ after: 2 }])
+    expect(toolResults(calls)).toEqual(['req_read', 'req_write', 'req_test'])
+    const saved = await (
+      await app.request(`/v1/projects/${project.id}`, { headers })
+    ).json()
+    expect(saved.document.title).toBe('Live Lines')
+  })
+
+  it('re-attaches when a proxy closes the stream before the run finishes', async () => {
+    const calls = stubLongRun((controller) => controller.close(), 3)
+    const app = createApp({
+      store: new MemoryDocumentStore(),
+      logRequests: false,
+    })
+    const { jobId } = await createProjectAndStart(app)
+
+    expect(await poll(app, jobId)).toMatchObject({ status: 'ready' })
+    expect(
+      calls
+        .filter((call) => call.url.endsWith('/runs/run_long/stream'))
+        .map((call) => call.body),
+    ).toEqual([{ after: 3 }])
+    expect(toolResults(calls)).toEqual(['req_read', 'req_write', 'req_test'])
+  })
+
+  it('hands a run near the worker stop time to a successor that resumes it', async () => {
+    const calls = stubLongRun((controller, signal) =>
+      signal?.addEventListener('abort', () => controller.error(signal.reason)),
+    )
+    const queued: any[] = []
+    const app = createApp({
+      store: new MemoryDocumentStore(),
+      logRequests: false,
+      workerSecret: 'worker-test-secret',
+      dispatchCopilotJob: async (invocation) => {
+        queued.push(invocation)
+      },
+    })
+    const { project, jobId } = await createProjectAndStart(app)
+    const runWorker = (deadline?: number) =>
+      app.request(`/v1/internal/copilot-jobs/${jobId}/run`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'X-Arcade-Worker-Secret': 'worker-test-secret',
+          ...(deadline ? { 'X-Arcade-Worker-Deadline': String(deadline) } : {}),
+        },
+        body: JSON.stringify(queued.at(-1).input),
+      })
+
+    // This host is already inside its hand-off margin.
+    expect((await runWorker(Date.now() + 1000)).status).toBe(200)
+    expect(queued).toHaveLength(2)
+    expect(queued[1]).toMatchObject({ jobId, input: { message: rawPrompt } })
+    expect(
+      await (
+        await app.request(`/v1/studio/copilot-jobs/${jobId}`, { headers })
+      ).json(),
+    ).toMatchObject({ status: 'running' })
+    expect(toolResults(calls)).toEqual(['req_read'])
+
+    expect((await runWorker()).status).toBe(200)
+    expect(await poll(app, jobId)).toMatchObject({
+      status: 'ready',
+      response: 'Built Live Lines after a long session.',
+      projectRevision: 2,
+    })
+    expect(
+      calls.filter((call) => call.url.endsWith('/v1/agents/run/stream')),
+    ).toHaveLength(1)
+    expect(
+      calls
+        .filter((call) => call.url.endsWith('/runs/run_long/stream'))
+        .map((call) => call.body),
+    ).toEqual([{ after: 2 }])
+    expect(toolResults(calls)).toEqual(['req_read', 'req_write', 'req_test'])
+    const saved = await (
+      await app.request(`/v1/projects/${project.id}`, { headers })
+    ).json()
+    expect(saved.revision).toBe(2)
+  })
+
+  it('keeps a long build running while its workers keep checking in', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      stubLongRun(() => {}, 1)
+      const store = new MemoryDocumentStore()
+      const app = createApp({
+        store,
+        logRequests: false,
+        workerSecret: 'worker-test-secret',
+        dispatchCopilotJob: async () => {},
+      })
+      const { jobId } = await createProjectAndStart(app)
+      const status = async () =>
+        (
+          await (
+            await app.request(`/v1/studio/copilot-jobs/${jobId}`, { headers })
+          ).json()
+        ).status
+      const checkIn = async () => {
+        const job = await store.get<any>('copilot:usr_creator', jobId)
+        await store.put(
+          'copilot:usr_creator',
+          jobId,
+          {
+            ...job,
+            version: job.version + 1,
+            heartbeatAt: new Date().toISOString(),
+          },
+          job.version,
+        )
+      }
+      for (let minute = 0; minute < 40; minute += 10) {
+        vi.setSystemTime(Date.now() + 10 * 60_000)
+        await checkIn()
+        expect(await status()).toBe('running')
+      }
+      vi.setSystemTime(Date.now() + 17 * 60_000)
+      expect(await status()).toBe('failed')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

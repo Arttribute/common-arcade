@@ -45,13 +45,18 @@ export class ControlPlaneStack extends Stack {
       handler: 'handler',
       memorySize: 512,
       runtime: lambda.Runtime.NODEJS_22_X,
-      timeout: Duration.seconds(600),
+      // Copilot workers run here too. Long builds hand off to a new worker
+      // before this limit, so it bounds one leg of a build, not the build.
+      timeout: Duration.seconds(900),
       tracing: lambda.Tracing.ACTIVE,
       bundling: {
         minify: true,
         sourceMap: true,
       },
     })
+    // A retried worker would start the creator's build over from the first
+    // message. Hand-offs queue their successor explicitly instead.
+    handler.configureAsyncInvoke({ retryAttempts: 0 })
 
     props.table.grantReadWriteData(handler)
     props.recordingsBucket.grantReadWrite(handler)
