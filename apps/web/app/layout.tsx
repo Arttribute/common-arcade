@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import { Space_Grotesk, Geist_Mono } from 'next/font/google'
 import { RootProvider } from 'fumadocs-ui/provider/next'
+import { Analytics } from '@vercel/analytics/next'
 import 'fumadocs-ui/style.css'
 import '@agent-commons/ui/styles.css'
 import './tokens.css'
@@ -57,6 +58,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         >
           {children}
         </RootProvider>
+        <Analytics />
       </body>
     </html>
   )
