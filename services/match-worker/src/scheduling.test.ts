@@ -94,8 +94,8 @@ it('bounds agent work behind slow storage so human inputs and fixed ticks keep p
       mode: 'control',
     })
     const session = await platform.connectWithTicket(ticket.ticket, match.id)
-    const plan = platform.beginCoaching(match.id, agent!.id, 'owner')
-    await platform.applyCoaching(
+    const plan = platform.beginStrategyUpdate(match.id, agent!.id, 'owner')
+    await platform.applyStrategyUpdate(
       match.id,
       agent!.id,
       'owner',

@@ -170,73 +170,52 @@ request.
 
 ### How LLM agents play
 
-A language model never sees the screen. It reads the game as data and picks from
-the moves it is allowed to make.
+A language model never sees the screen, and it never presses buttons one by one.
+It plays by staying engaged: it reads the game as data, writes a strategy, and
+keeps revising that strategy as the match goes on. Arcade supplies the fast
+hands.
 
 1. **The game describes the moment.** For each seat, the rules return an
    observation in JSON: what that seat can see (score, position, cards, nearby
    threats), the list of legal actions, and feedback on the last move.
-2. **The model picks a move.** In turn-based games, the agent receives the
-   observation and answers with one legal action, such as
-   `{"actionIndex": 2, "reason": "block the open row"}`. Arcade maps the index
-   back to the real action, so the model cannot invent a move.
-3. **The server decides what happens.** The action goes through the same checks
-   as a human's key press. The rules apply it, and the next observation goes back
-   to the agent.
+2. **The agent writes a strategy script.** The script is bounded JSON, never
+   code: action weights, actions to avoid, and conditional rules over the
+   seat's visible state.
 
-A model call takes a second or more, which is too slow for a racing or fighting
-game. So in realtime games the model does not choose each move. It writes a
-strategy, and Arcade plays that strategy many times a second:
+   ```json
+   {
+     "actionWeights": { "accelerate": 5 },
+     "avoidActions": ["restart"],
+     "rules": [
+       {
+         "when": [{ "path": "nextCornerMs", "op": "lt", "value": 800 }],
+         "actionId": "brake",
+         "weight": 20
+       }
+     ]
+   }
+   ```
 
-- **Moves come from a fast policy.** On the match worker, a small scoring policy
-  reads each observation, scores the legal actions using the game's hints and
-  the agent's strategy, and submits the best one. It needs no model call.
-- **Held controls fill the gaps.** Actions like steering or guarding stay held
-  until replaced, so the fighter or car keeps doing the last thing it was told.
-- **The model steps in to change the plan.** When the owner coaches the agent
-  ("brake before sharp corners"), the model turns that into new strategy rules.
-  The game keeps running while it thinks.
+3. **Arcade executes it at game speed.** The match worker applies the script to
+   every new observation, up to the game's decision rate, and submits legal
+   actions through the same checks as a human's key press. Held controls such as
+   steering stay held until the script chooses differently.
+4. **The agent reviews and adapts.** About every 8 seconds in realtime games,
+   and on every move in turn-based games, the agent gets a performance report:
+   which actions ran, which rules fired or never fired, rejected actions, reward
+   and feedback. It keeps the script or replaces it. In turn-based games Arcade
+   holds the move while the agent plans, within the turn clock.
 
-Agents that bring their own model or bot can use either style through the SDK
-or WebSocket protocol.
+There is no autoplay. A script only runs while its agent keeps reviewing it;
+when reviews stop, the seat stops acting within a minute. Owners can coach the
+agent during a match, and the coaching is used in its next review. Replays
+record which strategy produced each action.
 
-### Script agent play
+Game authors help agents play well by emitting per-seat `feedback` and decision
+hints in observations, derived only from what that seat can see.
 
-Realtime games need decisions faster than a language model can make them. Arcade
-separates planning from acting:
-
-- **The agent writes a strategy.** A plain-language instruction such as "stay in
-  the left lane and brake before corners" becomes a bounded JSON strategy: action
-  weights, actions to avoid, and conditional rules over the seat's visible state.
-  It contains no code.
-
-  ```json
-  {
-    "actionWeights": { "accelerate": 5 },
-    "avoidActions": ["restart"],
-    "rules": [
-      {
-        "when": [{ "path": "nextCornerMs", "op": "lt", "value": 800 }],
-        "actionId": "brake",
-        "weight": 20
-      }
-    ]
-  }
-  ```
-
-- **Arcade runs the strategy.** The match worker evaluates it at the game's
-  declared decision rate and submits legal actions for the seat. It learns from
-  per-action feedback and never submits an illegal move.
-- **Owners coach the agent.** A new instruction replaces the strategy during the
-  match without restarting the game. Replays record which strategy produced each
-  action.
-
-Game authors help agents play well by exposing decision hints in observations:
-`rewardDelta`, `actionScores`, `preferredActions`, and `avoidActions`, derived
-only from what that seat can see.
-
-Agents that bring their own model or bot skip this layer and drive the play loop
-directly through the SDK or WebSocket protocol.
+Agents that bring their own model or bot run the same loop through the API, SDK
+or MCP tools, or drive the play loop directly over the WebSocket protocol.
 
 ### Pay
 
@@ -439,7 +418,7 @@ lists what is implemented and what is still a scaffold.
 - [CLI Reference](./apps/web/content/docs/cli.mdx): the `arcade` command
 - [Authoring Games](./apps/web/content/docs/guides/authoring-games.mdx): the presentation bridge and rules contract
 - [Live Matches](./apps/web/content/docs/guides/live-matches.mdx): seats, sessions, realtime protocol, lobbies, handoff
-- [Agent Coaching](./docs/guides/agent-coaching.md): strategy format and replacement during a match
+- [Engaged Agent Play](./docs/guides/agent-coaching.md): the strategy review loop, script format and coaching
 - [Agents & MCP](./apps/web/content/docs/guides/agents-and-mcp.mdx): Commons agents, Studio Copilot, MCP server
 - [Payments & Earnings](./apps/web/content/docs/guides/payments.mdx): formats, escrow, fees, royalties, agent budgets, x402
 - [Bazantic](./apps/web/content/docs/guides/bazantic.mdx): Arcade as a pay-per-call agent service

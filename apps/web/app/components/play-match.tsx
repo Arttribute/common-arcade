@@ -21,6 +21,8 @@ import {
   Check,
   ChevronDown,
   RotateCcw,
+  Pause,
+  Play,
   Share2,
   User,
   Bot,
@@ -89,45 +91,57 @@ export function PlayMatch({
   const submittedActions = useRef(new Map<string, string>())
   const presentationIntent = useRef<string | undefined>(undefined)
   const presentationRelease = useRef<JsonValue | undefined>(undefined)
-  const [agentPaused, setAgentPaused] = useState(false)
-  const [agentStatus, setAgentStatus] = useState('')
-  const agentFailures = useRef(0)
-  const agentRetryAt = useRef(0)
   const latestMatch = useRef<MatchDescriptor | undefined>(undefined)
-  const agentPending = useRef(false)
   const latestObservation = useRef<Observation | undefined>(undefined)
   const connectionGeneration = useRef(0)
   const [copied, setCopied] = useState(false)
-  const coachedSeats = useRef(new Set<string>())
+  // Engaged agent play: this page runs the agent's review loop. The agent keeps
+  // or replaces a strategy script that the match worker executes at game speed.
+  const [engaged, setEngaged] = useState<{ seatId: string; agentId: string }>()
+  const [strategyPaused, setStrategyPaused] = useState(false)
+  const [strategyStatus, setStrategyStatus] = useState<StrategyStatus>()
+  const pendingNotes = useRef<Record<string, string>>({})
+  const wakeStrategyLoop = useRef<(() => void) | undefined>(undefined)
+  const resumedEngagement = useRef(false)
   const [coaching, setCoaching] = useState<Record<string, string>>({})
   const [coachingStatus, setCoachingStatus] = useState<Record<string, string>>(
     {},
   )
   const [coachingBusy, setCoachingBusy] = useState<Record<string, boolean>>({})
   async function coach(seatId: string, controllerId: string) {
+    const note = coaching[seatId]?.trim()
+    if (!note) return
+    const agentId = controllerId.replace(/^(?:commons-agent-|agent:)/, '')
+    if (engaged?.seatId === seatId && !strategyPaused) {
+      // The running loop folds coaching into its next review, right away.
+      pendingNotes.current[seatId] = note
+      setCoaching((v) => ({ ...v, [seatId]: '' }))
+      setCoachingStatus((v) => ({
+        ...v,
+        [seatId]: 'Your agent will use this coaching in its next review.',
+      }))
+      wakeStrategyLoop.current?.()
+      return
+    }
     setCoachingBusy((v) => ({ ...v, [seatId]: true }))
     setCoachingStatus((v) => ({
       ...v,
-      [seatId]: 'Agent is processing your coaching…',
+      [seatId]: 'Agent is reviewing its strategy with your coaching…',
     }))
     try {
       const applied = await arcade<{ strategy: string; strategyEpoch: number }>(
         `matches/${matchId}/seats/${encodeURIComponent(seatId)}/coach`,
-        {
-          prompt: coaching[seatId],
-          agentId: controllerId.replace(/^(?:commons-agent-|agent:)/, ''),
-        },
+        { prompt: note, agentId },
       )
-      coachedSeats.current.add(seatId)
-      if (controlledSeat === seatId) {
-        setAgentPaused(true)
-        setAgentStatus('Coached strategy is running on the match worker')
-        if (match?.lobby?.spectating !== 'disabled') await connect('spectate')
-      }
+      setCoaching((v) => ({ ...v, [seatId]: '' }))
       setCoachingStatus((v) => ({
         ...v,
         [seatId]: `Strategy ${applied.strategyEpoch} active: ${applied.strategy}`,
       }))
+      if (!engaged) {
+        setStrategyPaused(false)
+        setEngaged({ seatId, agentId })
+      }
     } catch (cause) {
       setCoachingStatus((v) => ({
         ...v,
@@ -288,12 +302,10 @@ export function PlayMatch({
     setObservation(undefined)
     latestObservation.current = undefined
     const generation = ++connectionGeneration.current
-    if (seatId) coachedSeats.current.delete(seatId)
-    setActiveAgent(agentId)
-    setAgentPaused(false)
-    setAgentStatus(agentId ? 'Waiting for the game to start' : '')
-    agentFailures.current = 0
-    agentRetryAt.current = 0
+    // Taking a seat yourself ends this page's agent loop for that seat.
+    if (mode === 'control' && seatId && !agentId && engaged?.seatId === seatId)
+      setEngaged(undefined)
+    setActiveAgent(undefined)
     try {
       const controllerId = agentId
         ? `commons-agent-${agentId}`
@@ -318,23 +330,13 @@ export function PlayMatch({
             : await control.claimSeat(input),
         )
       }
-      if (
-        mode === 'control' &&
-        seatId &&
-        agentId &&
-        match?.lobby?.spectating !== 'disabled' &&
-        ['realtime', 'hybrid'].includes(match?.mode ?? '')
-      ) {
-        await arcade(
-          `matches/${matchId}/seats/${encodeURIComponent(seatId)}/autoplay`,
-          { controllerId },
-        )
-        coachedSeats.current.add(seatId)
-        setAgentPaused(true)
-        setActiveAgent(undefined)
-        setAgentStatus(
-          'Arcade realtime policy is playing on the match worker. Use coaching to change its strategy.',
-        )
+      if (mode === 'control' && seatId && agentId) {
+        // Agents do not hold a browser control lease. The match worker runs
+        // their strategy; this page keeps the agent reviewing it.
+        setStrategyPaused(false)
+        setStrategyStatus(undefined)
+        setEngaged({ seatId, agentId })
+        if (match?.lobby?.spectating === 'disabled') return
         mode = 'spectate'
         seatId = undefined
       }
@@ -409,88 +411,158 @@ export function PlayMatch({
   latestObservation.current = observation
   latestMatch.current = match
   useEffect(() => {
+    if (!engaged || strategyPaused) return
+    const { seatId, agentId } = engaged
+    let alive = true
+    let wake: (() => void) | undefined
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => {
+        const done = () => {
+          window.clearTimeout(timer)
+          wake = undefined
+          resolve()
+        }
+        const timer = window.setTimeout(done, Math.max(0, ms))
+        wake = done
+      })
+    wakeStrategyLoop.current = () => wake?.()
+    const update = (next: Partial<StrategyStatus>) =>
+      setStrategyStatus((current) => ({
+        phase: 'reviewing',
+        message: '',
+        ...current,
+        ...next,
+      }))
+    void (async () => {
+      let sessionId: string | undefined
+      let reviews = 0
+      let failures = 0
+      while (alive) {
+        const current = latestMatch.current
+        if (current && ENDED_STATUSES.includes(current.status)) {
+          if (current.series?.status === 'awaiting-restart') {
+            update({ phase: 'waiting', message: 'Waiting for the next round' })
+            await sleep(3000)
+            continue
+          }
+          update({ phase: 'stopped', message: 'The match has ended' })
+          return
+        }
+        const note = pendingNotes.current[seatId]
+        update({
+          phase: 'reviewing',
+          message: note
+            ? 'Reviewing its strategy with your coaching…'
+            : 'Reviewing the game and its strategy…',
+        })
+        try {
+          const result = await arcade<StrategyReviewResult>(
+            `matches/${matchId}/seats/${encodeURIComponent(seatId)}/strategy/review`,
+            {
+              agentId,
+              ...(note ? { note } : {}),
+              ...(sessionId ? { sessionId } : {}),
+            },
+          )
+          if (!alive) return
+          failures = 0
+          if (note && pendingNotes.current[seatId] === note) {
+            delete pendingNotes.current[seatId]
+            setCoachingStatus((v) => ({
+              ...v,
+              [seatId]: 'Coaching applied in the latest review.',
+            }))
+          }
+          if (result.sessionId !== sessionId) reviews = 0
+          sessionId = result.sessionId
+          reviews += result.status === 'waiting' ? 0 : 1
+          if (reviews >= (result.reviewsPerSession ?? 8)) {
+            sessionId = undefined
+            reviews = 0
+          }
+          const nextReviewInMs = result.nextReviewInMs ?? 8000
+          update({
+            phase: result.status === 'waiting' ? 'waiting' : 'playing',
+            message:
+              result.status === 'waiting'
+                ? 'Waiting for its next decision point'
+                : result.decision === 'keep'
+                  ? 'Kept its strategy'
+                  : `Switched to strategy ${result.strategyEpoch}`,
+            strategy: result.strategy,
+            strategyEpoch: result.strategyEpoch,
+            ...(result.reason ? { reason: result.reason } : {}),
+            ...(result.performance ? { performance: result.performance } : {}),
+            nextReviewAt: nextReviewInMs
+              ? Date.now() + nextReviewInMs
+              : undefined,
+          })
+          setError(undefined)
+          await sleep(nextReviewInMs)
+        } catch (cause) {
+          if (!alive) return
+          const detail = cause instanceof Error ? cause.message : String(cause)
+          if (/superseded/i.test(detail)) {
+            await sleep(500)
+            continue
+          }
+          // Between series rounds the match is briefly inactive; the loop
+          // re-checks the match status at the top and stops only if it ended.
+          if (/no longer active/i.test(detail)) {
+            await sleep(3000)
+            continue
+          }
+          if (
+            /owner of this agent seat|does not control this seat/i.test(detail)
+          ) {
+            update({ phase: 'stopped', message: detail })
+            return
+          }
+          failures += 1
+          if (failures >= 3) {
+            update({ phase: 'paused', message: `Agent paused: ${detail}` })
+            setStrategyPaused(true)
+            return
+          }
+          update({
+            phase: 'retrying',
+            message: `Review interrupted; retrying (${failures}/3)…`,
+          })
+          await sleep(2000 * failures)
+        }
+      }
+    })()
+    return () => {
+      alive = false
+      wakeStrategyLoop.current = undefined
+      wake?.()
+    }
+  }, [engaged?.seatId, engaged?.agentId, strategyPaused, matchId])
+
+  // After a reload, keep reviewing for an agent you already seated here.
+  useEffect(() => {
+    if (resumedEngagement.current || engaged || !viewer || !match) return
     if (
-      !activeAgent ||
-      agentPaused ||
-      !lease ||
-      connection !== 'connected' ||
-      match?.status !== 'running'
+      ENDED_STATUSES.includes(match.status) &&
+      match.series?.status !== 'awaiting-restart'
     )
       return
-    const generation = connectionGeneration.current
-    const timer = window.setInterval(() => {
-      const current = latestObservation.current
-      if (
-        agentPending.current ||
-        !current?.legalActions.length ||
-        Date.now() < agentRetryAt.current
-      )
-        return
-      setAgentStatus('Agent is choosing an action…')
-      agentPending.current = true
-      void arcade<{
-        action: JsonValue
-        reason?: string
-        basedOnStateSequence: number
-      }>('commons/live-decisions', {
-        agentId: activeAgent,
-        observation: current,
-      })
-        .then((decision) => {
-          const latest = latestObservation.current
-          if (
-            connectionGeneration.current !== generation ||
-            coachedSeats.current.has(current.seatId) ||
-            !latest ||
-            latestMatch.current?.status !== 'running' ||
-            (latest.turn !== undefined &&
-              latest.stateSequence !== decision.basedOnStateSequence)
-          )
-            return
-          if (
-            !latest.legalActions.some(
-              (action) =>
-                JSON.stringify(action) === JSON.stringify(decision.action),
-            )
-          ) {
-            setAgentStatus('The game changed; choosing a fresh action…')
-            return
-          }
-          agentFailures.current = 0
-          setAgentStatus('Agent is playing')
-          setError(undefined)
-          clientRef.current?.submitAction({
-            actionId: `act_${crypto.randomUUID().replaceAll('-', '')}`,
-            matchId,
-            seatId: current.seatId,
-            controlLease: lease,
-            clientSequence: ++actionSequence.current,
-            basedOnStateSequence: current.stateSequence,
-            ...(current.turn === undefined ? {} : { targetTurn: current.turn }),
-            payload: decision.action,
-          })
-          setLastResult(decision.reason)
-        })
-        .catch((cause) => {
-          if (connectionGeneration.current !== generation) return
-          agentFailures.current += 1
-          const detail = cause instanceof Error ? cause.message : String(cause)
-          if (agentFailures.current >= 3) {
-            setAgentPaused(true)
-            setAgentStatus(`Agent paused: ${detail}`)
-          } else {
-            agentRetryAt.current = Date.now() + 2000 * agentFailures.current
-            setAgentStatus(
-              `Decision interrupted; retrying (${agentFailures.current}/3)…`,
-            )
-          }
-        })
-        .finally(() => {
-          agentPending.current = false
-        })
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [activeAgent, agentPaused, lease, connection, matchId, match?.status])
+    const seat = match.seats.find(
+      (candidate) =>
+        candidate.actorId === viewer.id &&
+        candidate.controllerKind === 'agent' &&
+        agents.some(
+          (agent) =>
+            candidate.controllerId === `commons-agent-${agent.agentId}`,
+        ),
+    )
+    if (!seat?.controllerId) return
+    resumedEngagement.current = true
+    setEngaged({
+      seatId: seat.id,
+      agentId: seat.controllerId.replace(/^commons-agent-/, ''),
+    })
+  }, [viewer, match, agents, engaged])
 
   useEffect(() => {
     const receivePresentationAction = (event: MessageEvent) => {
@@ -608,6 +680,7 @@ export function PlayMatch({
     setControlledSeat(undefined)
     setObservation(undefined)
     setActiveAgent(undefined)
+    if (engaged?.seatId === seatId) setEngaged(undefined)
     setLease(undefined)
     try {
       setMatch(
@@ -776,32 +849,50 @@ export function PlayMatch({
             />
           </div>
         ) : null}
-        {activeAgent ? (
+        {engaged ? (
           <div className="agent-live-status" role="status">
             <strong>
-              {agents.find((agent) => agent.agentId === activeAgent)?.name ??
-                'Commons agent'}
+              {agents.find((agent) => agent.agentId === engaged.agentId)
+                ?.name ?? 'Commons agent'}
             </strong>
             <p>
-              {match?.status === 'running'
-                ? agentStatus
-                : match?.status === 'lobby'
-                  ? 'Waiting for the game to start'
-                  : 'Agent stopped — the round has ended'}
+              {strategyPaused
+                ? strategyStatus?.phase === 'paused'
+                  ? strategyStatus.message
+                  : 'Paused. Its strategy stops running within a minute.'
+                : (strategyStatus?.message ?? 'Starting its first review…')}
             </p>
-            {agentPaused && !coachedSeats.current.has(controlledSeat ?? '') ? (
-              <button
-                onClick={() => {
-                  agentFailures.current = 0
-                  agentRetryAt.current = 0
-                  setAgentPaused(false)
-                  setAgentStatus('Retrying agent decision…')
-                }}
-              >
-                <RotateCcw size={16} aria-hidden />
-                Retry agent
-              </button>
+            {strategyStatus?.strategyEpoch ? (
+              <p>
+                <small>Strategy {strategyStatus.strategyEpoch}</small>{' '}
+                {strategyStatus.strategy}
+              </p>
             ) : null}
+            {strategyStatus?.reason ? (
+              <p>
+                <small>Why</small> {strategyStatus.reason}
+              </p>
+            ) : null}
+            {strategyStatus?.performance?.decisions ? (
+              <p>
+                <small>Since last review</small>{' '}
+                {performanceSummary(strategyStatus.performance)}
+              </p>
+            ) : null}
+            <button
+              className="secondary compact"
+              onClick={() => {
+                if (strategyPaused) setStrategyStatus(undefined)
+                setStrategyPaused((paused) => !paused)
+              }}
+            >
+              {strategyPaused ? (
+                <Play size={16} aria-hidden />
+              ) : (
+                <Pause size={16} aria-hidden />
+              )}
+              {strategyPaused ? 'Resume agent' : 'Pause agent'}
+            </button>
           </div>
         ) : null}
         <div className="seat-list">
@@ -988,7 +1079,9 @@ export function PlayMatch({
                         onClick={() => void coach(seat.id, seat.controllerId!)}
                       >
                         <MessageSquare size={16} aria-hidden />
-                        Coach agent
+                        {engaged?.seatId === seat.id && !strategyPaused
+                          ? 'Send to next review'
+                          : 'Coach agent'}
                       </button>
                       <p role="status">{coachingStatus[seat.id]}</p>
                     </div>
@@ -1205,4 +1298,55 @@ export function PlayMatch({
       </aside>
     </div>
   )
+}
+
+const ENDED_STATUSES = [
+  'completed',
+  'canceled',
+  'expired',
+  'failed',
+  'invalidated',
+]
+
+type StrategyPerformance = {
+  windowMs?: number
+  decisions?: number
+  rejectedActions?: number
+  reward?: { total: number; positive: number; negative: number }
+}
+
+type StrategyStatus = {
+  phase: 'reviewing' | 'playing' | 'waiting' | 'retrying' | 'paused' | 'stopped'
+  message: string
+  strategy?: string
+  strategyEpoch?: number
+  reason?: string
+  performance?: StrategyPerformance
+  nextReviewAt?: number
+}
+
+type StrategyReviewResult = {
+  status: 'applied' | 'kept' | 'waiting'
+  decision?: 'keep' | 'replace'
+  strategy: string
+  strategyEpoch: number
+  reason?: string
+  sessionId?: string
+  reviewsPerSession?: number
+  nextReviewInMs?: number
+  performance?: StrategyPerformance
+}
+
+function performanceSummary(performance: StrategyPerformance): string {
+  return [
+    `${performance.decisions} decisions`,
+    performance.reward
+      ? `reward ${performance.reward.total >= 0 ? '+' : ''}${performance.reward.total}`
+      : undefined,
+    performance.rejectedActions
+      ? `${performance.rejectedActions} rejected`
+      : undefined,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }

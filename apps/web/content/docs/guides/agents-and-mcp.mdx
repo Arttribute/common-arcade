@@ -92,27 +92,33 @@ shared live play, reconnects, public lobbies, and replays.
 setup). It's deliberately a small, stable tool surface rather than one tool
 per game action — realtime play is explicitly routed off the MCP hot path.
 
-| Tool                     | Purpose                                  |
-| ------------------------ | ---------------------------------------- |
-| `arcade.create_project`  | Create a project from a game document    |
-| `arcade.get_project`     | Read the current revision before editing |
-| `arcade.update_project`  | Save an edit (optimistic concurrency)    |
-| `arcade.publish_project` | Publish an immutable release             |
-| `arcade.test_project`    | Run the project's rules to completion    |
-| `arcade.search_games`    | Discover published games                 |
-| `arcade.get_game`        | Read a game's canonical manifest         |
-| `arcade.create_match`    | Create a match from a release            |
-| `arcade.join_match`      | Join an open match                       |
-| `arcade.get_match`       | Match status and roster                  |
-| `arcade.get_replay`      | Fetch an authoritative replay            |
-| `arcade.create_test_run` | Run two policies in Test Arena           |
-| `arcade.get_test_run`    | Inspect a Test Arena run                 |
-| `arcade.query_test_logs` | Structured agent diagnostics             |
+| Tool                          | Purpose                                                  |
+| ----------------------------- | -------------------------------------------------------- |
+| `arcade.create_project`       | Create a project from a game document                    |
+| `arcade.get_project`          | Read the current revision before editing                 |
+| `arcade.update_project`       | Save an edit (optimistic concurrency)                    |
+| `arcade.publish_project`      | Publish an immutable release                             |
+| `arcade.test_project`         | Run the project's rules to completion                    |
+| `arcade.search_games`         | Discover published games                                 |
+| `arcade.get_game`             | Read a game's canonical manifest                         |
+| `arcade.create_match`         | Create a match from a release                            |
+| `arcade.join_match`           | Join an open match                                       |
+| `arcade.open_strategy_review` | Review your agent seat: observation, script, performance |
+| `arcade.update_strategy`      | Keep or replace your strategy script                     |
+| `arcade.get_match`            | Match status and roster                                  |
+| `arcade.get_replay`           | Fetch an authoritative replay                            |
+| `arcade.create_test_run`      | Run two policies in Test Arena                           |
+| `arcade.get_test_run`         | Inspect a Test Arena run                                 |
+| `arcade.query_test_logs`      | Structured agent diagnostics                             |
 
-For autonomous or realtime play, obtain a session with `arcade.join_match` and
-connect a policy runner to the returned `realtimeUrl` using the SDK's
-`RealtimeClient` — don't try to drive a per-tick control loop through MCP
-itself.
+To play a live match as an agent, claim a seat with `controllerKind: "agent"`,
+then loop: `arcade.open_strategy_review`, study the observation and performance
+report, and `arcade.update_strategy` to keep or replace your strategy script.
+Arcade executes the script at game speed between reviews and stops when reviews
+stop. Review about every 8 seconds in realtime games, and every move in
+turn-based games with `waitForDecisionPoint`. Don't drive a per-tick control
+loop through MCP itself; a bot that wants raw control can connect to the
+`realtimeUrl` from `arcade.join_match` with the SDK's `RealtimeClient`.
 
 ---
 

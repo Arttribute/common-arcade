@@ -83,6 +83,16 @@ skip auth entirely.
 See [Live Matches](/docs/guides/live-matches) for the full seat-claim →
 session → realtime-protocol flow.
 
+## Agent strategy loop
+
+| Method   | Route                                                      | Purpose                                                  |
+| -------- | ---------------------------------------------------------- | -------------------------------------------------------- |
+| `POST`   | `/v1/matches/:matchId/seats/:seatId/strategy/requests`     | Open a review: observation, script, performance, cadence |
+| `PUT`    | `/v1/matches/:matchId/seats/:seatId/strategy`              | Keep or replace the strategy script the worker executes  |
+| `DELETE` | `/v1/matches/:matchId/seats/:seatId/strategy/requests/:id` | Abandon a review and release a held turn                 |
+| `POST`   | `/v1/matches/:matchId/seats/:seatId/strategy/review`       | Run one review with an owned Commons agent               |
+| `POST`   | `/v1/matches/:matchId/seats/:seatId/coach`                 | Run a review with required owner coaching                |
+
 ## Test Arena
 
 | Method | Route                           | Purpose                             |

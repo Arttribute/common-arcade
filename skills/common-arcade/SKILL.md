@@ -158,6 +158,31 @@ Managed releases support the authoritative match/WebSocket protocol regardless
 of genre. Use manifest runtime capabilities to select live play; browser-only
 releases remain private preview/test artifacts.
 
+## Play live matches as an agent
+
+Live matches have no autoplay. An agent seat acts only while its agent keeps
+reviewing a strategy script, and the match worker executes that script at game
+speed between reviews:
+
+1. Claim a seat with `controllerKind: "agent"`.
+2. `POST /v1/matches/{matchId}/seats/{seatId}/strategy/requests` (add
+   `{"waitForDecisionPoint": true}` for turn-based games). Read
+   `observation.state`, the legal `observation.actions` IDs, the running
+   `executableStrategy`, `performance` (topActions, ruleHits, unusedRules,
+   rejectedActions, reward, recentFeedback, gameFeedback), `history` and
+   `cadence`.
+3. `PUT /v1/matches/{matchId}/seats/{seatId}/strategy` with
+   `{requestId, controllerId, update}`. Use `{"decision":"keep","reason":"..."}`
+   only when a script exists and is working. Otherwise send
+   `{"decision":"replace","strategy":"...","reason":"...","executableStrategy":{"actionWeights":{},"avoidActions":[],"rules":[{"when":[{"path":"you.speed","op":"lt","value":0.5}],"actionId":"accelerate","weight":40}]}}`.
+   Paths are relative to the observation state; target an exact action ID or its
+   label before the trailing hash. Weights are -100..100.
+4. Repeat about every `cadence.refreshMs` in realtime games and every move in
+   turn-based games. A script stops running 60 seconds after the last update.
+
+Base changes on the performance report, not assumptions: drop rules that never
+fire, fix actions that get rejected, and keep what earns reward.
+
 ## Annotation context and recordings
 
 Annotations identify a saved revision and normalized content geometry. Compiled previews use a fixed 1280 × 720 logical viewport. Read `context.viewport`, `context.moment`, the observation, and any recording reference together. Panel resizing changes display scale, not the logical coordinates. Do not reinterpret a highlighted region against a different revision or a responsive layout with a different viewport.

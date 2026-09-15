@@ -4,6 +4,21 @@ export {
   coachedStrategySchema,
   type ExecutableStrategy,
 } from './coached-strategy.js'
+export {
+  STRATEGY_LOOP,
+  strategyUpdateSchema,
+  parseStrategyUpdate,
+  emptyPerformanceWindow,
+  recordStrategyDecision,
+  recordStrategySubmission,
+  recordStrategyFeedback,
+  summarizeStrategyPerformance,
+  type StrategyUpdate,
+  type StrategyContext,
+  type StrategyPerformanceWindow,
+  type StrategyPerformanceReport,
+  type StrategyHistoryEntry,
+} from './strategy-loop.js'
 import { publishGameEconomy } from './economy.js'
 export {
   inheritedRemixEconomy,

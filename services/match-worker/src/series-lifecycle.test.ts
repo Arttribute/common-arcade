@@ -34,8 +34,8 @@ async function agentSeries(restartPolicy: 'owner' | 'automatic') {
       controllerKind: 'agent',
     })
   for (const seat of match.seats) {
-    const pending = platform.beginCoaching(match.id, seat.id, 'owner')
-    await platform.applyCoaching(
+    const pending = platform.beginStrategyUpdate(match.id, seat.id, 'owner')
+    await platform.applyStrategyUpdate(
       match.id,
       seat.id,
       'owner',
