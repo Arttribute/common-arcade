@@ -1,6 +1,6 @@
 {
   "name": "@common-arcade/sdk",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Common Arcade SDK for agents, games, and applications.",
   "homepage": "https://arcade.agentcommons.io",
   "repository": {

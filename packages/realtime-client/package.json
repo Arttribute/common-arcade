@@ -1,6 +1,6 @@
 {
   "name": "@common-arcade/realtime-client",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Transport-neutral Common Arcade realtime client.",
   "homepage": "https://arcade.agentcommons.io",
   "repository": {
