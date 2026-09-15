@@ -3,7 +3,7 @@ import {
   releaseIsPublished,
   type GamePublicationRecord,
 } from './publication.js'
-import { planCoaching } from './coaching.js'
+import { REVIEWS_PER_SESSION, reviewStrategy } from './coaching.js'
 import { catalogMetadata } from './catalog.js'
 import { createBrowserTestApi } from './browser-tests.js'
 import { createRecordingApi } from './recordings.js'
@@ -735,36 +735,200 @@ export function createApp(options: ControlApiOptions = {}) {
     ),
   )
 
-  app.post('/v1/matches/:matchId/seats/:seatId/autoplay', async (context) => {
+  // Agents stay engaged in live play: they review the match on a loop and
+  // keep or replace a strategy script that the match worker executes at game
+  // speed. There is no autoplay; a seat with no recent review does nothing.
+  const strategyEvent = async (
+    matchId: string,
+    seatId: string,
+    applied: { requestId: string; decision: string },
+    source: string,
+    note?: string,
+  ) => {
+    if (applied.decision !== 'replace') return
+    await store.put(
+      `match-strategy-events:${matchId}`,
+      `${seatId}:${applied.requestId}`,
+      {
+        version: 1,
+        ...applied,
+        ...(note ? { prompt: note } : {}),
+        source,
+        type: 'policy.strategy.changed',
+        createdAt: new Date().toISOString(),
+      },
+    )
+  }
+
+  app.post(
+    '/v1/matches/:matchId/seats/:seatId/strategy/requests',
+    async (context) => {
+      const p = await authenticate(
+        context.req.header('Authorization'),
+        'matches:play',
+      )
+      const body = z
+        .object({
+          agentId: z.string().min(1).max(200).optional(),
+          waitForDecisionPoint: z.boolean().optional(),
+        })
+        .strict()
+        .parse(await context.req.json().catch(() => ({})))
+      return context.json(
+        await requirePlatform().prepareStrategyUpdate(
+          context.req.param('matchId'),
+          context.req.param('seatId'),
+          p.id,
+          body,
+        ),
+      )
+    },
+  )
+
+  app.delete(
+    '/v1/matches/:matchId/seats/:seatId/strategy/requests/:requestId',
+    async (context) => {
+      await authenticate(context.req.header('Authorization'), 'matches:play')
+      requirePlatform().cancelStrategyUpdate(
+        context.req.param('matchId'),
+        context.req.param('seatId'),
+        context.req.param('requestId'),
+      )
+      return context.json({ cancelled: true })
+    },
+  )
+
+  app.put('/v1/matches/:matchId/seats/:seatId/strategy', async (context) => {
     const p = await authenticate(
       context.req.header('Authorization'),
       'matches:play',
     )
     const body = z
-      .object({ controllerId: z.string().min(1).max(200) })
+      .object({
+        requestId: z.string().min(1).max(200),
+        controllerId: z.string().min(1).max(200),
+        update: z.json(),
+      })
       .strict()
       .parse(await context.req.json())
-    const platform = requirePlatform()
     const matchId = context.req.param('matchId'),
       seatId = context.req.param('seatId')
-    const prepared = platform.beginCoaching(matchId, seatId, p.id)
-    if (prepared.controllerId !== body.controllerId)
-      throw new IdentityError(403, 'This controller no longer owns the seat.')
-    const applied = await platform.applyCoaching(
+    const applied = await requirePlatform().applyStrategyUpdate(
       matchId,
       seatId,
       p.id,
-      prepared.requestId,
-      prepared.controllerId,
+      body.requestId,
+      body.controllerId,
+      body.update,
+    )
+    await strategyEvent(matchId, seatId, applied, 'agent-strategy-update')
+    return context.json(applied)
+  })
+
+  const reviewBody = z
+    .object({
+      agentId: z.string().min(1).max(200),
+      note: z.string().trim().min(1).max(2000).optional(),
+      sessionId: z.string().min(1).max(200).optional(),
+    })
+    .strict()
+  const commonsReview = async (
+    p: Awaited<ReturnType<typeof authenticate>>,
+    matchId: string,
+    seatId: string,
+    body: z.infer<typeof reviewBody>,
+  ) => {
+    const platform = requirePlatform()
+    // The Commons service checks access to the requested agent under this owner's token.
+    await commonsRequest(p, `/v1/agents/${encodeURIComponent(body.agentId)}`)
+    const prepared = await platform.prepareStrategyUpdate(
+      matchId,
+      seatId,
+      p.id,
       {
-        strategy:
-          'Play to win legally. Adapt to visible objectives, opponents and threats.',
-        reason: 'Arcade realtime policy started on the match worker.',
-        executableStrategy: { actionWeights: {}, avoidActions: [], rules: [] },
+        agentId: body.agentId,
+        waitForDecisionPoint: true,
       },
     )
-    return context.json({ ...applied, source: 'arcade-realtime-policy' })
-  })
+    let sessionId = body.sessionId
+    const discrete = ['turn-based', 'simultaneous'].includes(prepared.mode)
+    // Nothing to decide yet: keep the running script and skip a model call.
+    // A first strategy is always planned, even in the lobby.
+    if (
+      prepared.strategyEpoch > 0 &&
+      !body.note &&
+      (prepared.status !== 'running' ||
+        (discrete && !prepared.decisionPoint.ready))
+    ) {
+      platform.cancelStrategyUpdate(matchId, seatId, prepared.requestId)
+      return {
+        seatId,
+        status: 'waiting',
+        strategy: prepared.strategy,
+        strategyEpoch: prepared.strategyEpoch,
+        reason: prepared.lastReason ?? '',
+        ...(sessionId ? { sessionId } : {}),
+        reviewsPerSession: REVIEWS_PER_SESSION,
+        performance: prepared.performance,
+        engaged: prepared.engaged,
+        nextReviewInMs: discrete ? 0 : 3_000,
+      }
+    }
+    try {
+      const update = await reviewStrategy(p, body.agentId, prepared, {
+        ...(body.note ? { note: body.note } : {}),
+        ...(sessionId ? { sessionId } : {}),
+        onSessionId: (id) => {
+          sessionId = id
+        },
+      })
+      const applied = await platform.applyStrategyUpdate(
+        matchId,
+        seatId,
+        p.id,
+        prepared.requestId,
+        prepared.controllerId,
+        update,
+      )
+      await strategyEvent(
+        matchId,
+        seatId,
+        applied,
+        body.note ? 'agent-coaching' : 'agent-review',
+        body.note,
+      )
+      return {
+        ...applied,
+        ...(sessionId ? { sessionId } : {}),
+        reviewsPerSession: REVIEWS_PER_SESSION,
+        performance: prepared.performance,
+        engaged: true,
+      }
+    } catch (error) {
+      // Release a held turn now instead of waiting out the planning window.
+      platform.cancelStrategyUpdate(matchId, seatId, prepared.requestId)
+      throw error
+    }
+  }
+
+  app.post(
+    '/v1/matches/:matchId/seats/:seatId/strategy/review',
+    async (context) => {
+      const p = await authenticate(
+        context.req.header('Authorization'),
+        'matches:play',
+      )
+      const body = reviewBody.parse(await context.req.json())
+      return context.json(
+        await commonsReview(
+          p,
+          context.req.param('matchId'),
+          context.req.param('seatId'),
+          body,
+        ),
+      )
+    },
+  )
 
   app.post('/v1/matches/:matchId/seats/:seatId/coach', async (context) => {
     const p = await authenticate(
@@ -778,48 +942,14 @@ export function createApp(options: ControlApiOptions = {}) {
       })
       .strict()
       .parse(await context.req.json())
-    const platform = requirePlatform()
-    const matchId = context.req.param('matchId'),
-      seatId = context.req.param('seatId')
-    const prepared = platform.beginCoaching(matchId, seatId, p.id, body.agentId)
-    // The Commons service checks access to the requested agent under this owner's token.
-    await commonsRequest(p, `/v1/agents/${encodeURIComponent(body.agentId)}`)
-    if (
-      prepared.controllerId !== body.agentId &&
-      prepared.controllerId !== `agent:${body.agentId}` &&
-      prepared.controllerId !== `commons-agent-${body.agentId}`
+    return context.json(
+      await commonsReview(
+        p,
+        context.req.param('matchId'),
+        context.req.param('seatId'),
+        { agentId: body.agentId, note: body.prompt },
+      ),
     )
-      throw new IdentityError(
-        403,
-        'The selected agent does not control this seat.',
-      )
-    const planned = await planCoaching(
-      p,
-      { agentId: body.agentId, strategy: prepared.strategy },
-      body.prompt,
-      prepared.observation,
-    )
-    const applied = await platform.applyCoaching(
-      matchId,
-      seatId,
-      p.id,
-      prepared.requestId,
-      prepared.controllerId,
-      planned,
-    )
-    await store.put(
-      `match-strategy-events:${matchId}`,
-      `${seatId}:${applied.requestId}`,
-      {
-        version: 1,
-        ...applied,
-        prompt: body.prompt,
-        source: 'agent-coaching',
-        type: 'policy.strategy.changed',
-        createdAt: new Date().toISOString(),
-      },
-    )
-    return context.json(applied)
   })
 
   app.post('/v1/matches/:matchId/seats/:seatId/claim', async (context) => {
@@ -1182,9 +1312,31 @@ function openApiDocument(serverUrl: string) {
             'Have the owner’s agent prepare and replace its playtest strategy',
         },
       },
+      '/v1/matches/{matchId}/seats/{seatId}/strategy/requests': {
+        post: {
+          summary:
+            'Open a strategy review for an owned agent seat: observation, running script, performance and cadence',
+        },
+      },
+      '/v1/matches/{matchId}/seats/{seatId}/strategy/requests/{requestId}': {
+        delete: { summary: 'Abandon an open strategy review' },
+      },
+      '/v1/matches/{matchId}/seats/{seatId}/strategy': {
+        put: {
+          summary:
+            'Keep or replace the strategy script the match worker executes for the seat',
+        },
+      },
+      '/v1/matches/{matchId}/seats/{seatId}/strategy/review': {
+        post: {
+          summary:
+            'Run one strategy review with an owned Commons agent, optionally with owner coaching',
+        },
+      },
       '/v1/matches/{matchId}/seats/{seatId}/coach': {
         post: {
-          summary: 'Coach an owned agent seat and replace its live controller',
+          summary:
+            'Coach an owned Commons agent seat through a strategy review',
         },
       },
       '/v1/studio/browser-runs/{id}/controllers/{seatId}/strategy': {

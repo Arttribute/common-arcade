@@ -70,7 +70,8 @@ try {
   await new Promise((resolve) => setTimeout(resolve, 4300))
   const seat = match.seats[0]!
   const originalSession = sessions[0]!
-  const prepare = () => platform.beginCoaching(match.id, seat.id, 'experiment')
+  const prepare = () =>
+    platform.beginStrategyUpdate(match.id, seat.id, 'experiment')
   const input = livePolicyObservation(
     platform.observation(originalSession.sessionId),
   )
@@ -79,7 +80,7 @@ try {
   )?.[0]
   if (!brakeId) throw new Error('No legal brake action')
   const baseline = prepare()
-  await platform.applyCoaching(
+  await platform.applyStrategyUpdate(
     match.id,
     seat.id,
     'experiment',
@@ -149,7 +150,7 @@ try {
   const commandsBefore = platform.getReplay(match.id, 'experiment').commands
     .length
   const readyAt = performance.now()
-  const applied = await platform.applyCoaching(
+  const applied = await platform.applyStrategyUpdate(
     match.id,
     seat.id,
     'experiment',

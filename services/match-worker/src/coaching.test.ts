@@ -33,13 +33,13 @@ describe('live strategy replacement', () => {
   it('accepts Commons UI controller IDs and cancels coaching on handoff', async () => {
     const { platform, match, seat } = await setup('commons-agent-player')
     try {
-      const prepared = platform.beginCoaching(
+      const prepared = platform.beginStrategyUpdate(
         match.id,
         seat.id,
         'owner0',
         'player',
       )
-      await platform.applyCoaching(
+      await platform.applyStrategyUpdate(
         match.id,
         seat.id,
         'owner0',
@@ -47,7 +47,7 @@ describe('live strategy replacement', () => {
         'commons-agent-player',
         plan(prepared.observation.actions[0]!.id),
       )
-      const pending = platform.beginCoaching(
+      const pending = platform.beginStrategyUpdate(
         match.id,
         seat.id,
         'owner0',
@@ -71,7 +71,7 @@ describe('live strategy replacement', () => {
         controllerKind: 'agent',
       })
       await expect(
-        platform.applyCoaching(
+        platform.applyStrategyUpdate(
           match.id,
           seat.id,
           'owner0',
@@ -81,7 +81,7 @@ describe('live strategy replacement', () => {
         ),
       ).rejects.toMatchObject({ code: 'CONFLICT' })
       expect(
-        platform.beginCoaching(match.id, seat.id, 'owner0', 'player')
+        platform.beginStrategyUpdate(match.id, seat.id, 'owner0', 'player')
           .strategyEpoch,
       ).toBe(0)
     } finally {
@@ -99,11 +99,11 @@ describe('live strategy replacement', () => {
     })
     const old = await platform.connectWithTicket(ticket.ticket, match.id)
     const original = platform.observation(old.sessionId)
-    const prepared = platform.beginCoaching(match.id, seat.id, 'owner0')
+    const prepared = platform.beginStrategyUpdate(match.id, seat.id, 'owner0')
     const action = prepared.observation.actions.find((a) =>
       a.label.includes('"cell":4'),
     )!
-    const applied = await platform.applyCoaching(
+    const applied = await platform.applyStrategyUpdate(
       match.id,
       seat.id,
       'owner0',
@@ -133,13 +133,13 @@ describe('live strategy replacement', () => {
   })
   it('only accepts the newest coaching request and rejects another owner', async () => {
     const { platform, match, seat } = await setup()
-    expect(() => platform.beginCoaching(match.id, seat.id, 'intruder')).toThrow(
-      'owner',
-    )
-    const older = platform.beginCoaching(match.id, seat.id, 'owner0')
-    const newer = platform.beginCoaching(match.id, seat.id, 'owner0')
+    expect(() =>
+      platform.beginStrategyUpdate(match.id, seat.id, 'intruder'),
+    ).toThrow('owner')
+    const older = platform.beginStrategyUpdate(match.id, seat.id, 'owner0')
+    const newer = platform.beginStrategyUpdate(match.id, seat.id, 'owner0')
     await expect(
-      platform.applyCoaching(
+      platform.applyStrategyUpdate(
         match.id,
         seat.id,
         'owner0',
@@ -149,7 +149,7 @@ describe('live strategy replacement', () => {
       ),
     ).rejects.toMatchObject({ code: 'CONFLICT' })
     expect(platform.getReplay(match.id).commands).toHaveLength(0)
-    await platform.applyCoaching(
+    await platform.applyStrategyUpdate(
       match.id,
       seat.id,
       'owner0',

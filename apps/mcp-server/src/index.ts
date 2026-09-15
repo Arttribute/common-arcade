@@ -16,6 +16,8 @@ export const MCP_TOOL_NAMES = [
   'arcade.get_game',
   'arcade.create_match',
   'arcade.join_match',
+  'arcade.open_strategy_review',
+  'arcade.update_strategy',
   'arcade.get_match',
   'arcade.get_replay',
   'arcade.create_test_run',
@@ -59,7 +61,7 @@ export function createArcadeMcpServer(
     { name: 'common-arcade', version: '0.1.0-v0alpha1' },
     {
       instructions:
-        'Use discovery and durable control tools here. For autonomous or realtime play, obtain a session with arcade.join_match and connect a policy runner to the returned realtimeUrl; do not drive a realtime tick loop through MCP.',
+        'Use discovery and durable control tools here. To play a live match as an agent, claim a seat with controllerKind agent, then loop: arcade.open_strategy_review, study the observation and performance, and arcade.update_strategy to keep or replace your strategy script. Arcade executes the script at game speed between reviews and stops when reviews stop. Review about every cadence.refreshMs for realtime games; for turn-based games pass waitForDecisionPoint and review every move. Do not drive a realtime tick loop through MCP.',
     },
   )
 
@@ -235,6 +237,92 @@ export function createArcadeMcpServer(
         }),
       )
     },
+  )
+
+  server.registerTool(
+    'arcade.open_strategy_review',
+    {
+      title: 'Open a strategy review for your agent seat',
+      description:
+        'Return the seat-visible observation, legal action IDs, your running strategy script, performance since your last review (actions, rule hits, unused rules, rejections, reward, feedback), recent strategy history and the loop cadence. Nothing plays for a seat that stops reviewing.',
+      inputSchema: z.object({
+        matchId: z.string().min(1),
+        seatId: z.string().min(1),
+        waitForDecisionPoint: z
+          .boolean()
+          .optional()
+          .describe(
+            'Turn-based games: wait until the seat can act. Arcade then holds that move for your update, bounded by the turn clock.',
+          ),
+      }),
+    },
+    async ({ matchId, seatId, waitForDecisionPoint }) =>
+      response(
+        'review',
+        await client.openStrategyReview(matchId, seatId, {
+          ...(waitForDecisionPoint === undefined
+            ? {}
+            : { waitForDecisionPoint }),
+        }),
+      ),
+  )
+
+  server.registerTool(
+    'arcade.update_strategy',
+    {
+      title: 'Keep or replace your strategy script',
+      description:
+        'Answer an open review. keep renews the running script; replace installs a complete new one. executableStrategy is bounded data, not code: {actionWeights:{actionId:weight}, avoidActions:[actionId], rules:[{when:[{path:"dot.path.in.observation.state", op:"eq|ne|lt|lte|gt|gte|exists", value}], actionId, weight}]}. Weights are -100..100; rules add weight when every condition matches. Target an exact legal action ID, or its label before the trailing hash to cover every payload with that label.',
+      inputSchema: z.object({
+        matchId: z.string().min(1),
+        seatId: z.string().min(1),
+        requestId: z.string().min(1),
+        controllerId: z.string().min(1),
+        update: z.discriminatedUnion('decision', [
+          z.object({ decision: z.literal('keep'), reason: z.string().min(1) }),
+          z.object({
+            decision: z.literal('replace'),
+            strategy: z.string().min(1).max(2000),
+            reason: z.string().min(1).max(1000),
+            executableStrategy: z.object({
+              actionWeights: z.record(z.string(), z.number()),
+              avoidActions: z.array(z.string()),
+              rules: z.array(
+                z.object({
+                  when: z.array(
+                    z.object({
+                      path: z.string(),
+                      op: z.enum([
+                        'eq',
+                        'ne',
+                        'lt',
+                        'lte',
+                        'gt',
+                        'gte',
+                        'exists',
+                      ]),
+                      value: z.union([
+                        z.string(),
+                        z.number(),
+                        z.boolean(),
+                        z.null(),
+                      ]),
+                    }),
+                  ),
+                  actionId: z.string(),
+                  weight: z.number(),
+                }),
+              ),
+            }),
+          }),
+        ]),
+      }),
+    },
+    async ({ matchId, seatId, ...input }) =>
+      response(
+        'strategy',
+        await client.updateSeatStrategy(matchId, seatId, input),
+      ),
   )
 
   server.registerTool(

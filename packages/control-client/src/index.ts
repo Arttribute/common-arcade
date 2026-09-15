@@ -26,6 +26,45 @@ import {
   type Replay,
 } from '@common-arcade/protocol'
 
+/** Seat-visible context for one engaged strategy review. */
+export interface StrategyReviewContext {
+  readonly requestId: string
+  readonly controllerId: string
+  readonly matchId: string
+  readonly seatId: string
+  readonly mode: string
+  readonly status: string
+  readonly strategy: string
+  readonly strategyEpoch: number
+  readonly executableStrategy?: JsonValue
+  readonly lastReason?: string
+  readonly engaged: boolean
+  readonly leaseExpiresAt: string | null
+  readonly decisionPoint: {
+    readonly ready: boolean
+    readonly stateSequence: number
+    readonly turn?: number
+    readonly deadlineAt?: string
+  }
+  readonly observation: {
+    readonly state: JsonValue
+    readonly actions: readonly { readonly id: string; readonly label: string }[]
+  }
+  readonly performance: Record<string, JsonValue>
+  readonly history: readonly Record<string, JsonValue>[]
+  readonly cadence: {
+    readonly refreshMs: number
+    readonly leaseMs: number
+    readonly turnPlanningMs: number
+    readonly maxDecisionsPerSecond: number
+  }
+  readonly series: {
+    readonly round: number
+    readonly maximumRounds: number
+    readonly scores: Record<string, number>
+  }
+}
+
 export interface ControlClientOptions {
   readonly baseUrl: string
   readonly fetch?: typeof globalThis.fetch
@@ -635,6 +674,69 @@ export class ControlClient {
       `/v1/studio/browser-runs/${encodeURIComponent(runId)}/controllers/${encodeURIComponent(seatId)}/coach`,
       { method: 'POST', body: { prompt, observation } },
     )
+  }
+
+  /**
+   * Open a strategy review for an owned agent seat. Returns the seat-visible
+   * observation, running script, performance since the last review and the
+   * loop cadence. With `waitForDecisionPoint`, turn-based seats wait (bounded)
+   * until they can act, and hold that move until the update arrives.
+   */
+  async openStrategyReview(
+    matchId: string,
+    seatId: string,
+    options: { agentId?: string; waitForDecisionPoint?: boolean } = {},
+  ): Promise<StrategyReviewContext> {
+    return this.request(
+      `/v1/matches/${encodeURIComponent(matchId)}/seats/${encodeURIComponent(seatId)}/strategy/requests`,
+      { method: 'POST', body: options },
+    ) as Promise<StrategyReviewContext>
+  }
+
+  /** Keep or replace the strategy script executed for the seat. Execution stops if updates stop. */
+  async updateSeatStrategy(
+    matchId: string,
+    seatId: string,
+    input: {
+      requestId: string
+      controllerId: string
+      update:
+        | { decision: 'keep'; reason: string }
+        | {
+            decision: 'replace'
+            strategy: string
+            reason: string
+            executableStrategy: JsonValue
+          }
+    },
+  ): Promise<Record<string, unknown>> {
+    return this.request(
+      `/v1/matches/${encodeURIComponent(matchId)}/seats/${encodeURIComponent(seatId)}/strategy`,
+      { method: 'PUT', body: input },
+    ) as Promise<Record<string, unknown>>
+  }
+
+  async cancelStrategyReview(
+    matchId: string,
+    seatId: string,
+    requestId: string,
+  ): Promise<void> {
+    await this.request(
+      `/v1/matches/${encodeURIComponent(matchId)}/seats/${encodeURIComponent(seatId)}/strategy/requests/${encodeURIComponent(requestId)}`,
+      { method: 'DELETE' },
+    )
+  }
+
+  /** Run one review with an owned Commons agent (Commons sign-in only). */
+  async reviewLiveAgentStrategy(
+    matchId: string,
+    seatId: string,
+    input: { agentId: string; note?: string; sessionId?: string },
+  ): Promise<Record<string, unknown>> {
+    return this.request(
+      `/v1/matches/${encodeURIComponent(matchId)}/seats/${encodeURIComponent(seatId)}/strategy/review`,
+      { method: 'POST', body: input },
+    ) as Promise<Record<string, unknown>>
   }
 
   async coachLiveAgent(

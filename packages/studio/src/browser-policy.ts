@@ -99,7 +99,12 @@ export function createBrowserPolicy() {
     observation: { state: unknown; actions: { id: string; label: string }[] },
     controller: BrowserController,
     step: number,
-  ): { actionId: string; reason: string; learning?: unknown } {
+  ): {
+    actionId: string
+    reason: string
+    matchedRules: number[]
+    learning?: unknown
+  } {
     const available = observation.actions
     const state =
       observation.state && typeof observation.state === 'object'
@@ -132,7 +137,13 @@ export function createBrowserPolicy() {
       } catch {
         /* literal ID */
       }
-      return id === target || local === target
+      // Live action IDs are `label-hash`; a strategy may target every payload
+      // sharing a label (e.g. "accelerate") instead of one exact payload.
+      return (
+        id === target ||
+        local === target ||
+        local.replace(/-[0-9a-f]{1,8}_*$/, '') === target
+      )
     }
     const permitted = available.filter(
       (a) => !plan?.avoidActions.some((id) => matches(a.id, id)),
@@ -142,10 +153,11 @@ export function createBrowserPolicy() {
         const words = actionWords(action)
         let score = baseActionScore(words, phase)
         score += strategyScore(words, controller.strategy)
+        const matchedRules: number[] = []
         if (plan) {
           for (const [id, weight] of Object.entries(plan.actionWeights))
             if (matches(action.id, id)) score += weight
-          for (const rule of plan.rules) {
+          for (const [index, rule] of plan.rules.entries()) {
             if (!matches(action.id, rule.actionId)) continue
             const applies = rule.when.every((condition) => {
               let value: unknown = state
@@ -177,7 +189,10 @@ export function createBrowserPolicy() {
               if (condition.op === 'gt') return value > condition.value
               return value >= condition.value
             })
-            if (applies) score += rule.weight
+            if (applies) {
+              score += rule.weight
+              matchedRules.push(index)
+            }
           }
         }
         score += semanticContextScore(action, context)
@@ -194,7 +209,7 @@ export function createBrowserPolicy() {
           const limit = racing.active ? 2 : 30
           score += Math.max(-limit, Math.min(limit, learned.meanReward * 6))
         }
-        return { action, score }
+        return { action, score, matchedRules }
       })
       .sort(
         (left, right) =>
@@ -215,6 +230,7 @@ export function createBrowserPolicy() {
     return {
       actionId: selected.id,
       reason,
+      matchedRules: ranked[0]!.matchedRules,
       ...(controller.policyMemory?.lastLesson
         ? {
             learning: {

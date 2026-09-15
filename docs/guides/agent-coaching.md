@@ -1,37 +1,90 @@
-# Agent coaching and immediate strategy replacement
+# Engaged agent play and coaching
 
-Owners can coach a running browser playtest or an owned agent seat in a live match. The selected Commons agent turns the coaching message into a complete replacement strategy. Planning runs separately from gameplay, with a 45-second request budget. A failed plan leaves the active strategy intact.
+Agents play live matches by staying engaged. An agent reviews the game on a loop and keeps or replaces a strategy script. The match worker executes that script at game speed between reviews. Arcade never plays for an agent on its own: there is no autoplay, and a seat whose agent stops reviewing stops acting.
 
-Coaching and model-driven game decisions are schema-validated before use. An empty, malformed, incomplete, or schema-invalid reply gets one automatic correction attempt within the original request budget. A complete valid streamed answer can be used if the final message is malformed. The controller never installs partial JSON or invents missing strategy fields. If correction fails, coaching reports that the existing strategy remains active. Authentication, credit, rate-limit, and transport failures are not automatically replayed.
+This splits the work by tempo. The model does what it is good at: reading the situation, judging what is working, and changing the plan. The match worker supplies fast, legal inputs so realtime games stay realtime.
 
-The strategy is bounded JSON: action weights, avoided actions, and conditional rules over seat-visible state. There is no generated JavaScript. Preview and live controllers run the same policy evaluator. Rules are game independent; their paths and action IDs come from the game's observation and legal actions. Full live action payloads retain distinct identities, including different targets or coordinates.
+## The loop
 
-## Replacement behavior
+1. **Open a review.** The worker returns the seat-visible observation, legal action IDs, the running script, a performance report since the last review, recent strategy history, and the cadence.
+2. **Decide.** The agent answers `keep` with a reason, or `replace` with a complete new script. The first review must replace, because nothing runs until a script exists.
+3. **Execute.** The worker applies the script to each new observation, up to the game's `maxDecisionsPerSecond` (at most 20).
+4. **Repeat.** Realtime and hybrid games review again about 8 seconds after each update. Turn-based and simultaneous games review once per decision point.
 
-- A newer coaching request supersedes an older pending request.
-- A prepared strategy gets a new epoch. Old learned preferences, pending feedback attribution, and held inputs are cleared rather than appended to the replacement.
-- The preview releases held inputs and schedules a decision on its next animation frame. It acknowledges application after the game accepts the new action. A legacy asynchronous action must settle before the same seat can submit another action.
-- The live match worker serializes replacement with authoritative actions, releases declared held input, replaces the control lease, and executes a fresh decision immediately. Old external controller submissions are rejected.
-- Held controls are submitted once; pulse controls are refreshed at their declared interval. Strategy changes do not restart the game.
-- Strategy changes are stored as `policy.strategy.changed` records. Live replay actions carry `policyExecutionId` identifying the strategy epoch. Preview diagnostics remain client-observed, not authoritative evidence.
+### Performance report
 
-Game bridges should declare `control: { mode: 'hold' | 'pulse', releaseActionId, refreshMs? }` for persistent inputs. The release action must be legal when the input is released. Completed game actions are not undone. A strategy cannot submit an illegal action; if every available action is on its avoid list, the controller uses the legal fallback selection.
+Each review includes `performance`, measured since the previous review:
 
-## Use
+- `decisions`, `submittedActions`, `rejectedActions` and `lastRejection`
+- `topActions`: the actions the script chose most
+- `ruleHits`: how often each rule index contributed to the chosen action, and `unusedRules`: rules that never fired
+- `reward`: total, positive and negative feedback samples, and `recentFeedback` summaries
+- `gameFeedback`: the game's own per-seat `observation.feedback`, when it emits one
 
-In Studio, start a browser playtest, edit the agent's coaching text, and choose **Coach agent**. Draft text does not change the active policy until the agent finishes planning.
+`history` lists up to four previous strategies with their decisions, reward, reason and how long they ran. Games that emit per-seat `feedback` give agents much better evidence to adapt from.
 
-On a live match page, select one of your agents and assign it to an open seat. Send coaching to start its controller. Each owned agent seat has its own coaching field and application status. Coaching an already controlled seat transfers action authority to Arcade's bounded runtime.
+### Engagement lease
 
-The control client provides `coachBrowserAgent(runId, seatId, prompt, observation)` and `coachLiveAgent(matchId, seatId, agentId, prompt)`.
+A script runs only while its agent is engaged. Each `keep` or `replace` renews a 60 second lease. Opening a review keeps the current script running while the agent plans, but only for up to two lease windows after the last completed update. When the lease lapses, the worker releases held input and the seat stops acting until the agent updates again.
 
-HTTP endpoints:
+### Turn-based games
 
-- `POST /v1/studio/browser-runs/:id/controllers/:seatId/coach`: `{ prompt, observation: { state, actions } }`. Requires ownership of the playtest and `projects:write`.
-- `POST /v1/matches/:matchId/seats/:seatId/coach`: `{ agentId, prompt }`. Requires ownership of the agent seat and `matches:play`. The worker supplies its legal observation; the caller cannot supply live game state.
-- The existing browser `/strategy` endpoint remains a direct text replacement for compatibility; `/coach` additionally processes the message with the agent and compiles conditional rules.
+Open a review with `waitForDecisionPoint: true`. The request waits up to 20 seconds for the seat to be able to act, then returns. While that review is open, the seat holds its move so the new plan decides it. The hold is bounded: it ends after 30 seconds, or 2 seconds before the turn deadline or `turnTimeoutMs`, whichever comes first. After that, the standing script plays, so a slow model never forfeits a turn.
 
-This is an internal pre-v0alpha implementation, not a newly standardized adaptation protocol. Existing declarative Test Arena policy-IR runners and external hosts do not acquire this coaching behavior automatically. Live managed controllers are process-local, like current control leases; after worker replacement, reconnect and coach the seat again. No trained weights or game source are modified by coaching.
+### Script format
+
+The script is bounded JSON, never code:
+
+```json
+{
+  "actionWeights": { "accelerate": 5 },
+  "avoidActions": ["restart"],
+  "rules": [
+    {
+      "when": [{ "path": "you.nextCornerMs", "op": "lt", "value": 800 }],
+      "actionId": "brake",
+      "weight": 20
+    }
+  ]
+}
+```
+
+- Weights are between -100 and 100. Rules add their weight when every condition matches.
+- Operators are `eq`, `ne`, `lt`, `lte`, `gt`, `gte` and `exists`. Paths are relative to the observation state. Missing paths do not match.
+- An `actionId` can be an exact legal action ID, or the label before the trailing hash, which covers every payload with that label. For example `accelerate` matches `accelerate-1f2e3d4c`.
+- `avoidActions` are excluded whenever another legal action exists.
+- Limits: 80 action weights, 80 avoided actions, 32 rules, 8 conditions per rule.
+
+A periodic replacement keeps the same control lease, held input and measured action rewards. The next decision releases held input if the new script chooses differently. Replacing with a different controller, or after the worker lost the session, opens a new lease and fences the old one.
+
+## Commons agents on the match page
+
+Select one of your agents and assign it to a seat. The page runs the review loop for that agent and shows its current strategy, the reason for the last change, and recent performance. You watch as a spectator. Pause stops the loop; the script stops within a minute. Reloading the page resumes the loop for agent seats you own.
+
+Coaching is folded into the loop. A message sent while the loop runs is used in the agent's next review, which starts immediately. The agent must honor it and still returns a complete script.
+
+Each review runs in a Commons conversation that is reused for up to 8 reviews, then rotated so a long match does not grow one context without bound. Reviews that have nothing to decide skip the model call: in the lobby once a script exists, or in a turn-based game while waiting for the other player.
+
+## API
+
+External agents run the loop themselves with any model:
+
+- `POST /v1/matches/:matchId/seats/:seatId/strategy/requests` with `{ agentId?, waitForDecisionPoint? }` opens a review and returns its context.
+- `PUT /v1/matches/:matchId/seats/:seatId/strategy` with `{ requestId, controllerId, update }` answers it. `update` is `{ "decision": "keep", "reason" }` or `{ "decision": "replace", "strategy", "reason", "executableStrategy" }`. A newer review supersedes an older one (`409`).
+- `DELETE /v1/matches/:matchId/seats/:seatId/strategy/requests/:requestId` abandons a review and releases a held turn early.
+- `POST /v1/matches/:matchId/seats/:seatId/strategy/review` with `{ agentId, note?, sessionId? }` runs one complete review with an owned Commons agent. `POST .../coach` with `{ agentId, prompt }` does the same with required coaching.
+
+All routes require ownership of the agent seat and `matches:play`. The control client exposes `openStrategyReview`, `updateSeatStrategy`, `cancelStrategyReview` and `reviewLiveAgentStrategy`. The MCP server exposes `arcade.open_strategy_review` and `arcade.update_strategy`.
+
+Strategy replacements are stored as `policy.strategy.changed` records. Replay actions carry `policyExecutionId` identifying the strategy epoch.
+
+## Studio playtests
+
+`POST /v1/studio/browser-runs/:id/controllers/:seatId/coach` with `{ prompt, observation: { state, actions } }` still turns owner coaching into a replacement script for a private browser playtest. The browser `/strategy` endpoint remains a direct text replacement.
+
+## Not covered yet
+
+Paid tables on the payment service use their own wallet-signed runtime and still offer `autoplay`. Live managed controllers are process-local, like control leases; after a worker replacement, the loop's next review installs a fresh lease.
 
 ## Redline Run experiment
 
@@ -41,6 +94,4 @@ The experiment reads a saved project document and runs its actual sandboxed rule
 pnpm --filter @common-arcade/control-api exec tsx scripts/coaching-experiment.ts /path/to/project.json
 ```
 
-To include a real Commons planning turn, append a Commons CLI config path and the ID of an owned player agent. The script refreshes credentials in memory and never prints them. Results are written to `/private/tmp/arcade-coaching-experiment.json`.
-
-On September 10, 2026, Redline Run revision 7 was exercised with its Player 1 agent. Coaching from a braking baseline to acceleration and centering took 5.64 seconds to plan and 43.4 ms to release the old input and apply the new action. Over the next 1.5 seconds, observed speed rose from 0 to 58 mph and lane position moved from -0.42 to -0.28. No old strategy actions resumed after replacement. This establishes immediate behavioral change in this scenario, not a general win-rate improvement.
+To include a real Commons planning turn, append a Commons CLI config path and the ID of an owned player agent. Results are written to `/private/tmp/arcade-coaching-experiment.json`.

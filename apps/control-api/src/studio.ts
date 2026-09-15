@@ -2710,6 +2710,7 @@ type CommonsStreamEvent = {
   args?: unknown
   requestId?: string
   message?: string
+  sessionId?: string
   payload?: unknown
   /** Commons buffers every run event under a runId with a rising sequence
    * number, so a client can re-attach after the last event it handled. */
@@ -2863,10 +2864,13 @@ async function commonsAgentTexts(
   p: Principal,
   body: unknown,
   timeoutMs: number,
+  onSessionId?: (sessionId: string) => void,
 ) {
   let tokens = '',
     final = ''
   for await (const event of commonsAgentStream(p, body, timeoutMs)) {
+    if (typeof event.sessionId === 'string' && event.sessionId)
+      onSessionId?.(event.sessionId)
     if (event.type === 'error')
       throw new CommonsServiceError(
         502,
@@ -2893,7 +2897,13 @@ export async function commonsAgentJson<T>(
     [key: string]: unknown
   },
   schema: z.ZodType<T>,
-  options: { label: string; failureMessage: string; timeoutMs?: number },
+  options: {
+    label: string
+    failureMessage: string
+    timeoutMs?: number
+    /** Reports the Commons conversation the run used, so callers can continue it. */
+    onSessionId?: (sessionId: string) => void
+  },
 ): Promise<T> {
   const deadline = Date.now() + (options.timeoutMs ?? 90_000)
   let correction = ''
@@ -2914,6 +2924,7 @@ export async function commonsAgentJson<T>(
       p,
       { ...body, messages },
       remaining,
+      options.onSessionId,
     )
     correction = 'The reply was empty or incomplete JSON.'
     for (const content of candidates) {
