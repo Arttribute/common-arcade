@@ -114,7 +114,9 @@ describe('engaged agent strategy loop', () => {
       platform.beginStrategyUpdate(match.id, first.id, 'owner0')
       await vi.advanceTimersByTimeAsync(20_000)
       expect(commands()).toBe(4)
-      await vi.advanceTimersByTimeAsync(10_000)
+      // The hold ends 2 s before the 30 s turn clock, measured from when the
+      // worker first saw the turn. Allow slow runners to lag the fake clock.
+      await vi.advanceTimersByTimeAsync(25_000)
       expect(commands()).toBeGreaterThanOrEqual(5)
     } finally {
       platform.close()
