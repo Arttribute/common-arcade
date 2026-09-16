@@ -89,7 +89,8 @@ export class RealtimePilotStack extends Stack {
             ARCADE_STUDIO_TABLE: props.table.tableName,
             COMMONS_IDENTITY_ISSUER: 'https://auth.agentcommons.io/api/auth',
             // Agent Commons agents build games in the creator's own Studio.
-            ARCADE_COMMONS_DELEGATES: 'svc_agent_commons',
+            ARCADE_COMMONS_DELEGATES:
+              'svc_agent_commons,cc_RBRUmRW_xuLlvomCG-G8rviasnt2jyAJ',
             HOST: '0.0.0.0',
             PORT: '4100',
             ARCADE_CORS_ORIGINS: props.corsOrigins,

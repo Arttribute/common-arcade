@@ -84,6 +84,30 @@ describe('Commons JWT federation', () => {
     }
   })
 
+  it('delegates client-credentials tokens identified only by azp', async () => {
+    const auth = createAuthenticator(new MemoryDocumentStore(), { issuer })
+    const service = await token({
+      azp: 'cc_agent_commons',
+      actor_type: 'service',
+      scope: 'agents:read agents:write',
+    })
+    process.env.ARCADE_COMMONS_DELEGATES = 'svc_agent_commons,cc_agent_commons'
+    try {
+      const principal = await withCommonsActor('creator', () =>
+        auth(`Bearer ${service}`, 'releases:publish'),
+      )
+      expect(principal.id).toBe('creator')
+      expect(principal.delegatedBy).toBe('cc_agent_commons')
+      await expect(
+        withCommonsActor('creator', () =>
+          auth(`Bearer ${service}`, 'keys:manage'),
+        ),
+      ).rejects.toMatchObject({ status: 403 })
+    } finally {
+      delete process.env.ARCADE_COMMONS_DELEGATES
+    }
+  })
+
   it('refuses delegation from services that are not allowlisted', async () => {
     const auth = createAuthenticator(new MemoryDocumentStore(), { issuer })
     const service = await token({

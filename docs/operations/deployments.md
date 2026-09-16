@@ -28,3 +28,16 @@ environment variables are required; local development does not send page views.
    may prevent analytics requests, so disable them for this verification.
 
 See the [Vercel Web Analytics quickstart](https://vercel.com/docs/analytics/quickstart).
+
+## Commons service delegation
+
+The live Arcade website currently uses the `development` ControlPlane stack.
+Confirm the Vercel `ARCADE_API_URL` against the stack's `StudioApiUrl` before
+selecting a deployment stage; the website's production target does not imply
+an AWS stack named `production`.
+
+Commons client-credentials tokens identify the Agent Commons service by `azp`
+(client ID), and may omit `sub`. Both the control API and realtime gateway
+allowlist must include that client ID. Client IDs are public identifiers;
+client secrets belong only in runtime secret stores. Verify delegated project
+access and rejection of access-key management after a deployment.

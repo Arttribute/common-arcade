@@ -40,7 +40,8 @@ export class ControlPlaneStack extends Stack {
         ARCADE_RECORDINGS_BUCKET: props.recordingsBucket.bucketName,
         COMMONS_IDENTITY_ISSUER: 'https://auth.agentcommons.io/api/auth',
         // Agent Commons agents build games in the creator's own Studio.
-        ARCADE_COMMONS_DELEGATES: 'svc_agent_commons',
+        ARCADE_COMMONS_DELEGATES:
+          'svc_agent_commons,cc_RBRUmRW_xuLlvomCG-G8rviasnt2jyAJ',
         ARCADE_REALTIME_CONTROL_URL: props.realtimeControlUrl,
         ARCADE_PUBLIC_BASE_URL: 'https://arcade.agentcommons.io/api/arcade',
       },
