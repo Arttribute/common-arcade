@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
-import { createAuthenticator } from './identity.js'
+import { createAuthenticator, withCommonsActor } from './identity.js'
 import { MemoryDocumentStore } from './store.js'
 
 describe('Commons JWT federation', () => {
@@ -57,6 +57,47 @@ describe('Commons JWT federation', () => {
       auth(`Bearer ${service}`, 'projects:write'),
     ).rejects.toMatchObject({ status: 403 })
   })
+  it('lets an allowlisted Commons service act for the creator it names', async () => {
+    const auth = createAuthenticator(new MemoryDocumentStore(), { issuer })
+    const service = await token({
+      sub: 'svc_agent_commons',
+      actor_type: 'service',
+      scopes: ['agents:read', 'agents:write'],
+    })
+    process.env.ARCADE_COMMONS_DELEGATES = 'svc_agent_commons'
+    try {
+      const principal = await withCommonsActor('creator', () =>
+        auth(`Bearer ${service}`, 'projects:write'),
+      )
+      expect(principal.id).toBe('creator')
+      expect(principal.provider).toBe('commons')
+      expect(principal.delegatedBy).toBe('svc_agent_commons')
+      // Building the creator's games must not extend to minting credentials
+      // in their name.
+      expect(principal.scopes).not.toContain('keys:manage')
+      // Without a named creator the service still acts only as itself.
+      expect((await auth(`Bearer ${service}`, 'projects:write')).id).toBe(
+        'svc_agent_commons',
+      )
+    } finally {
+      delete process.env.ARCADE_COMMONS_DELEGATES
+    }
+  })
+
+  it('refuses delegation from services that are not allowlisted', async () => {
+    const auth = createAuthenticator(new MemoryDocumentStore(), { issuer })
+    const service = await token({
+      azp: 'cc_external_agent',
+      actor_type: 'service',
+      scopes: ['agents:write'],
+    })
+    await expect(
+      withCommonsActor('creator', () =>
+        auth(`Bearer ${service}`, 'projects:write'),
+      ),
+    ).rejects.toMatchObject({ status: 403 })
+  })
+
   it('rejects tokens for another audience and human tokens without a subject', async () => {
     const auth = createAuthenticator(new MemoryDocumentStore(), { issuer })
     for (const value of [

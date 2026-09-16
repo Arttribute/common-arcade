@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
 import type { DocumentStore, StoredDocument } from './store.js'
 
@@ -6,6 +7,8 @@ export type Principal = {
   scopes: string[]
   token: string
   provider: 'commons' | 'api-key' | 'local'
+  /** Service subject that is acting for `id`, when the call is delegated. */
+  delegatedBy?: string
 }
 export type AccessKey = StoredDocument & {
   ownerId: string
@@ -82,6 +85,44 @@ async function resolveOpaqueCommonsToken(token: string): Promise<JWTPayload> {
     scopes: identity.scopes,
   } as JWTPayload
 }
+/**
+ * A first-party Commons service acts for a signed-in creator rather than for
+ * itself. An Agent Commons agent that builds a game must leave the project in
+ * the creator's own Studio, so those calls present the service's
+ * client-credentials token and name the creator in `X-Commons-Actor`.
+ *
+ * Delegation is honoured only for service subjects listed in
+ * ARCADE_COMMONS_DELEGATES: any holder of such a token could otherwise claim to
+ * be any account. The actor is carried per request rather than threaded through
+ * all sixty authenticate() call sites, which would be easy to get wrong in the
+ * one place it matters.
+ */
+const delegatedActor = new AsyncLocalStorage<string | undefined>()
+
+export const commonsActorHeader = 'x-commons-actor'
+
+/** Run `work` with `actor` as the delegated creator for any auth inside it. */
+export function withCommonsActor<T>(
+  actor: string | undefined,
+  work: () => T,
+): T {
+  return delegatedActor.run(actor, work)
+}
+
+/** Hono middleware that carries `X-Commons-Actor` for the whole request. */
+export const commonsDelegation = async (
+  context: { req: { header: (name: string) => string | undefined } },
+  next: () => Promise<void>,
+) => withCommonsActor(context.req.header(commonsActorHeader), next)
+
+const trustedDelegates = () =>
+  new Set(
+    (process.env.ARCADE_COMMONS_DELEGATES ?? '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  )
+
 export function createAuthenticator(
   store: DocumentStore,
   options: {
@@ -104,6 +145,7 @@ export function createAuthenticator(
   return async (
     authorization: string | undefined,
     scope?: string,
+    actor?: string,
   ): Promise<Principal> => {
     const token = /^Bearer (\S+)$/.exec(authorization ?? '')?.[1]
     if (!token)
@@ -173,7 +215,30 @@ export function createAuthenticator(
           scopes.push('projects:read', 'matches:play')
         if (grants.includes('agents:write'))
           scopes.push('projects:write', 'releases:publish', 'keys:manage')
-        principal = { id: subject, scopes, token, provider: 'commons' }
+        const requestedActor = actor ?? delegatedActor.getStore()
+        if (payload.actor_type === 'service' && requestedActor) {
+          if (!trustedDelegates().has(subject))
+            throw new IdentityError(
+              403,
+              'This service is not allowed to act for a Commons account.',
+            )
+          if (!/^[A-Za-z0-9_.:@-]{1,200}$/.test(requestedActor))
+            throw new IdentityError(
+              403,
+              'Delegated Commons actor is malformed.',
+            )
+          // A delegated call may build, test and publish the creator's games,
+          // but never mint long-lived credentials in their name.
+          principal = {
+            id: requestedActor,
+            scopes: scopes.filter((granted) => granted !== 'keys:manage'),
+            token,
+            provider: 'commons',
+            delegatedBy: subject,
+          }
+        } else {
+          principal = { id: subject, scopes, token, provider: 'commons' }
+        }
       } catch (error) {
         throw error instanceof IdentityError
           ? error

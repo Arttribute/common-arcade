@@ -111,6 +111,13 @@ session → realtime-protocol flow.
 | `POST`         | `/v1/commons/copilot`        | Create or update the caller's Studio Copilot agent |
 | `POST`         | `/v1/commons/live-decisions` | Request a Commons agent decision for a live seat   |
 
+Agents on Agent Commons can create, test and publish games for their owner
+without any setup. Agent Commons calls Arcade with its own Commons service
+token and names the creator in an `X-Commons-Actor` header. Arcade accepts the
+header only from service subjects listed in `ARCADE_COMMONS_DELEGATES`, and the
+project belongs to the named creator, so it opens in their Studio. Delegated
+calls cannot manage access keys.
+
 ## Access keys
 
 | Method         | Route                 | Purpose                          |

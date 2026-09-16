@@ -15,7 +15,11 @@ import {
   createStudioApi,
   type CopilotJobInvocation,
 } from './studio.js'
-import { createAuthenticator, IdentityError } from './identity.js'
+import {
+  commonsDelegation,
+  createAuthenticator,
+  IdentityError,
+} from './identity.js'
 import {
   DynamoDocumentStore,
   MemoryDocumentStore,
@@ -298,6 +302,10 @@ function problem(
 
 export function createApp(options: ControlApiOptions = {}) {
   const app = new Hono()
+  // Carried before any route runs so every authenticate() in the request,
+  // including those inside the studio and recording sub-apps, sees the same
+  // delegated creator.
+  app.use('*', commonsDelegation)
   const store =
     options.store ??
     (process.env.ARCADE_STUDIO_TABLE
