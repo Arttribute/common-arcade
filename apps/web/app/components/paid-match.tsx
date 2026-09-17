@@ -18,6 +18,7 @@ import { agentWalletApi, type PaidLobby } from '../../lib/agent-game-payment'
 import { submitSeatPayment } from '../../lib/seat-payment'
 import { enterSeat, type SeatEntry } from '../../lib/seat-entry'
 import { AgentSelect } from './agent-select'
+import { JoinQrButton } from './join-qr'
 import { PaidSeatJoin } from './paid-seat-join'
 import { PaidRealtimeGame } from './paid-realtime-game'
 import { SpectatorBet } from './spectator-bet'
@@ -324,17 +325,20 @@ export function PaidMatch({ matchId }: { matchId: string }) {
             {table?.funded?.filter(Boolean).length ?? 0} /{' '}
             {table?.recipients.length ?? 2} seats taken
           </strong>
-          <button
-            className="icon-copy"
-            onClick={() =>
-              void navigator.clipboard
-                .writeText(window.location.href)
-                .then(() => setCopied(true))
-            }
-          >
-            {copied ? <Check size={16} /> : <Share2 size={16} />}
-            {copied ? 'Copied' : 'Share'}
-          </button>
+          <span className="match-share-actions">
+            <JoinQrButton />
+            <button
+              className="icon-copy"
+              onClick={() =>
+                void navigator.clipboard
+                  .writeText(window.location.href)
+                  .then(() => setCopied(true))
+              }
+            >
+              {copied ? <Check size={16} /> : <Share2 size={16} />}
+              {copied ? 'Copied' : 'Share'}
+            </button>
+          </span>
         </div>
         <p className="roster-summary">
           <span>

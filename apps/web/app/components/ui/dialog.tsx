@@ -9,11 +9,13 @@ export function Dialog({
   title,
   description,
   children,
+  className,
 }: {
   trigger: ReactNode
   title: string
   description?: string
   children: ReactNode
+  className?: string
 }) {
   return (
     <DialogPrimitive.Root>
@@ -23,7 +25,9 @@ export function Dialog({
         {/* Radix portals to document.body, outside the `.arcade` shell, so the
             surface has to carry the class itself or none of the app's form and
             heading styles reach it. */}
-        <DialogPrimitive.Content className="arcade dialog-content">
+        <DialogPrimitive.Content
+          className={`arcade dialog-content${className ? ` ${className}` : ''}`}
+        >
           <header>
             <DialogPrimitive.Title>{title}</DialogPrimitive.Title>
             {description && (
