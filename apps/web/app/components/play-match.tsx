@@ -33,6 +33,7 @@ import {
 
 import { LiveControls, actionLabel } from './live-controls'
 import { ExternalSeatAgent } from './external-seat-agent'
+import { JoinQrButton } from './join-qr'
 import { AgentSelect } from './agent-select'
 import { LiveResultCard } from './live-result-card'
 import './live-results.css'
@@ -797,10 +798,13 @@ export function PlayMatch({
             {match?.seats.filter((seat) => seat.status !== 'open').length ?? 0}{' '}
             / {match?.seats.length ?? 0} seats taken
           </strong>
-          <button className="icon-copy" onClick={() => void share()}>
-            {copied ? <Check size={16} /> : <Share2 size={16} />}
-            {copied ? 'Copied' : 'Share'}
-          </button>
+          <span className="match-share-actions">
+            <JoinQrButton />
+            <button className="icon-copy" onClick={() => void share()}>
+              {copied ? <Check size={16} /> : <Share2 size={16} />}
+              {copied ? 'Copied' : 'Share'}
+            </button>
+          </span>
         </div>
         <p className="roster-summary" aria-live="polite">
           <span>
