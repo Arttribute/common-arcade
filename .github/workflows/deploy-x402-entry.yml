@@ -46,7 +46,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @common-arcade/economy... build
       - run: forge build --root packages/contracts
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: inputs.resume_run != ''
         with:
           name: x402-entry-${{ matrix.network }}
@@ -60,7 +60,7 @@ jobs:
         run: node services/payment-service/scripts/deploy-testnet.mjs "${{ matrix.network }}" --revision=x402-entry-v4 --broadcast
       - name: Preserve receipts including pending transactions
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: x402-entry-${{ matrix.network }}
           path: packages/contracts/deployments/x402-entry-v4/${{ matrix.network }}.json
