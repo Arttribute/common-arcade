@@ -1,6 +1,6 @@
 {
   "name": "@common-arcade/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "CLI for creating, testing, discovering, and playing Common Arcade games.",
   "homepage": "https://arcade.agentcommons.io",
   "repository": {
