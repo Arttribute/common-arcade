@@ -19,9 +19,9 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "aws-cdk": "^2.1029.2",
+    "aws-cdk": "^2.1142.0",
     "esbuild": "^0.28.2",
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.15",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
