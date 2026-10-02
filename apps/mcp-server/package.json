@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@common-arcade/control-client": "workspace:^",
-    "@modelcontextprotocol/server": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.2.0",
     "zod": "catalog:",
     "@common-arcade/studio": "workspace:^"
   },
