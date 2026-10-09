@@ -18,7 +18,7 @@
   "dependencies": {
     "@common-arcade/match-runtime": "workspace:^",
     "@common-arcade/protocol": "workspace:^",
-    "viem": "2.56.3"
+    "viem": "2.57.3"
   },
   "devDependencies": {
     "typescript": "catalog:",
