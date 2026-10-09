@@ -16,13 +16,13 @@
     "@common-arcade/control-api": "workspace:^",
     "@common-arcade/match-worker-service": "workspace:^",
     "@common-arcade/protocol": "workspace:^",
-    "@hono/node-server": "^2.1.1",
-    "ws": "^8.18.3",
+    "@hono/node-server": "^2.1.3",
+    "ws": "^8.22.0",
     "@common-arcade/studio": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "@types/ws": "^8.18.1",
+    "@types/ws": "^8.18.2",
     "tsup": "catalog:",
     "tsx": "^4.21.0",
     "typescript": "catalog:",
