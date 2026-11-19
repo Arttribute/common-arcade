@@ -559,7 +559,10 @@ export class LocalArcadePlatform {
     const runtime = await AuthoritativeMatch.create({
       matchId,
       game,
-      seed: request.seed ?? opaqueId('seed'),
+      // A host can also be a player. Published creator games may have hidden
+      // cards, so callers cannot choose a predictable live deal. Seeded tests
+      // remain available through the separate Studio runtime-test endpoint.
+      seed: custom ? opaqueId('seed') : (request.seed ?? opaqueId('seed')),
       configuration: request.configuration ?? {},
       roster: seats.map((seat) => ({
         seatId: seat.id,

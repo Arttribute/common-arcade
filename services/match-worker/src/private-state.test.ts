@@ -65,7 +65,11 @@ it.each([true, false])(
         releaseId: release.id,
         idempotencyKey: 'private-cards-' + withProjection,
         ownerId: 'owner',
+        seed: 'player-chosen-deal',
       })
+      expect(platform.getReplay(match.id, 'owner').seed).not.toBe(
+        'player-chosen-deal',
+      )
       for (let i = 0; i < match.seats.length; i++)
         await platform.claimSeat({
           matchId: match.id,

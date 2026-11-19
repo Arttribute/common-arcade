@@ -14,7 +14,7 @@ export async function gameDocument(seats = 2) {
     play: {
       mode: 'turn-based',
       seats: { min: seats, max: seats, default: seats },
-      maxDecisionsPerSecond: 4,
+      maxDecisionsPerSecond: seats === 2 ? 4 : 2,
       maxDurationSeconds: 3600,
       spectators: true,
       lateJoin: false,
