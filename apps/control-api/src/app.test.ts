@@ -12,6 +12,30 @@ async function localApp() {
 }
 
 describe('control API foundation', () => {
+  it('withholds seeds and private replay checkpoints until the round ends', async () => {
+    const app = await localApp()
+    const created = await app.request('/v1/matches', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer local:replay_owner',
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'replay-privacy-regression',
+      },
+      body: JSON.stringify({
+        releaseId: 'rel_tictactoe1',
+        visibility: 'public',
+      }),
+    })
+    expect(created.status).toBe(201)
+    const match = await created.json()
+    for (const path of ['replay', 'rounds/1/replay']) {
+      const response = await app.request(`/v1/matches/${match.id}/${path}`)
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({
+        code: 'REPLAY_NOT_AVAILABLE',
+      })
+    }
+  })
   it('reports whether its match service is configured', async () => {
     const withoutRuntime = await createApp({ logRequests: false }).request(
       '/healthz',

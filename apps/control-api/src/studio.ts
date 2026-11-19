@@ -1,5 +1,6 @@
 import { publicationRecord, setPublication } from './publication.js'
 import { smokeTestRuntime } from './runtime-validation.js'
+import { defaultArcadeModel } from './model-defaults.js'
 import {
   inheritedRemixEconomy,
   unresolvedRemixRoyalty,
@@ -1284,8 +1285,8 @@ export function createStudioApi(
       name: name,
       owner: p.id,
       ownerUserId: p.id,
-      modelProvider: process.env.ARCADE_AGENT_MODEL_PROVIDER ?? 'openai',
-      modelId: process.env.ARCADE_AGENT_MODEL_ID ?? 'gpt-5.4-mini',
+      modelProvider: defaultArcadeModel().provider,
+      modelId: defaultArcadeModel().modelId,
       temperature: 0.3,
       instructions:
         role === 'copilot'
@@ -1856,7 +1857,7 @@ export function createStudioApi(
         initiatorId: p.id,
         messages: [{ role: 'user', content: input.message }],
         attachments: input.attachments,
-        model: input.model,
+        model: input.model ?? defaultArcadeModel(),
         // Game writes, compilation and runtime smoke tests are all provided by
         // the scoped Arcade tools. Do not make creation depend on an optional
         // remote desktop attached to the Commons agent.

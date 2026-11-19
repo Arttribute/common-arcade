@@ -670,7 +670,7 @@ it('cancels a declared held action before handing its seat to another controller
       { path: 'index.html', content: '<main>Input</main>' },
       {
         path: 'server.js',
-        content: `globalThis.arcadeGame={initialize:()=>({moving:false}),validateAction:()=>null,applyAction:(s,a)=>({state:{moving:a.id==='go'},events:[]}),tick:s=>({state:s,events:[]}),observe:s=>({visibleState:s,legalActions:[{id:'go',control:{mode:'hold',releaseActionId:'stop'}},{id:'stop'}]}),result:()=>null};`,
+        content: `globalThis.arcadeGame={initialize:()=>({moving:false}),validateAction:()=>null,applyAction:(s,a)=>({state:{moving:a.id==='go'},events:[]}),tick:s=>({state:s,events:[]}),observe:s=>({visibleState:s,legalActions:[{id:'go',control:{mode:'hold',releaseActionId:'stop'}},{id:'stop'}]}),spectate:s=>s,result:()=>null};`,
       },
     ],
   })

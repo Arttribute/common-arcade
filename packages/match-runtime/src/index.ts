@@ -371,7 +371,11 @@ export class AuthoritativeMatch<State, Action> {
     return this.game.serializeState(this.state)
   }
   spectatorState(): JsonValue {
-    return this.game.projectSpectatorState?.(this.state) ?? null
+    // Creator sandboxes always install a projection, returning null when the
+    // author omits spectate(). Trusted declarative games have public state.
+    return this.game.projectSpectatorState
+      ? this.game.projectSpectatorState(this.state)
+      : this.game.serializeState(this.state)
   }
 
   eventLog(afterSequence = 0): readonly MatchEvent[] {

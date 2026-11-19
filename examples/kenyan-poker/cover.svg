@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <rect width="800" height="450" fill="#0b1912"/>
+  <ellipse cx="665" cy="236" rx="320" ry="260" fill="#173e29"/>
+  <ellipse cx="665" cy="236" rx="292" ry="234" fill="none" stroke="#45704a" stroke-width="2"/>
+  <rect x="55" y="57" width="62" height="7" fill="#101711"/>
+  <rect x="55" y="67" width="62" height="7" fill="#bc3e3b"/>
+  <rect x="55" y="77" width="62" height="7" fill="#4d9b60"/>
+  <text x="55" y="153" fill="#c8d5bf" font-family="Arial,sans-serif" font-size="16" letter-spacing="4">COMMON ARCADE</text>
+  <text x="50" y="223" fill="#f4f2e4" font-family="Georgia,serif" font-size="55">Kenyan Poker</text>
+  <text x="55" y="269" fill="#e4c98e" font-family="Georgia,serif" font-size="32" font-style="italic">Niko Kadi!</text>
+  <text x="55" y="373" fill="#a4bca7" font-family="Arial,sans-serif" font-size="17" letter-spacing="2">NAIROBI RULES. GOOD COMPANY.</text>
+  <g transform="translate(552 145) rotate(-12)"><rect width="116" height="168" rx="12" fill="#f1f0e5"/><text x="14" y="36" font-family="Georgia,serif" font-size="30" fill="#ba393c">7</text><text x="34" y="113" font-size="68" fill="#ba393c">♥</text></g>
+  <g transform="translate(633 149) rotate(12)"><rect width="116" height="168" rx="12" fill="#e5eadf"/><text x="14" y="36" font-family="Georgia,serif" font-size="30" fill="#14271b">A</text><text x="33" y="113" font-size="68" fill="#14271b">♠</text></g>
+</svg>

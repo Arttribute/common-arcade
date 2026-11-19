@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Kenyan Poker · Kadi</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="brand">
+          <span class="flag" aria-hidden="true"></span>
+          <div>
+            <small>COMMON ARCADE / NAIROBI</small>
+            <h1>Kenyan Poker<span> / Kadi</span></h1>
+          </div>
+        </div>
+        <button
+          id="rules-toggle"
+          class="subtle"
+          aria-expanded="false"
+          aria-controls="rules"
+        >
+          How to play
+        </button>
+      </header>
+      <section id="rules" class="rules" hidden>
+        <h2>Our table rules</h2>
+        <p>
+          Four cards each, 54-card deck. Match suit or rank. Draw once, then
+          play or end your turn. Call <strong>Niko Kadi!</strong> at two cards,
+          before playing down to one; forgetting costs one card. Finish on 4, 5,
+          6, 7, 9 or 10. A special final card draws a replacement.
+        </p>
+        <div class="rule-grid">
+          <p>
+            <b>2 / 3 / Joker</b>Pick 2 / 3 / 5. Stack the same rank or block
+            with an Ace. Jokers match red or black suits.
+          </p>
+          <p><b>Ace</b>Choose the next suit. Cancels a draw penalty.</p>
+          <p>
+            <b>Jack / King</b>Skip / reverse. Both give another turn with two
+            players.
+          </p>
+          <p>
+            <b>8 / Queen</b>Ask a question: play again to answer, or draw and
+            end your turn.
+          </p>
+        </div>
+        <p class="muted">
+          House rules vary across Kenya. This table uses single-card plays,
+          immediate skips and suit-only Ace demands. Play is free.
+        </p>
+      </section>
+      <div class="table-meta">
+        <span id="table-label">KARIBU MEZANI</span
+        ><span id="move">Live multiplayer</span>
+      </div>
+      <section class="felt" aria-label="Kadi card table">
+        <div id="opponents" class="opponents"></div>
+        <div class="table-center">
+          <div class="piles">
+            <button id="draw-pile" class="card back" aria-label="Draw a card">
+              <span class="back-mark">K</span>
+            </button>
+            <div id="discard" class="card face"><span class="pip">♥</span></div>
+          </div>
+          <div class="pile-labels">
+            <span id="deck-count">DRAW PILE</span><span>IN PLAY</span>
+          </div>
+          <div id="suit" class="suit-badge">Match suit or rank</div>
+        </div>
+        <div id="table-message" role="status" aria-live="polite">
+          Connecting to the table…
+        </div>
+      </section>
+      <section class="your-hand" aria-label="Your cards">
+        <div class="hand-heading">
+          <div>
+            <small id="hand-label">YOUR HAND</small>
+            <h2 id="turn-label">Take a seat to play</h2>
+          </div>
+          <span id="hand-count" class="muted"></span>
+        </div>
+        <div id="hand" class="hand"></div>
+        <div id="actions" class="actions"></div>
+        <div id="suits" class="suit-picker" hidden>
+          <p>Choose a suit for your Ace</p>
+          <div></div>
+        </div>
+        <p id="hint" class="hint">
+          Invite a friend with the live session’s Share button. Cards are dealt
+          when all seats are taken.
+        </p>
+        <p id="error" role="alert"></p>
+      </section>
+      <footer>
+        <span>NAIROBI RULES. GOOD COMPANY.</span><span>♥ ♦ ♣ ♠</span>
+      </footer>
+    </main>
+    <script src="main.js"></script>
+  </body>
+</html>
