@@ -195,6 +195,7 @@ describe('building a game in a native Commons agent session', () => {
     ])
     const run = calls.find((call) => call.url.endsWith('/v1/agents/run/stream'))
     expect(run?.body.messages).toEqual([{ role: 'user', content: rawPrompt }])
+    expect(run?.body.model).toEqual({ provider: 'openai', modelId: 'gpt-5.5' })
     expect(run?.body.computerRequest).toEqual({ enabled: false })
     expect(run?.body.sessionId).toBe('ses_arcade_project')
     expect(run?.body.cliTools.map((tool: any) => tool.name)).toEqual([

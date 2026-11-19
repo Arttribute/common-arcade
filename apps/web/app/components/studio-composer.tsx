@@ -199,7 +199,7 @@ export function ArcadeComposer({
           />
         }
         models={[
-          { id: '', name: 'Agent default' },
+          { id: '', name: 'Studio default (GPT-5.5)' },
           ...identity.models.map((m) => ({
             id: `${m.provider}:${m.modelId}`,
             name: m.displayName,

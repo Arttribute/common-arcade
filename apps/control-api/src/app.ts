@@ -1064,24 +1064,49 @@ export function createApp(options: ControlApiOptions = {}) {
     )
   })
 
-  app.get('/v1/matches/:matchId/replay', async (context) =>
-    context.json(
-      requirePlatform().getReplay(
-        context.req.param('matchId'),
-        await optionalMatchActor(context.req.header('Authorization')),
-      ),
-    ),
-  )
+  // Replays contain the seed and private checkpoints. Even the host may be a
+  // player, so no live round may disclose its replay through the public API.
+  async function assertRoundFinished(
+    matchId: string,
+    actorId?: string,
+    round?: number,
+  ) {
+    const match = await requirePlatform().getMatch(matchId, actorId)
+    if (round !== undefined && round < (match.series?.currentRound ?? 1)) return
+    if (['lobby', 'ready', 'running', 'paused'].includes(match.status))
+      throw new ApiError(
+        'REPLAY_NOT_AVAILABLE',
+        409,
+        false,
+        'The full replay becomes available when this round ends.',
+      )
+  }
+  app.get('/v1/matches/:matchId/replay', async (context) => {
+    const matchId = context.req.param('matchId')
+    const actorId = await optionalMatchActor(
+      context.req.header('Authorization'),
+    )
+    const replay = requirePlatform().getReplay(matchId, actorId)
+    await assertRoundFinished(matchId, actorId)
+    context.header('Cache-Control', 'private, no-store')
+    return context.json(replay)
+  })
 
-  app.get('/v1/matches/:matchId/rounds/:round/replay', async (context) =>
-    context.json(
-      requirePlatform().getRoundReplay(
-        context.req.param('matchId'),
-        z.coerce.number().int().positive().parse(context.req.param('round')),
-        await optionalMatchActor(context.req.header('Authorization')),
-      ),
-    ),
-  )
+  app.get('/v1/matches/:matchId/rounds/:round/replay', async (context) => {
+    const matchId = context.req.param('matchId')
+    const round = z.coerce
+      .number()
+      .int()
+      .positive()
+      .parse(context.req.param('round'))
+    const actorId = await optionalMatchActor(
+      context.req.header('Authorization'),
+    )
+    const replay = requirePlatform().getRoundReplay(matchId, round, actorId)
+    await assertRoundFinished(matchId, actorId, round)
+    context.header('Cache-Control', 'private, no-store')
+    return context.json(replay)
+  })
 
   app.post('/v1/test-runs', async (context) => {
     requirePlatform()

@@ -696,8 +696,10 @@ export class LocalArcadePlatform {
     this.assertSpectateAccess(record, actorId)
     return {
       match: await this.describe(record),
-      publicState: record.runtime.publicState(),
-      events: record.runtime.eventLog(afterEventSequence),
+      publicState: record.runtime.spectatorState(),
+      events: record.runtime
+        .eventLog(afterEventSequence)
+        .filter((event) => event.visibility === 'public'),
     }
   }
 
