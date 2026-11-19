@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "next build",
+    "build": "next build --webpack",
     "clean": "rm -rf .next .source",
     "sync:skill": "cp ../../skills/common-arcade/SKILL.md public/skills/common-arcade/SKILL.md",
     "dev": "next dev --port 3000",
