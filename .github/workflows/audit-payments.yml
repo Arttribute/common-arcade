@@ -46,7 +46,7 @@ jobs:
           node scripts/audit-testnets.mjs "${{ matrix.network }}" "${args[@]}"
       - name: Preserve public evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: payment-evidence-${{ matrix.network }}
           path: |
