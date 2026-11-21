@@ -1,6 +1,14 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, Eye, Maximize2, Radio, Share2, Square } from 'lucide-react'
+import {
+  Check,
+  Eye,
+  Maximize2,
+  Minimize2,
+  Radio,
+  Share2,
+  Square,
+} from 'lucide-react'
 import { createPublicClient, http, type Address } from 'viem'
 import {
   NETWORKS,
@@ -80,7 +88,25 @@ export function PaidMatch({ matchId }: { matchId: string }) {
   const [copied, setCopied] = useState(false)
   const [legacyReady, setLegacyReady] = useState(false)
   const legacyTicket = useRef<{ token: string }>(undefined)
-  const stage = useRef<HTMLElement>(null)
+  const stage = useRef<HTMLDivElement>(null)
+  const [fullscreen, setFullscreen] = useState(false)
+  useEffect(() => {
+    const changed = () => {
+      const expanded = document.fullscreenElement === stage.current
+      setFullscreen(expanded)
+      if (expanded) stage.current?.querySelector('iframe')?.focus()
+    }
+    document.addEventListener('fullscreenchange', changed)
+    return () => document.removeEventListener('fullscreenchange', changed)
+  }, [])
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen()
+      else await stage.current?.requestFullscreen()
+    } catch {
+      setMessage('Fullscreen is unavailable in this browser.')
+    }
+  }
   const { provider } = useBrowserWallet()
   function cardBusy(card: string, pending: boolean) {
     setPendingCards((cards) =>
@@ -538,7 +564,7 @@ export function PaidMatch({ matchId }: { matchId: string }) {
           </p>
         )}
       </aside>
-      <section className="game-stage" ref={stage}>
+      <section className="game-stage">
         <div className="stage-meta">
           <span className="stage-state">
             {ended
@@ -551,17 +577,19 @@ export function PaidMatch({ matchId }: { matchId: string }) {
           {table?.game}
           <button
             className="fullscreen-toggle"
-            onClick={() =>
-              void (document.fullscreenElement
-                ? document.exitFullscreen()
-                : stage.current?.requestFullscreen())
-            }
+            aria-label={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            disabled={!table?.releaseId}
+            onClick={() => void toggleFullscreen()}
           >
-            <Maximize2 size={16} /> Fullscreen
+            {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            {fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           </button>
         </div>
         {table?.releaseId ? (
           <PaidRealtimeGame
+            viewRef={stage}
+            fullscreen={fullscreen}
+            onExitFullscreen={() => void toggleFullscreen()}
             service={paymentService}
             table={table}
             account={account}

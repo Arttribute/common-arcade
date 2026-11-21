@@ -1,5 +1,6 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type Ref } from 'react'
+import { Minimize2 } from 'lucide-react'
 import type { JsonValue, Observation } from '@common-arcade/protocol'
 
 export function PaidRealtimeGame({
@@ -9,6 +10,9 @@ export function PaidRealtimeGame({
   authorize,
   publicState,
   controllerReady = false,
+  viewRef,
+  fullscreen = false,
+  onExitFullscreen,
 }: {
   service: string
   table: {
@@ -22,6 +26,9 @@ export function PaidRealtimeGame({
   authorize: () => Promise<{ token: string }>
   publicState?: JsonValue
   controllerReady?: boolean
+  viewRef?: Ref<HTMLDivElement>
+  fullscreen?: boolean
+  onExitFullscreen?: () => void
 }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const socket = useRef<WebSocket | undefined>(undefined)
@@ -248,24 +255,37 @@ export function PaidRealtimeGame({
     }
   }
   return (
-    <div className="live-stage-view" aria-label="Live game">
-      {controllerReady && state === 'idle' && table.stage === 'playing' && (
-        <div className="actions">
-          <button
-            className="primary"
-            disabled={
-              !account ||
-              state !== 'idle' ||
-              table.stage !== 'playing' ||
-              !!table.runtimeError
-            }
-            onClick={() => void connect()}
-          >
-            Reconnect game controls
-          </button>
-        </div>
-      )}
-      {(error || table.runtimeError) && (
+    <div className="live-stage-view" aria-label="Live game" ref={viewRef}>
+      {fullscreen ? (
+        <button
+          className="live-fullscreen-exit"
+          aria-label="Exit fullscreen"
+          title="Exit fullscreen"
+          onClick={onExitFullscreen}
+        >
+          <Minimize2 size={18} aria-hidden />
+        </button>
+      ) : null}
+      {!fullscreen &&
+        controllerReady &&
+        state === 'idle' &&
+        table.stage === 'playing' && (
+          <div className="actions">
+            <button
+              className="primary"
+              disabled={
+                !account ||
+                state !== 'idle' ||
+                table.stage !== 'playing' ||
+                !!table.runtimeError
+              }
+              onClick={() => void connect()}
+            >
+              Reconnect game controls
+            </button>
+          </div>
+        )}
+      {!fullscreen && (error || table.runtimeError) && (
         <p role="status">{table.runtimeError ?? error}</p>
       )}
       {table.published === false ? (
@@ -318,7 +338,7 @@ export function PaidRealtimeGame({
           onLoad={render}
         />
       )}
-      {active && current && (
+      {!fullscreen && active && current && (
         <details className="payment-disclosure">
           <summary>Game controls</summary>
           <div className="actions">
