@@ -45,11 +45,17 @@ export function PlayMatch({
   matchId: string
   initialActor: string
 }) {
-  const stageRef = useRef<HTMLElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
   const [fullscreen, setFullscreen] = useState(false)
   useEffect(() => {
-    const changed = () =>
-      setFullscreen(document.fullscreenElement === stageRef.current)
+    const changed = () => {
+      const expanded = document.fullscreenElement === stageRef.current
+      setFullscreen(expanded)
+      if (expanded) {
+        setInputMode('game')
+        presentationRef.current?.focus()
+      }
+    }
     document.addEventListener('fullscreenchange', changed)
     return () => document.removeEventListener('fullscreenchange', changed)
   }, [])
@@ -88,7 +94,7 @@ export function PlayMatch({
     controllerId: string
   }>()
   const [controlFeedback, setControlFeedback] = useState('')
-  const [inputMode, setInputMode] = useState<'standard' | 'game'>('standard')
+  const [inputMode, setInputMode] = useState<'standard' | 'game'>('game')
   const submittedActions = useRef(new Map<string, string>())
   const presentationIntent = useRef<string | undefined>(undefined)
   const presentationRelease = useRef<JsonValue | undefined>(undefined)
@@ -1163,7 +1169,7 @@ export function PlayMatch({
         </p>
       </aside>
 
-      <section className="game-stage" ref={stageRef}>
+      <section className="game-stage">
         <div className="stage-meta">
           <span className="stage-state">
             {terminal
@@ -1204,7 +1210,20 @@ export function PlayMatch({
             {fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           </button>
         </div>
-        <div className={`live-stage-view${terminal ? ' is-finished' : ''}`}>
+        <div
+          className={`live-stage-view${terminal ? ' is-finished' : ''}`}
+          ref={stageRef}
+        >
+          {fullscreen ? (
+            <button
+              className="live-fullscreen-exit"
+              aria-label="Exit fullscreen"
+              title="Exit fullscreen"
+              onClick={() => void toggleFullscreen()}
+            >
+              <Minimize2 size={18} aria-hidden />
+            </button>
+          ) : null}
           {match?.releaseId ? (
             <iframe
               ref={presentationRef}
@@ -1219,7 +1238,7 @@ export function PlayMatch({
               {error ? 'The game could not be loaded.' : 'Loading game…'}
             </p>
           )}
-          {terminal && match ? (
+          {!fullscreen && terminal && match ? (
             <LiveResultCard
               key={`${match.status}:${match.series?.currentRound ?? 1}`}
               match={match}

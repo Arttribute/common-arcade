@@ -1271,25 +1271,33 @@
   border-radius: 0;
   background: var(--stage);
 }
-.arcade .game-stage:fullscreen {
-  display: flex;
-  padding: var(--space-4);
-  gap: var(--space-3);
-}
-.arcade .game-stage:fullscreen .live-stage-view {
-  flex: 1;
-  width: 100%;
+.arcade .live-stage-view:fullscreen {
+  width: 100vw;
+  height: 100dvh;
   aspect-ratio: auto;
   border: 0;
+  border-radius: 0;
 }
-.arcade .game-stage:fullscreen .live-game-frame {
+.arcade .live-stage-view:fullscreen .live-game-frame {
+  display: block;
+  width: 100%;
   height: 100%;
+  border-radius: 0;
 }
-.arcade .game-stage:fullscreen .stage-meta {
-  color: var(--stage-ink-muted);
-}
-.arcade .game-stage:fullscreen .stage-state {
-  color: var(--stage-ink);
+.arcade .live-fullscreen-exit {
+  position: absolute;
+  top: max(var(--space-3), env(safe-area-inset-top));
+  right: max(var(--space-3), env(safe-area-inset-right));
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  color: var(--ink);
 }
 .arcade .human-controls {
   margin-top: var(--space-3);
